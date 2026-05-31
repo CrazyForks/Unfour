@@ -1,0 +1,302 @@
+import { invoke } from "@tauri-apps/api/core";
+import type {
+  ApiHistoryItem,
+  ApiRequestInput,
+  ApiResponse,
+  ApiSavedRequest,
+  SystemHealth,
+  Workspace,
+  WorkspaceEnvironment,
+  WorkspaceState,
+} from "../types";
+
+declare global {
+  interface Window {
+    __TAURI_INTERNALS__?: unknown;
+  }
+}
+
+const mockWorkspace: Workspace = {
+  id: "mock-workspace",
+  name: "Default Workspace",
+  isDefault: true,
+  lastOpenedAt: new Date().toISOString(),
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString(),
+  deletedAt: null,
+  revision: 1,
+  syncStatus: "local",
+  remoteId: null,
+};
+
+const mockState: WorkspaceState = {
+  activeWorkspaceId: mockWorkspace.id,
+  workspaces: [mockWorkspace],
+};
+
+let mockHistory: ApiHistoryItem[] = [];
+let mockSavedRequests: ApiSavedRequest[] = [];
+let mockEnvironment: WorkspaceEnvironment = {
+  workspaceId: mockWorkspace.id,
+  variables: [
+    { key: "base_url", value: "https://httpbin.org", enabled: true },
+    { key: "source", value: "unfour", enabled: true },
+  ],
+  updatedAt: new Date().toISOString(),
+};
+
+function isTauriRuntime() {
+  return typeof window !== "undefined" && Boolean(window.__TAURI_INTERNALS__);
+}
+
+async function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  if (!isTauriRuntime()) {
+    return mockInvoke<T>(command, args);
+  }
+
+  return invoke<T>(command, args);
+}
+
+async function mockInvoke<T>(
+  command: string,
+  args?: Record<string, unknown>,
+): Promise<T> {
+  if (command === "system_health") {
+    return {
+      appName: "Unfour Workspace",
+      storageReady: true,
+      commandBusReady: true,
+      aiReservedCapabilities: ["api.send_request", "ssh.connect.reserved"],
+      syncStrategy: "local-first-reserved",
+    } as T;
+  }
+
+  if (command === "workspace_list") {
+    return mockState as T;
+  }
+
+  if (command === "workspace_create") {
+    const workspace: Workspace = {
+      ...mockWorkspace,
+      id: crypto.randomUUID(),
+      name: String(args?.name ?? "New Workspace"),
+      isDefault: false,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    mockState.workspaces = [workspace, ...mockState.workspaces];
+    mockState.activeWorkspaceId = workspace.id;
+    return workspace as T;
+  }
+
+  if (command === "workspace_rename") {
+    const workspaceId = String(args?.workspaceId ?? "");
+    const workspace = mockState.workspaces.find((item) => item.id === workspaceId);
+    if (!workspace) throw new Error("workspace not found");
+    workspace.name = String(args?.name ?? workspace.name);
+    workspace.updatedAt = new Date().toISOString();
+    return workspace as T;
+  }
+
+  if (command === "workspace_delete") {
+    const workspaceId = String(args?.workspaceId ?? "");
+    if (mockState.workspaces.length <= 1) {
+      throw new Error("at least one workspace must remain");
+    }
+    mockState.workspaces = mockState.workspaces.filter((item) => item.id !== workspaceId);
+    if (mockState.activeWorkspaceId === workspaceId) {
+      mockState.activeWorkspaceId = mockState.workspaces[0]?.id ?? mockWorkspace.id;
+    }
+    return mockState as T;
+  }
+
+  if (command === "workspace_set_active") {
+    mockState.activeWorkspaceId = String(args?.workspaceId ?? mockState.activeWorkspaceId);
+    return mockState as T;
+  }
+
+  if (command === "workspace_environment_get") {
+    return {
+      ...mockEnvironment,
+      workspaceId: String(args?.workspaceId ?? mockState.activeWorkspaceId),
+    } as T;
+  }
+
+  if (command === "workspace_environment_update") {
+    mockEnvironment = {
+      workspaceId: String(args?.workspaceId ?? mockState.activeWorkspaceId),
+      variables: (args?.variables as WorkspaceEnvironment["variables"]) ?? [],
+      updatedAt: new Date().toISOString(),
+    };
+    return mockEnvironment as T;
+  }
+
+  if (command === "api_history_list") {
+    return mockHistory as T;
+  }
+
+  if (command === "api_saved_requests") {
+    return mockSavedRequests as T;
+  }
+
+  if (command === "api_request_save") {
+    const input = args?.input as ApiRequestInput;
+    const saved: ApiSavedRequest = {
+      id: crypto.randomUUID(),
+      workspaceId: input.workspaceId,
+      name: input.name || `${input.method} ${input.url}`,
+      method: input.method,
+      url: input.url,
+      headersJson: JSON.stringify(input.headers),
+      queryJson: JSON.stringify(input.query),
+      body: input.body ?? null,
+      bodyKind: input.bodyKind,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      deletedAt: null,
+      revision: 1,
+      syncStatus: "local",
+      remoteId: null,
+    };
+    mockSavedRequests = [saved, ...mockSavedRequests];
+    return saved as T;
+  }
+
+  if (command === "api_send_request") {
+    const input = args?.input as ApiRequestInput;
+    const started = performance.now();
+    const resolved = resolveInput(input, mockEnvironment.variables);
+    const url = new URL(resolved.url);
+    resolved.query
+      .filter((item) => item.enabled && item.key)
+      .forEach((item) => url.searchParams.append(item.key, item.value));
+    const headers = Object.fromEntries(
+      resolved.headers
+        .filter((item) => item.enabled && item.key)
+        .map((item) => [item.key, item.value]),
+    );
+    const response = await fetch(url, {
+      method: resolved.method,
+      headers,
+      body:
+        resolved.method === "GET" || resolved.method === "HEAD"
+          ? undefined
+          : resolved.body || undefined,
+    });
+    const body = await response.text();
+    const result: ApiResponse = {
+      historyId: crypto.randomUUID(),
+      status: response.status,
+      statusText: response.statusText,
+      headers: Array.from(response.headers.entries()).map(([key, value]) => ({
+        key,
+        value,
+        enabled: true,
+      })),
+      body,
+      durationMs: Math.round(performance.now() - started),
+    };
+    mockHistory = [
+      {
+        id: result.historyId,
+        workspaceId: input.workspaceId,
+        name: input.name ?? null,
+        method: resolved.method,
+        url: resolved.url,
+        status: result.status,
+        durationMs: result.durationMs,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        deletedAt: null,
+        revision: 1,
+        syncStatus: "local",
+        remoteId: null,
+      },
+      ...mockHistory,
+    ];
+    return result as T;
+  }
+
+  throw new Error(`Mock command is not implemented: ${command}`);
+}
+
+export function getSystemHealth() {
+  return call<SystemHealth>("system_health");
+}
+
+export function getWorkspaceState() {
+  return call<WorkspaceState>("workspace_list");
+}
+
+export function createWorkspace(name: string) {
+  return call<Workspace>("workspace_create", { name });
+}
+
+export function renameWorkspace(workspaceId: string, name: string) {
+  return call<Workspace>("workspace_rename", { workspaceId, name });
+}
+
+export function deleteWorkspace(workspaceId: string) {
+  return call<WorkspaceState>("workspace_delete", { workspaceId });
+}
+
+export function setActiveWorkspace(workspaceId: string) {
+  return call<WorkspaceState>("workspace_set_active", { workspaceId });
+}
+
+export function getWorkspaceEnvironment(workspaceId: string) {
+  return call<WorkspaceEnvironment>("workspace_environment_get", { workspaceId });
+}
+
+export function updateWorkspaceEnvironment(
+  workspaceId: string,
+  variables: WorkspaceEnvironment["variables"],
+) {
+  return call<WorkspaceEnvironment>("workspace_environment_update", {
+    workspaceId,
+    variables,
+  });
+}
+
+export function sendApiRequest(input: ApiRequestInput) {
+  return call<ApiResponse>("api_send_request", { input });
+}
+
+export function saveApiRequest(input: ApiRequestInput) {
+  return call<ApiSavedRequest>("api_request_save", { input });
+}
+
+export function listApiHistory(workspaceId: string) {
+  return call<ApiHistoryItem[]>("api_history_list", { workspaceId, limit: 50 });
+}
+
+export function listSavedApiRequests(workspaceId: string) {
+  return call<ApiSavedRequest[]>("api_saved_requests", { workspaceId });
+}
+
+function resolveInput(input: ApiRequestInput, variables: WorkspaceEnvironment["variables"]) {
+  return {
+    ...input,
+    url: resolveTemplate(input.url, variables),
+    headers: input.headers.map((item) => ({
+      ...item,
+      key: resolveTemplate(item.key, variables),
+      value: resolveTemplate(item.value, variables),
+    })),
+    query: input.query.map((item) => ({
+      ...item,
+      key: resolveTemplate(item.key, variables),
+      value: resolveTemplate(item.value, variables),
+    })),
+    body: input.body ? resolveTemplate(input.body, variables) : input.body,
+  };
+}
+
+function resolveTemplate(value: string, variables: WorkspaceEnvironment["variables"]) {
+  return variables
+    .filter((item) => item.enabled && item.key)
+    .reduce(
+      (current, item) => current.split(`{{${item.key}}}`).join(item.value),
+      value,
+    );
+}
