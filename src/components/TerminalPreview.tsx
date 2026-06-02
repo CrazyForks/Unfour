@@ -17,9 +17,9 @@ export function TerminalPreview() {
       fontFamily: "JetBrains Mono, Consolas, monospace",
       fontSize: 13,
       theme: {
-        background: "#101114",
-        foreground: "#f4f4f5",
-        cursor: "#14b8a6",
+        background: "#0d1117",
+        foreground: "#d6dee7",
+        cursor: "#2dd4bf",
       },
     });
     const fitAddon = new FitAddon();
@@ -32,5 +32,5 @@ export function TerminalPreview() {
     return () => terminal.dispose();
   }, []);
 
-  return <div className="h-full min-h-[360px] overflow-hidden rounded-md bg-zinc-950 p-2" ref={hostRef} />;
+  return <div className="h-full min-h-[360px] overflow-hidden rounded-md bg-slate-950 p-2" ref={hostRef} />;
 }

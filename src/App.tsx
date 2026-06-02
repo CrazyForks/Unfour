@@ -192,21 +192,21 @@ function App() {
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? tabs[0];
 
   return (
-    <div className="flex h-screen min-h-[680px] bg-zinc-100 text-zinc-950">
+    <div className="app-shell flex h-screen min-h-[680px] text-slate-950">
       <aside
         className={cn(
-          "flex h-full shrink-0 flex-col border-r border-zinc-200 bg-white transition-all",
-          sidebarCollapsed ? "w-[64px]" : "w-[292px]",
+          "flex h-full shrink-0 flex-col border-r border-slate-300 bg-slate-50/95 transition-all",
+          sidebarCollapsed ? "w-[64px]" : "w-[272px]",
         )}
       >
-        <div className="flex h-14 items-center gap-2 border-b border-zinc-200 px-3">
-          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-zinc-950 text-white">
+        <div className="flex h-14 items-center gap-2 border-b border-slate-300 px-3">
+          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-slate-950 text-white shadow-sm">
             <Activity size={17} />
           </div>
           {!sidebarCollapsed && (
             <div className="min-w-0">
               <div className="truncate text-sm font-semibold">Unfour Workspace</div>
-              <div className="truncate text-xs text-zinc-500">
+              <div className="truncate text-xs text-slate-500">
                 {healthQuery.data?.syncStrategy ?? "local-first"}
               </div>
             </div>
@@ -229,7 +229,7 @@ function App() {
         <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-3">
           {!sidebarCollapsed && (
             <form
-              className="flex gap-2"
+              className="flex gap-2 rounded-md border border-slate-200 bg-white p-1.5 shadow-sm"
               onSubmit={(event) => {
                 event.preventDefault();
                 if (newWorkspaceName.trim()) {
@@ -256,10 +256,10 @@ function App() {
             {workspaceQuery.data?.workspaces.map((workspace) => (
               <button
                 className={cn(
-                  "flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-sm",
+                  "flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-sm transition-colors",
                   activeWorkspace?.id === workspace.id
-                    ? "bg-teal-50 text-teal-800"
-                    : "text-zinc-700 hover:bg-zinc-100",
+                    ? "bg-teal-50 text-teal-900 ring-1 ring-inset ring-teal-200"
+                    : "text-slate-700 hover:bg-slate-100 hover:text-slate-950",
                 )}
                 key={workspace.id}
                 onClick={() => activateWorkspaceMutation.mutate(workspace.id)}
@@ -312,7 +312,7 @@ function App() {
           </ResourceGroup>
         </div>
 
-        <div className="border-t border-zinc-200 p-3">
+        <div className="border-t border-slate-300 p-3">
           <SidebarAction
             collapsed={sidebarCollapsed}
             icon={<Settings size={15} />}
@@ -324,11 +324,11 @@ function App() {
       </aside>
 
       <main className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-14 items-center justify-between border-b border-zinc-200 bg-white px-4">
+        <header className="flex h-14 items-center justify-between border-b border-slate-300 bg-white/90 px-4">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <Input
-                className="h-8 w-[260px] border-transparent bg-zinc-50 font-semibold"
+                className="h-8 w-[260px] border-transparent bg-slate-100 font-semibold hover:bg-white"
                 onChange={(event) => setWorkspaceDraftName(event.target.value)}
                 value={workspaceDraftName}
               />
@@ -368,7 +368,7 @@ function App() {
                 <Trash2 size={15} />
               </Button>
             </div>
-            <div className="flex items-center gap-2 text-xs text-zinc-500">
+            <div className="flex items-center gap-2 text-xs text-slate-500">
               <Badge tone={healthQuery.data?.storageReady ? "green" : "amber"}>
                 {healthQuery.data?.storageReady ? "local storage" : "checking"}
               </Badge>
@@ -381,14 +381,14 @@ function App() {
           </div>
         </header>
 
-        <div className="flex h-10 items-end gap-1 border-b border-zinc-200 bg-white px-3">
+        <div className="flex h-10 items-end gap-1 border-b border-slate-300 bg-slate-50/80 px-3">
           {tabs.map((tab) => (
             <button
               className={cn(
-                "flex h-8 items-center gap-2 rounded-t-md border border-b-0 px-3 text-sm",
+                "flex h-8 items-center gap-2 rounded-t-md border border-b-0 px-3 text-sm transition-colors",
                 activeTabId === tab.id
-                  ? "border-zinc-200 bg-zinc-100 text-zinc-950"
-                  : "border-transparent text-zinc-500 hover:bg-zinc-50",
+                  ? "border-slate-300 bg-white text-slate-950 shadow-sm"
+                  : "border-transparent text-slate-500 hover:bg-slate-100 hover:text-slate-800",
               )}
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
@@ -402,7 +402,7 @@ function App() {
           ))}
         </div>
 
-        <section className="min-h-0 flex-1 overflow-hidden p-4">
+        <section className="min-h-0 flex-1 overflow-hidden p-2">
           {activeTab.kind === "api" && activeWorkspace && (
             <ApiClientPanel workspaceId={activeWorkspace.id} />
           )}
@@ -429,7 +429,7 @@ function ResourceGroup({
 }) {
   return (
     <div>
-      <div className="mb-1 flex h-7 items-center gap-2 px-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+      <div className="mb-1 flex h-7 items-center gap-2 px-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
         {icon}
         {!collapsed && title}
       </div>
@@ -454,8 +454,10 @@ function SidebarAction({
   return (
     <button
       className={cn(
-        "flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-sm",
-        selected ? "bg-zinc-950 text-white" : "text-zinc-700 hover:bg-zinc-100",
+        "flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-sm transition-colors",
+        selected
+          ? "bg-slate-950 text-white shadow-sm"
+          : "text-slate-700 hover:bg-slate-100 hover:text-slate-950",
       )}
       onClick={onClick}
       type="button"
@@ -628,11 +630,11 @@ function ApiClientPanel({ workspaceId }: { workspaceId: string }) {
   }
 
   return (
-    <div className="grid h-full min-h-0 grid-cols-[minmax(520px,1fr)_380px] gap-4">
-      <form className="flex min-h-0 flex-col rounded-md border border-zinc-200 bg-white" onSubmit={submit}>
-        <div className="flex items-center gap-2 border-b border-zinc-200 p-3">
+    <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)_300px] gap-2">
+      <form className="surface-panel flex min-h-0 flex-col rounded-md" onSubmit={submit}>
+        <div className="surface-header flex items-center gap-2 px-3 py-2">
           <select
-            className="h-9 rounded-md border border-zinc-200 bg-white px-2 text-sm font-semibold outline-none focus:border-teal-500"
+            className="h-9 rounded-md border border-slate-300 bg-white px-2 text-sm font-semibold text-slate-900 outline-none focus:border-teal-700"
             onChange={(event) => setMethod(event.target.value)}
             value={method}
           >
@@ -658,8 +660,8 @@ function ApiClientPanel({ workspaceId }: { workspaceId: string }) {
           </Button>
         </div>
 
-        <div className="grid min-h-0 flex-1 grid-cols-[320px_minmax(0,1fr)]">
-          <div className="space-y-4 overflow-y-auto border-r border-zinc-200 p-3">
+        <div className="grid min-h-0 flex-1 grid-cols-[280px_minmax(0,1fr)]">
+          <div className="space-y-3 overflow-y-auto border-r border-slate-200 bg-slate-50/55 p-3">
             <SavedRequestsList
               collectionStatus={collectionStatus}
               importing={importCollectionMutation.isPending}
@@ -671,9 +673,9 @@ function ApiClientPanel({ workspaceId }: { workspaceId: string }) {
             <FieldGroup title="Request">
               <Input onChange={(event) => setName(event.target.value)} value={name} />
             </FieldGroup>
-            <div className="rounded-md border border-zinc-200 p-3">
+            <div className="rounded-md border border-slate-200 bg-white p-3 shadow-sm">
               <div className="mb-2 flex items-center justify-between">
-                <span className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                   Environment
                 </span>
                 <Button
@@ -700,7 +702,7 @@ function ApiClientPanel({ workspaceId }: { workspaceId: string }) {
           </div>
 
           <div className="flex min-h-0 flex-col">
-            <div className="flex h-10 items-center border-b border-zinc-200 px-3 text-sm font-medium">
+            <div className="surface-header flex h-10 items-center px-3 text-sm font-medium">
               Body
             </div>
             <div className="min-h-0 flex-1">
@@ -721,9 +723,9 @@ function ApiClientPanel({ workspaceId }: { workspaceId: string }) {
         </div>
       </form>
 
-      <div className="flex min-h-0 flex-col gap-4">
-        <section className="flex min-h-0 flex-1 flex-col rounded-md border border-zinc-200 bg-white">
-          <div className="flex h-10 items-center justify-between border-b border-zinc-200 px-3">
+      <div className="flex min-h-0 flex-col gap-3">
+        <section className="surface-panel flex min-h-0 flex-1 flex-col rounded-md">
+          <div className="surface-header flex h-10 items-center justify-between px-3">
             <div className="flex items-center gap-2 text-sm font-semibold">
               <Braces size={15} />
               Response
@@ -755,8 +757,8 @@ function ApiClientPanel({ workspaceId }: { workspaceId: string }) {
           </div>
         </section>
 
-        <section className="h-[270px] rounded-md border border-zinc-200 bg-white">
-          <div className="flex h-10 items-center justify-between border-b border-zinc-200 px-3">
+        <section className="surface-panel h-[270px] rounded-md">
+          <div className="surface-header flex h-10 items-center justify-between px-3">
             <div className="flex items-center gap-2 text-sm font-semibold">
               <History size={15} />
               History
@@ -790,9 +792,9 @@ function SavedRequestsList({
   onLoad: (item: ApiSavedRequest) => void;
 }) {
   return (
-    <div className="rounded-md border border-zinc-200 p-3">
+    <div className="rounded-md border border-slate-200 bg-white p-3 shadow-sm">
       <div className="mb-2 flex items-center justify-between">
-        <span className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
           Saved
         </span>
         <Badge tone="neutral">{items.length}</Badge>
@@ -821,7 +823,7 @@ function SavedRequestsList({
           />
           <span
             className={cn(
-              "inline-flex h-8 w-full cursor-pointer items-center justify-center gap-2 rounded-md border border-zinc-200 bg-white px-3 text-xs font-medium text-zinc-800 hover:bg-zinc-50",
+              "inline-flex h-8 w-full cursor-pointer items-center justify-center gap-2 rounded-md border border-slate-300 bg-white px-3 text-xs font-medium text-slate-800 hover:bg-slate-50",
               importing && "pointer-events-none opacity-50",
             )}
           >
@@ -831,14 +833,14 @@ function SavedRequestsList({
         </label>
       </div>
       {collectionStatus && (
-        <div className="mb-2 truncate rounded-md bg-zinc-50 px-2 py-1 text-xs text-zinc-600">
+        <div className="mb-2 truncate rounded-md bg-slate-50 px-2 py-1 text-xs text-slate-600">
           {collectionStatus}
         </div>
       )}
       <div className="max-h-32 space-y-1 overflow-y-auto">
         {items.map((item) => (
           <button
-            className="flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-xs hover:bg-zinc-100"
+            className="flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-xs text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-950"
             key={item.id}
             onClick={() => onLoad(item)}
             type="button"
@@ -848,7 +850,7 @@ function SavedRequestsList({
           </button>
         ))}
         {items.length === 0 && (
-          <div className="py-3 text-center text-xs text-zinc-500">No saved requests</div>
+          <div className="empty-state rounded-md py-3 text-center text-xs">No saved requests</div>
         )}
       </div>
     </div>
@@ -858,7 +860,7 @@ function SavedRequestsList({
 function FieldGroup({ children, title }: { children: React.ReactNode; title: string }) {
   return (
     <label className="block space-y-2">
-      <span className="text-xs font-semibold uppercase tracking-wide text-zinc-500">{title}</span>
+      <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</span>
       {children}
     </label>
   );
@@ -882,7 +884,7 @@ function KeyValueEditor({
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold uppercase tracking-wide text-zinc-500">{title}</span>
+        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</span>
         <Button
           onClick={() => onChange([...items, { key: "", value: "", enabled: true }])}
           size="sm"
@@ -933,12 +935,12 @@ function EnvironmentHints({ variables }: { variables: KeyValue[] }) {
   return (
     <div className="mt-2 space-y-1 text-xs">
       {duplicateKeys.length > 0 && (
-        <div className="rounded-md bg-amber-50 px-2 py-1 text-amber-700">
+        <div className="rounded-md bg-amber-50 px-2 py-1 text-amber-800 ring-1 ring-inset ring-amber-200">
           Duplicate variables: {duplicateKeys.join(", ")}
         </div>
       )}
       {sensitiveKeys.length > 0 && (
-        <div className="rounded-md bg-zinc-50 px-2 py-1 text-zinc-600">
+        <div className="rounded-md bg-slate-50 px-2 py-1 text-slate-600 ring-1 ring-inset ring-slate-200">
           Sensitive-looking values are masked locally: {sensitiveKeys.join(", ")}
         </div>
       )}
@@ -1084,7 +1086,7 @@ const columnHelper = createColumnHelper<ApiHistoryItem>();
 function ResponseSummary({ response }: { response: ApiResponse | null }) {
   if (!response) {
     return (
-      <div className="grid grid-cols-3 border-b border-zinc-200 text-xs text-zinc-500">
+      <div className="grid grid-cols-3 border-b border-slate-200 bg-slate-50 text-xs text-slate-500">
         <div className="px-3 py-2">Headers -</div>
         <div className="px-3 py-2">Size -</div>
         <div className="px-3 py-2">Timing -</div>
@@ -1101,16 +1103,16 @@ function ResponseSummary({ response }: { response: ApiResponse | null }) {
   const cookies = response.headers.filter((item) => item.key.toLowerCase() === "set-cookie");
 
   return (
-    <div className="grid grid-cols-3 border-b border-zinc-200 text-xs text-zinc-600">
+    <div className="grid grid-cols-3 border-b border-slate-200 bg-slate-50 text-xs text-slate-600">
       <div className="min-w-0 px-3 py-2">
-        <span className="font-medium text-zinc-800">{response.headers.length}</span> headers
+        <span className="font-medium text-slate-800">{response.headers.length}</span> headers
         {cookies.length > 0 && <span>, {cookies.length} cookies</span>}
       </div>
       <div className="min-w-0 px-3 py-2">
-        <span className="font-medium text-zinc-800">{bodySize}</span> body, {headerSize} headers
+        <span className="font-medium text-slate-800">{bodySize}</span> body, {headerSize} headers
       </div>
       <div className="min-w-0 px-3 py-2">
-        <span className="font-medium text-zinc-800">{response.durationMs}ms</span> total
+        <span className="font-medium text-slate-800">{response.durationMs}ms</span> total
       </div>
     </div>
   );
@@ -1128,21 +1130,21 @@ function ResponseDetails({ response }: { response: ApiResponse | null }) {
   ).length;
 
   return (
-    <div className="grid max-h-32 grid-cols-[1.4fr_1fr] overflow-hidden border-b border-zinc-200 text-xs">
-      <div className="min-w-0 overflow-auto border-r border-zinc-200 p-2">
-        <div className="mb-1 font-semibold uppercase tracking-wide text-zinc-500">Headers</div>
+    <div className="grid max-h-32 grid-cols-[1.4fr_1fr] overflow-hidden border-b border-slate-200 text-xs">
+      <div className="min-w-0 overflow-auto border-r border-slate-200 p-2">
+        <div className="mb-1 font-semibold uppercase tracking-wide text-slate-500">Headers</div>
         <div className="space-y-1">
           {response.headers.map((header) => (
             <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-2" key={`${header.key}-${header.value}`}>
-              <span className="truncate font-medium text-zinc-700">{header.key}</span>
-              <span className="truncate text-zinc-500">{header.value}</span>
+              <span className="truncate font-medium text-slate-700">{header.key}</span>
+              <span className="truncate text-slate-500">{header.value}</span>
             </div>
           ))}
         </div>
       </div>
       <div className="min-w-0 overflow-auto p-2">
-        <div className="mb-1 font-semibold uppercase tracking-wide text-zinc-500">Timing / Size</div>
-        <div className="grid grid-cols-2 gap-2 text-zinc-600">
+        <div className="mb-1 font-semibold uppercase tracking-wide text-slate-500">Timing / Size</div>
+        <div className="grid grid-cols-2 gap-2 text-slate-600">
           <Metric label="Total" value={`${response.durationMs}ms`} />
           <Metric label="Status" value={`${response.status} ${response.statusText}`} />
           <Metric label="Body" value={formatByteSize(bodyBytes)} />
@@ -1156,9 +1158,9 @@ function ResponseDetails({ response }: { response: ApiResponse | null }) {
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="min-w-0 rounded-md bg-zinc-50 px-2 py-1">
-      <div className="text-[10px] uppercase text-zinc-400">{label}</div>
-      <div className="truncate font-medium text-zinc-700">{value}</div>
+    <div className="min-w-0 rounded-md bg-slate-50 px-2 py-1 ring-1 ring-inset ring-slate-200">
+      <div className="text-[10px] uppercase text-slate-400">{label}</div>
+      <div className="truncate font-medium text-slate-700">{value}</div>
     </div>
   );
 }
@@ -1223,11 +1225,11 @@ function HistoryTable({
   return (
     <div className="h-[228px] overflow-auto">
       <table className="w-full text-left text-xs">
-        <thead className="sticky top-0 bg-zinc-50 text-zinc-500">
+        <thead className="sticky top-0 bg-slate-50 text-slate-500">
           {table.getHeaderGroups().map((headerGroup) => (
             <tr key={headerGroup.id}>
               {headerGroup.headers.map((header) => (
-                <th className="border-b border-zinc-200 px-3 py-2 font-medium" key={header.id}>
+                <th className="border-b border-slate-200 px-3 py-2 font-medium" key={header.id}>
                   {flexRender(header.column.columnDef.header, header.getContext())}
                 </th>
               ))}
@@ -1236,7 +1238,7 @@ function HistoryTable({
         </thead>
         <tbody>
           {table.getRowModel().rows.map((row) => (
-            <tr className="border-b border-zinc-100" key={row.id}>
+            <tr className="border-b border-slate-100 hover:bg-slate-50/70" key={row.id}>
               {row.getVisibleCells().map((cell) => (
                 <td className="px-3 py-2" key={cell.id}>
                   {flexRender(cell.column.columnDef.cell, cell.getContext())}
@@ -1247,7 +1249,7 @@ function HistoryTable({
         </tbody>
       </table>
       {items.length === 0 && (
-        <div className="flex h-24 items-center justify-center text-sm text-zinc-500">
+        <div className="empty-state m-3 flex h-24 items-center justify-center rounded-md text-sm">
           No requests yet
         </div>
       )}
@@ -1257,13 +1259,13 @@ function HistoryTable({
 
 function SshPanel() {
   return (
-    <div className="grid h-full min-h-0 grid-cols-[360px_minmax(0,1fr)] gap-4">
-      <section className="rounded-md border border-zinc-200 bg-white p-4">
-        <div className="mb-4 flex items-center gap-2 text-sm font-semibold">
+    <div className="grid h-full min-h-0 grid-cols-[300px_minmax(0,1fr)] gap-2">
+      <section className="surface-panel rounded-md">
+        <div className="surface-header flex h-10 items-center gap-2 px-3 text-sm font-semibold">
           <TerminalSquare size={16} />
           SSH Sessions
         </div>
-        <div className="space-y-3">
+        <div className="space-y-3 p-3">
           <Input placeholder="Host" value="example.internal" readOnly />
           <Input placeholder="User" value="deploy" readOnly />
           <div className="grid grid-cols-2 gap-2">
@@ -1437,9 +1439,9 @@ function DatabasePanel({ workspaceId }: { workspaceId: string }) {
   }
 
   return (
-    <div className="grid h-full min-h-0 grid-cols-[320px_minmax(0,1fr)] gap-4">
-      <section className="flex min-h-0 flex-col rounded-md border border-zinc-200 bg-white">
-        <div className="flex h-10 items-center justify-between border-b border-zinc-200 px-3">
+    <div className="grid h-full min-h-0 grid-cols-[300px_minmax(0,1fr)] gap-2">
+      <section className="surface-panel flex min-h-0 flex-col rounded-md">
+        <div className="surface-header flex h-10 items-center justify-between px-3">
           <div className="flex items-center gap-2 text-sm font-semibold">
             <Database size={16} />
             Connections
@@ -1449,7 +1451,7 @@ function DatabasePanel({ workspaceId }: { workspaceId: string }) {
           </Button>
         </div>
 
-        <form className="space-y-3 border-b border-zinc-200 p-3" onSubmit={submitConnection}>
+        <form className="space-y-3 border-b border-slate-200 bg-slate-50/55 p-3" onSubmit={submitConnection}>
           <FieldGroup title="Name">
             <Input
               onChange={(event) => updateForm({ name: event.target.value })}
@@ -1458,7 +1460,7 @@ function DatabasePanel({ workspaceId }: { workspaceId: string }) {
           </FieldGroup>
           <FieldGroup title="Driver">
             <select
-              className="h-9 w-full rounded-md border border-zinc-200 bg-white px-2 text-sm outline-none focus:border-teal-500"
+              className="h-9 w-full rounded-md border border-slate-300 bg-white px-2 text-sm text-slate-950 outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/15"
               onChange={(event) =>
                 updateForm({
                   driver: event.target.value as DatabaseConnectionInput["driver"],
@@ -1554,7 +1556,7 @@ function DatabasePanel({ workspaceId }: { workspaceId: string }) {
 
         <div className="min-h-0 flex-1 overflow-y-auto p-3">
           <div className="mb-2 flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
               Saved Connections
             </span>
             <Badge tone="neutral">{connectionsQuery.data?.length ?? 0}</Badge>
@@ -1563,10 +1565,10 @@ function DatabasePanel({ workspaceId }: { workspaceId: string }) {
             {connectionsQuery.data?.map((connection) => (
               <button
                 className={cn(
-                  "flex min-h-9 w-full items-center justify-between gap-2 rounded-md px-2 text-left text-sm",
+                  "flex min-h-9 w-full items-center justify-between gap-2 rounded-md px-2 text-left text-sm transition-colors",
                   selectedConnectionId === connection.id
-                    ? "bg-teal-50 text-teal-800"
-                    : "hover:bg-zinc-100",
+                    ? "bg-teal-50 text-teal-900 ring-1 ring-inset ring-teal-200"
+                    : "text-slate-700 hover:bg-slate-100 hover:text-slate-950",
                 )}
                 key={connection.id}
                 onClick={() => setSelectedConnectionId(connection.id)}
@@ -1579,14 +1581,14 @@ function DatabasePanel({ workspaceId }: { workspaceId: string }) {
               </button>
             ))}
             {connectionsQuery.data?.length === 0 && (
-              <div className="py-4 text-center text-sm text-zinc-500">
+              <div className="empty-state rounded-md py-4 text-center text-sm">
                 No database connections
               </div>
             )}
           </div>
 
-          <div className="mt-4 border-t border-zinc-200 pt-3">
-            <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+          <div className="mt-4 border-t border-slate-200 pt-3">
+            <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
               <Table2 size={14} />
               Schema
             </div>
@@ -1600,8 +1602,8 @@ function DatabasePanel({ workspaceId }: { workspaceId: string }) {
           </div>
         </div>
       </section>
-      <section className="flex min-h-0 flex-col rounded-md border border-zinc-200 bg-white">
-        <div className="flex h-10 items-center justify-between border-b border-zinc-200 px-3">
+      <section className="surface-panel flex min-h-0 flex-col rounded-md">
+        <div className="surface-header flex h-10 items-center justify-between px-3">
           <div className="flex items-center gap-2 text-sm font-semibold">
             <Clock size={15} />
             SQL Editor
@@ -1610,7 +1612,7 @@ function DatabasePanel({ workspaceId }: { workspaceId: string }) {
             {selectedConnection && <Badge tone="neutral">{selectedConnection.name}</Badge>}
             <Button
               disabled={!selectedConnectionId || executeMutation.isPending}
-              className={pendingSqlConfirmation ? "bg-red-700 hover:bg-red-800" : undefined}
+              className={pendingSqlConfirmation ? "bg-rose-700 hover:bg-rose-800" : undefined}
               onClick={() => executeMutation.mutate(pendingSqlConfirmation)}
               size="sm"
               type="button"
@@ -1620,7 +1622,7 @@ function DatabasePanel({ workspaceId }: { workspaceId: string }) {
             </Button>
           </div>
         </div>
-        <div className="min-h-0 flex-[0.55] border-b border-zinc-200">
+        <div className="min-h-0 flex-[0.55] border-b border-slate-200">
           <Editor
             defaultLanguage="sql"
             onChange={(value) => setSql(value ?? "")}
@@ -1653,7 +1655,7 @@ function StatusLine({
 }) {
   if (error) {
     return (
-      <div className="flex items-center gap-2 rounded-md bg-red-50 px-2 py-2 text-xs text-red-700">
+      <div className="flex items-center gap-2 rounded-md bg-rose-50 px-2 py-2 text-xs text-rose-800 ring-1 ring-inset ring-rose-200">
         <XCircle size={14} />
         <span className="min-w-0 flex-1">{formatError(error)}</span>
       </div>
@@ -1667,8 +1669,10 @@ function StatusLine({
   return (
     <div
       className={cn(
-        "flex items-center gap-2 rounded-md px-2 py-2 text-xs",
-        result.ok ? "bg-green-50 text-green-700" : "bg-amber-50 text-amber-700",
+        "flex items-center gap-2 rounded-md px-2 py-2 text-xs ring-1 ring-inset",
+        result.ok
+          ? "bg-emerald-50 text-emerald-800 ring-emerald-200"
+          : "bg-amber-50 text-amber-800 ring-amber-200",
       )}
     >
       {result.ok ? <CheckCircle2 size={14} /> : <XCircle size={14} />}
@@ -1694,22 +1698,22 @@ function SchemaTree({
   schema?: DatabaseSchema;
 }) {
   if (error) {
-    return <div className="text-xs text-amber-700">{formatError(error)}</div>;
+    return <div className="rounded-md bg-amber-50 p-2 text-xs text-amber-800 ring-1 ring-inset ring-amber-200">{formatError(error)}</div>;
   }
 
   if (loading) {
-    return <div className="text-xs text-zinc-500">Loading schema...</div>;
+    return <div className="empty-state rounded-md p-3 text-xs">Loading schema...</div>;
   }
 
   if (!schema?.tables.length) {
-    return <div className="text-xs text-zinc-500">Select a SQLite connection to inspect tables.</div>;
+    return <div className="empty-state rounded-md p-3 text-xs">Select a SQLite connection to inspect tables.</div>;
   }
 
   return (
     <div className="space-y-3">
       {schema.tables.map((table) => (
         <div key={table.name}>
-          <div className="flex items-center justify-between gap-2 rounded-md bg-zinc-50 px-2 py-1 text-xs font-semibold">
+          <div className="flex items-center justify-between gap-2 rounded-md bg-slate-50 px-2 py-1 text-xs font-semibold ring-1 ring-inset ring-slate-200">
             <span className="truncate">{table.name}</span>
             <div className="flex items-center gap-1">
               <Badge tone="neutral">{table.kind}</Badge>
@@ -1726,9 +1730,9 @@ function SchemaTree({
           </div>
           <div className="mt-1 space-y-1 pl-2">
             {table.columns.map((column) => (
-              <div className="flex items-center gap-2 text-xs text-zinc-600" key={column.name}>
+              <div className="flex items-center gap-2 text-xs text-slate-600" key={column.name}>
                 <span className="min-w-0 flex-1 truncate">{column.name}</span>
-                <span className="text-zinc-400">{column.dataType || "ANY"}</span>
+                <span className="text-slate-400">{column.dataType || "ANY"}</span>
                 {column.primaryKey && <Badge tone="teal">pk</Badge>}
               </div>
             ))}
@@ -1764,7 +1768,8 @@ function DatabaseResultView({
       <div
         className={cn(
           "flex min-h-0 flex-1 items-center justify-center p-4 text-sm",
-          pendingConfirmation ? "text-amber-700" : "text-red-700",
+          "empty-state",
+          pendingConfirmation ? "text-amber-800" : "text-rose-800",
         )}
       >
         {pendingConfirmation ? confirmationMessage(error) : formatError(error)}
@@ -1774,7 +1779,7 @@ function DatabaseResultView({
 
   if (isPending) {
     return (
-      <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-zinc-500">
+      <div className="empty-state flex min-h-0 flex-1 items-center justify-center text-sm">
         Running query...
       </div>
     );
@@ -1782,7 +1787,7 @@ function DatabaseResultView({
 
   if (!result) {
     return (
-      <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-zinc-500">
+      <div className="empty-state flex min-h-0 flex-1 items-center justify-center text-sm">
         Query results will appear here.
       </div>
     );
@@ -1790,7 +1795,7 @@ function DatabaseResultView({
 
   if (result.columns.length === 0) {
     return (
-      <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-zinc-600">
+      <div className="empty-state flex min-h-0 flex-1 items-center justify-center text-sm text-slate-600">
         {result.affectedRows} rows affected in {result.durationMs}ms.
       </div>
     );
@@ -1841,13 +1846,13 @@ function DatabaseResultView({
               <col key={`db-col-${index}`} style={{ width }} />
             ))}
           </colgroup>
-          <thead className="sticky top-0 bg-zinc-50 text-zinc-500">
+          <thead className="sticky top-0 bg-slate-50 text-slate-500">
             <tr>
               {queryResult.columns.map((column) => (
-                <th className="border-b border-zinc-200 px-3 py-2 font-medium" key={column.name}>
+                <th className="border-b border-slate-200 px-3 py-2 font-medium" key={column.name}>
                   <div className="flex min-w-0 items-center gap-2">
                     <span className="truncate">{column.name}</span>
-                    <span className="shrink-0 text-[10px] uppercase text-zinc-400">
+                    <span className="shrink-0 text-[10px] uppercase text-slate-400">
                       {column.dataType}
                     </span>
                   </div>
@@ -1857,10 +1862,10 @@ function DatabaseResultView({
           </thead>
           <tbody>
             {pageRows.map((row, rowIndex) => (
-              <tr className="border-b border-zinc-100" key={`db-row-${startIndex + rowIndex}`}>
+              <tr className="border-b border-slate-100 hover:bg-slate-50/70" key={`db-row-${startIndex + rowIndex}`}>
                 {row.map((value, cellIndex) => (
                   <td className="truncate px-3 py-2" key={`db-cell-${cellIndex}`}>
-                    {value ?? <span className="text-zinc-400">NULL</span>}
+                    {value ?? <span className="text-slate-400">NULL</span>}
                   </td>
                 ))}
               </tr>
@@ -1868,7 +1873,7 @@ function DatabaseResultView({
           </tbody>
         </table>
       </div>
-      <div className="flex h-10 items-center justify-between gap-3 border-t border-zinc-200 px-3 text-xs text-zinc-500">
+      <div className="flex h-10 items-center justify-between gap-3 border-t border-slate-200 bg-slate-50 px-3 text-xs text-slate-500">
         <span>
           {startIndex + 1}-{Math.min(startIndex + pageRows.length, queryResult.rows.length)} of{" "}
           {queryResult.rows.length} rows in {queryResult.durationMs}ms
