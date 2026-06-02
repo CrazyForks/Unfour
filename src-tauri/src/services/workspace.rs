@@ -655,4 +655,128 @@ mod tests {
 
         assert!(matches!(result, Err(AppError::Validation(_))));
     }
+
+    #[tokio::test]
+    async fn create_switch_rename_and_delete_preserve_active_workspace() {
+        let service = service().await;
+        let default_id = service
+            .state()
+            .await
+            .expect("workspace state")
+            .active_workspace_id;
+
+        let created = service
+            .create("  Client Ops  ".to_string())
+            .await
+            .expect("create workspace");
+        let created_state = service.state().await.expect("state after create");
+        assert_eq!(created.name, "Client Ops");
+        assert_eq!(created_state.active_workspace_id, created.id);
+
+        let renamed = service
+            .rename(created.id.clone(), "Client Ops EU".to_string())
+            .await
+            .expect("rename workspace");
+        assert_eq!(renamed.name, "Client Ops EU");
+        assert_eq!(renamed.sync_status, "pending");
+
+        let switched = service
+            .set_active(default_id.clone())
+            .await
+            .expect("switch active workspace");
+        assert_eq!(switched.active_workspace_id, default_id);
+
+        let deleted = service
+            .delete(created.id.clone())
+            .await
+            .expect("delete inactive workspace");
+        assert_eq!(deleted.active_workspace_id, default_id);
+        assert!(!deleted
+            .workspaces
+            .iter()
+            .any(|workspace| workspace.id == created.id));
+    }
+
+    #[tokio::test]
+    async fn delete_active_workspace_falls_back_to_default() {
+        let service = service().await;
+        let default_id = service
+            .state()
+            .await
+            .expect("workspace state")
+            .active_workspace_id;
+        let created = service
+            .create("Scratch".to_string())
+            .await
+            .expect("create workspace");
+
+        let state = service
+            .delete(created.id)
+            .await
+            .expect("delete active workspace");
+
+        assert_eq!(state.active_workspace_id, default_id);
+        assert_eq!(state.workspaces.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn environment_update_persists_valid_variables() {
+        let service = service().await;
+        let workspace_id = service
+            .state()
+            .await
+            .expect("workspace state")
+            .active_workspace_id;
+
+        let environment = service
+            .update_environment(
+                workspace_id.clone(),
+                vec![
+                    KeyValue {
+                        key: "base_url".to_string(),
+                        value: "https://api.example.test".to_string(),
+                        enabled: true,
+                    },
+                    KeyValue {
+                        key: "disabled_duplicate_is_allowed".to_string(),
+                        value: "ignored".to_string(),
+                        enabled: false,
+                    },
+                    KeyValue {
+                        key: "DISABLED_DUPLICATE_IS_ALLOWED".to_string(),
+                        value: "also ignored".to_string(),
+                        enabled: false,
+                    },
+                ],
+            )
+            .await
+            .expect("update environment");
+        let loaded = service
+            .environment(workspace_id)
+            .await
+            .expect("load environment");
+
+        assert_eq!(environment.variables.len(), 3);
+        assert_eq!(loaded.variables[0].key, "base_url");
+        assert_eq!(loaded.variables[0].value, "https://api.example.test");
+    }
+
+    #[tokio::test]
+    async fn environment_update_rejects_invalid_variable_names() {
+        let service = service().await;
+        let state = service.state().await.expect("workspace state");
+
+        let result = service
+            .update_environment(
+                state.active_workspace_id,
+                vec![KeyValue {
+                    key: "bad name".to_string(),
+                    value: "nope".to_string(),
+                    enabled: true,
+                }],
+            )
+            .await;
+
+        assert!(matches!(result, Err(AppError::Validation(_))));
+    }
 }

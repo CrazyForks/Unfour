@@ -10,7 +10,7 @@ Unfour Workspace is a Tauri 2 desktop app for unified operations and development
 - Rust Command Bus with Workspace and API services.
 - SQLite migrations for workspaces, API requests/history, connections, and audit events.
 - Workspace environment variables with `{{variable}}` resolution for API requests.
-- Saved API requests can be loaded back into the editor.
+- Saved API requests can be grouped into folders, duplicated, deleted, and loaded back into the editor.
 - Database connection metadata, SQLite connection test, SQLite schema browsing, and SQLite SQL execution.
 - AI and cloud sync extension points reserved.
 
@@ -19,15 +19,21 @@ Unfour Workspace is a Tauri 2 desktop app for unified operations and development
 ```bash
 pnpm install
 pnpm run build
+pnpm run check
+pnpm run test:rust
 pnpm run tauri dev
 ```
 
-Rust checks should be run from `src-tauri`:
+Rust checks can be run from the repository root:
 
 ```bash
-cargo check
-cargo check --features ssh-native
+pnpm run check:rust
+pnpm run check:rust:ssh
 ```
+
+On Windows, Rust and Vite build steps write generated artifacts under `src-tauri/target` and `dist`.
+When running inside a restricted automation sandbox, those steps may need permission to spawn helper processes
+or write build artifacts.
 
 The project currently expects a modern stable Rust toolchain. This workspace was verified with `rustc 1.96.0`.
 

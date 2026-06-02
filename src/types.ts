@@ -31,6 +31,7 @@ export type WorkspaceEnvironment = {
 export type ApiRequestInput = {
   workspaceId: string;
   name?: string;
+  folderPath?: string | null;
   method: string;
   url: string;
   headers: KeyValue[];
@@ -90,6 +91,7 @@ export type ApiSavedRequest = {
   id: string;
   workspaceId: string;
   name: string;
+  folderPath: string | null;
   method: string;
   url: string;
   headersJson: string;

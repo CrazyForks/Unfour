@@ -65,6 +65,7 @@ pub struct KeyValue {
 pub struct ApiRequestInput {
     pub workspace_id: String,
     pub name: Option<String>,
+    pub folder_path: Option<String>,
     pub method: String,
     pub url: String,
     pub headers: Vec<KeyValue>,
@@ -132,6 +133,7 @@ pub struct ApiSavedRequest {
     pub id: String,
     pub workspace_id: String,
     pub name: String,
+    pub folder_path: Option<String>,
     pub method: String,
     pub url: String,
     pub headers_json: String,

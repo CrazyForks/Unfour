@@ -40,6 +40,21 @@ impl LocalDb {
         for statement in MIGRATIONS {
             sqlx::query(statement).execute(&self.pool).await?;
         }
+        self.ensure_api_request_folder_path().await?;
+
+        Ok(())
+    }
+
+    async fn ensure_api_request_folder_path(&self) -> AppResult<()> {
+        let columns =
+            sqlx::query_as::<_, (String,)>("SELECT name FROM pragma_table_info('api_requests')")
+                .fetch_all(&self.pool)
+                .await?;
+        if !columns.iter().any(|(name,)| name == "folder_path") {
+            sqlx::query("ALTER TABLE api_requests ADD COLUMN folder_path TEXT")
+                .execute(&self.pool)
+                .await?;
+        }
 
         Ok(())
     }

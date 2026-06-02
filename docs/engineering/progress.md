@@ -13,6 +13,7 @@ This document records the current implementation state and the next work slices.
 - DONE: Thin Tauri commands routed through `CommandBus`.
 - DONE: Local SQLite app database with repeatable migrations.
 - DONE: Audit log table and action recording for workspace/API/database operations.
+- DONE: Root-level validation scripts cover frontend build, Rust check, `ssh-native` check, and Rust tests.
 - DONE: AI and cloud sync extension boundaries reserved.
 - DONE: `russh` dependency is available behind `ssh-native` and configured to use the `ring` backend.
 
@@ -23,6 +24,7 @@ This document records the current implementation state and the next work slices.
 - DONE: Active workspace is persisted in `app_settings`.
 - DONE: Workspace environment variables are stored in `workspace_settings.env_json`.
 - DONE: Workspace layout JSON persists sidebar state, active tab, open tabs, and selected resource slots.
+- DONE: WorkspaceService tests cover lifecycle, active workspace fallback, environment persistence, and layout validation.
 
 ### API Client
 
@@ -32,6 +34,8 @@ This document records the current implementation state and the next work slices.
 - DONE: Workspace environment updates reject duplicate enabled variable names, and sensitive-looking values are masked in the frontend.
 - DONE: Request history is stored per workspace.
 - DONE: Saved request templates are stored per workspace and can be loaded back into the editor.
+- DONE: ApiClientService tests cover saved request scoping, secret header redaction, environment resolution, missing variables, and query URL building.
+- DONE: Saved API requests support folder grouping, duplication, and soft-delete.
 - DONE: Request history entries can be replayed into the editable API request form.
 - DONE: Response viewer shows body, headers, cookies, timing, and payload sizes.
 - DONE: Saved API request collections can be exported/imported as secret-redacted JSON.
@@ -59,6 +63,10 @@ This document records the current implementation state and the next work slices.
 
 ## Verification Status
 
+- PASS: `pnpm run test:rust`.
+- PASS: `pnpm run check:rust`.
+- PASS: `pnpm run check:rust:ssh`.
+- PASS: `pnpm run build`.
 - PASS: `node .\node_modules\typescript\bin\tsc --noEmit`.
 - PASS: `cargo fmt`.
 - PASS: `npm run build` with local permission elevation for the Vite/esbuild helper process.
@@ -78,6 +86,7 @@ Goal: make the workspace shell remember layout and open tabs.
 - DONE: Store sidebar state, active tab, open tabs, and selected resource slots in `workspace_settings.layout_json`.
 - DONE: Hydrate Zustand state after workspace load.
 - DONE: Add tests for layout JSON defaults and update validation.
+- DONE: Add tests for workspace lifecycle, active fallback, and environment validation.
 
 ### Slice 2: Database Hardening
 
@@ -117,7 +126,8 @@ Goal: move from functional request runner to Postman-like daily tool.
 - DONE: Add history replay into the editable request form.
 - DONE: Add import/export without secrets.
 - DONE: Add environment variable duplicate detection and masking for sensitive-looking values.
-- Add request duplication.
+- DONE: Add service tests for environment template resolution, missing variable errors, saved request scoping, and query URL building.
+- DONE: Add collection folders, request duplication, and saved request soft-delete.
 
 ### Slice 6: Packaging And Final User Guide
 

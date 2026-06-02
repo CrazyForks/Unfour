@@ -6,6 +6,7 @@ import {
   ChevronLeft,
   Clock,
   Clipboard,
+  Copy,
   Database,
   Download,
   Folder,
@@ -40,6 +41,7 @@ import { Input } from "./components/ui/input";
 import {
   browseDatabaseTable,
   createWorkspace,
+  deleteApiRequest,
   deleteDatabaseConnection,
   executeDatabaseQuery,
   getApiHistoryDetail,
@@ -54,6 +56,7 @@ import {
   listSavedApiRequests,
   renameWorkspace,
   saveApiRequest,
+  duplicateApiRequest,
   saveDatabaseConnection,
   sendApiRequest,
   setActiveWorkspace as setActiveWorkspaceCommand,
@@ -473,6 +476,7 @@ function ApiClientPanel({ workspaceId }: { workspaceId: string }) {
   const [method, setMethod] = useState("GET");
   const [url, setUrl] = useState("{{base_url}}/get");
   const [name, setName] = useState("Health check");
+  const [folderPath, setFolderPath] = useState("Examples");
   const [headers, setHeaders] = useState<KeyValue[]>([
     { key: "Accept", value: "application/json", enabled: true },
   ]);
@@ -510,6 +514,7 @@ function ApiClientPanel({ workspaceId }: { workspaceId: string }) {
     () => ({
       workspaceId,
       name,
+      folderPath,
       method,
       url,
       headers,
@@ -518,7 +523,7 @@ function ApiClientPanel({ workspaceId }: { workspaceId: string }) {
       bodyKind: "json",
       timeoutMs: 60_000,
     }),
-    [body, headers, method, name, query, url, workspaceId],
+    [body, folderPath, headers, method, name, query, url, workspaceId],
   );
 
   const sendMutation = useMutation({
@@ -531,6 +536,16 @@ function ApiClientPanel({ workspaceId }: { workspaceId: string }) {
 
   const saveMutation = useMutation({
     mutationFn: saveApiRequest,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["api-saved", workspaceId] }),
+  });
+
+  const duplicateSavedMutation = useMutation({
+    mutationFn: (requestId: string) => duplicateApiRequest(workspaceId, requestId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["api-saved", workspaceId] }),
+  });
+
+  const deleteSavedMutation = useMutation({
+    mutationFn: (requestId: string) => deleteApiRequest(workspaceId, requestId),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["api-saved", workspaceId] }),
   });
 
@@ -566,6 +581,7 @@ function ApiClientPanel({ workspaceId }: { workspaceId: string }) {
 
   function loadRequestDraft(request: ApiRequestInput) {
     setName(request.name ?? `${request.method} ${request.url}`);
+    setFolderPath(request.folderPath ?? "");
     setMethod(request.method);
     setUrl(request.url);
     setHeaders(request.headers);
@@ -588,6 +604,7 @@ function ApiClientPanel({ workspaceId }: { workspaceId: string }) {
       workspaceId,
       savedRequests: (savedQuery.data ?? []).map((item) => ({
         name: item.name,
+        folderPath: item.folderPath,
         method: item.method,
         url: item.url,
         headers: parseKeyValues(item.headersJson),
@@ -666,12 +683,24 @@ function ApiClientPanel({ workspaceId }: { workspaceId: string }) {
               collectionStatus={collectionStatus}
               importing={importCollectionMutation.isPending}
               items={savedQuery.data ?? []}
+              mutatingItemId={
+                duplicateSavedMutation.variables ?? deleteSavedMutation.variables ?? null
+              }
               onExport={exportCollection}
               onImport={importCollection}
               onLoad={loadSavedRequest}
+              onDuplicate={(item) => duplicateSavedMutation.mutate(item.id)}
+              onDelete={(item) => deleteSavedMutation.mutate(item.id)}
             />
             <FieldGroup title="Request">
               <Input onChange={(event) => setName(event.target.value)} value={name} />
+            </FieldGroup>
+            <FieldGroup title="Folder">
+              <Input
+                onChange={(event) => setFolderPath(event.target.value)}
+                placeholder="Examples / Auth"
+                value={folderPath}
+              />
             </FieldGroup>
             <div className="rounded-md border border-slate-200 bg-white p-3 shadow-sm">
               <div className="mb-2 flex items-center justify-between">
@@ -780,6 +809,9 @@ function SavedRequestsList({
   collectionStatus,
   importing,
   items,
+  mutatingItemId,
+  onDelete,
+  onDuplicate,
   onExport,
   onImport,
   onLoad,
@@ -787,10 +819,15 @@ function SavedRequestsList({
   collectionStatus: string;
   importing: boolean;
   items: ApiSavedRequest[];
+  mutatingItemId: string | null;
+  onDelete: (item: ApiSavedRequest) => void;
+  onDuplicate: (item: ApiSavedRequest) => void;
   onExport: () => void;
   onImport: (file: File | undefined) => void;
   onLoad: (item: ApiSavedRequest) => void;
 }) {
+  const groups = groupSavedRequests(items);
+
   return (
     <div className="rounded-md border border-slate-200 bg-white p-3 shadow-sm">
       <div className="mb-2 flex items-center justify-between">
@@ -837,17 +874,52 @@ function SavedRequestsList({
           {collectionStatus}
         </div>
       )}
-      <div className="max-h-32 space-y-1 overflow-y-auto">
-        {items.map((item) => (
-          <button
-            className="flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-xs text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-950"
-            key={item.id}
-            onClick={() => onLoad(item)}
-            type="button"
-          >
-            <Badge tone="teal">{item.method}</Badge>
-            <span className="min-w-0 flex-1 truncate">{item.name}</span>
-          </button>
+      <div className="max-h-44 space-y-3 overflow-y-auto">
+        {groups.map((group) => (
+          <div key={group.folder}>
+            <div className="mb-1 flex items-center gap-2 px-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              <Folder size={12} />
+              <span className="min-w-0 flex-1 truncate">{group.folder}</span>
+              <Badge tone="neutral">{group.items.length}</Badge>
+            </div>
+            <div className="space-y-1">
+              {group.items.map((item) => (
+                <div
+                  className="group flex h-8 w-full items-center gap-1 rounded-md px-2 text-xs text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-950"
+                  key={item.id}
+                >
+                  <button
+                    className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                    onClick={() => onLoad(item)}
+                    type="button"
+                  >
+                    <Badge tone="teal">{item.method}</Badge>
+                    <span className="min-w-0 flex-1 truncate">{item.name}</span>
+                  </button>
+                  <Button
+                    aria-label={`Duplicate ${item.name}`}
+                    disabled={mutatingItemId === item.id}
+                    onClick={() => onDuplicate(item)}
+                    size="icon"
+                    type="button"
+                    variant="ghost"
+                  >
+                    <Copy size={12} />
+                  </Button>
+                  <Button
+                    aria-label={`Delete ${item.name}`}
+                    disabled={mutatingItemId === item.id}
+                    onClick={() => onDelete(item)}
+                    size="icon"
+                    type="button"
+                    variant="ghost"
+                  >
+                    <Trash2 size={12} />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </div>
         ))}
         {items.length === 0 && (
           <div className="empty-state rounded-md py-3 text-center text-xs">No saved requests</div>
@@ -970,6 +1042,7 @@ function savedRequestToInput(saved: ApiSavedRequest, workspaceId: string): ApiRe
   return {
     workspaceId,
     name: saved.name,
+    folderPath: saved.folderPath,
     method: saved.method,
     url: saved.url,
     headers: parseKeyValues(saved.headersJson),
@@ -984,6 +1057,7 @@ function historyDetailToInput(history: ApiHistoryDetail): ApiRequestInput {
   return {
     workspaceId: history.workspaceId,
     name: history.name ?? `${history.method} ${history.url}`,
+    folderPath: null,
     method: history.method,
     url: history.url,
     headers: parseKeyValues(history.requestHeadersJson),
@@ -1021,6 +1095,7 @@ function normalizeImportedRequest(item: unknown, workspaceId: string): ApiReques
   return {
     workspaceId,
     name: typeof candidate.name === "string" ? candidate.name : undefined,
+    folderPath: typeof candidate.folderPath === "string" ? candidate.folderPath : null,
     method: candidate.method.toUpperCase(),
     url: candidate.url,
     headers: Array.isArray(candidate.headers) ? sanitizeKeyValues(candidate.headers) : [],
@@ -1047,6 +1122,25 @@ function isKeyValueLike(item: unknown): item is Partial<KeyValue> {
   }
   const candidate = item as Record<string, unknown>;
   return typeof candidate.key === "string" && typeof candidate.value === "string";
+}
+
+function groupSavedRequests(items: ApiSavedRequest[]) {
+  const groups = new Map<string, ApiSavedRequest[]>();
+  for (const item of items) {
+    const folder = item.folderPath?.trim() || "Unfiled";
+    groups.set(folder, [...(groups.get(folder) ?? []), item]);
+  }
+
+  return Array.from(groups.entries())
+    .sort(([left], [right]) => {
+      if (left === "Unfiled") return -1;
+      if (right === "Unfiled") return 1;
+      return left.localeCompare(right);
+    })
+    .map(([folder, groupItems]) => ({
+      folder,
+      items: groupItems.sort((left, right) => left.name.localeCompare(right.name)),
+    }));
 }
 
 function duplicateEnvironmentKeys(variables: KeyValue[]) {

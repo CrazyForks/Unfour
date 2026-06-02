@@ -224,6 +224,46 @@ impl CommandBus {
         self.api_client.list_saved_requests(workspace_id).await
     }
 
+    pub async fn duplicate_api_request(
+        &self,
+        workspace_id: String,
+        request_id: String,
+    ) -> AppResult<ApiSavedRequest> {
+        let saved = self
+            .api_client
+            .duplicate_request(workspace_id.clone(), request_id.clone())
+            .await?;
+        self.audit_log
+            .record(
+                Some(&workspace_id),
+                "api.duplicate_request",
+                Some(&saved.id),
+                serde_json::json!({ "sourceId": request_id, "name": saved.name }),
+            )
+            .await?;
+        Ok(saved)
+    }
+
+    pub async fn delete_api_request(
+        &self,
+        workspace_id: String,
+        request_id: String,
+    ) -> AppResult<Vec<ApiSavedRequest>> {
+        let requests = self
+            .api_client
+            .delete_request(workspace_id.clone(), request_id.clone())
+            .await?;
+        self.audit_log
+            .record(
+                Some(&workspace_id),
+                "api.delete_request",
+                Some(&request_id),
+                serde_json::json!({ "softDelete": true }),
+            )
+            .await?;
+        Ok(requests)
+    }
+
     pub async fn list_database_connections(
         &self,
         workspace_id: String,

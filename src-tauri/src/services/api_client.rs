@@ -156,6 +156,7 @@ impl ApiClientService {
 
     pub async fn save_request(&self, input: ApiRequestInput) -> AppResult<ApiSavedRequest> {
         validate_workspace_id(&input.workspace_id)?;
+        let folder_path = normalize_folder_path(input.folder_path.clone())?;
         let name = input
             .name
             .clone()
@@ -166,15 +167,16 @@ impl ApiClientService {
         sqlx::query(
             r#"
             INSERT INTO api_requests (
-              id, workspace_id, name, method, url, headers_json, query_json, body,
+              id, workspace_id, name, folder_path, method, url, headers_json, query_json, body,
               body_kind, created_at, updated_at, revision, sync_status
             )
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10, 1, 'local')
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11, 1, 'local')
             "#,
         )
         .bind(&id)
         .bind(&input.workspace_id)
         .bind(name)
+        .bind(folder_path)
         .bind(input.method.to_uppercase())
         .bind(input.url)
         .bind(serde_json::to_string(&redact_headers(&input.headers))?)
@@ -197,11 +199,11 @@ impl ApiClientService {
         let items = sqlx::query_as::<_, ApiSavedRequest>(
             r#"
             SELECT
-              id, workspace_id, name, method, url, headers_json, query_json, body, body_kind,
-              created_at, updated_at, deleted_at, revision, sync_status, remote_id
+              id, workspace_id, name, folder_path, method, url, headers_json, query_json, body,
+              body_kind, created_at, updated_at, deleted_at, revision, sync_status, remote_id
             FROM api_requests
             WHERE workspace_id = ?1 AND deleted_at IS NULL
-            ORDER BY updated_at DESC
+            ORDER BY COALESCE(folder_path, ''), updated_at DESC
             "#,
         )
         .bind(workspace_id)
@@ -211,16 +213,117 @@ impl ApiClientService {
         Ok(items)
     }
 
+    pub async fn duplicate_request(
+        &self,
+        workspace_id: String,
+        request_id: String,
+    ) -> AppResult<ApiSavedRequest> {
+        validate_workspace_id(&workspace_id)?;
+        if request_id.trim().is_empty() {
+            return Err(AppError::Validation(
+                "api request id cannot be empty".to_string(),
+            ));
+        }
+
+        let source = self
+            .get_saved_request_for_workspace(&workspace_id, &request_id)
+            .await?;
+        let now = Utc::now().to_rfc3339();
+        let id = Uuid::new_v4().to_string();
+        let name = format!("{} Copy", source.name);
+
+        sqlx::query(
+            r#"
+            INSERT INTO api_requests (
+              id, workspace_id, name, folder_path, method, url, headers_json, query_json, body,
+              body_kind, created_at, updated_at, revision, sync_status
+            )
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11, 1, 'local')
+            "#,
+        )
+        .bind(&id)
+        .bind(&workspace_id)
+        .bind(name)
+        .bind(source.folder_path)
+        .bind(source.method)
+        .bind(source.url)
+        .bind(source.headers_json)
+        .bind(source.query_json)
+        .bind(source.body)
+        .bind(source.body_kind)
+        .bind(now)
+        .execute(self.db.pool())
+        .await?;
+
+        self.get_saved_request_for_workspace(&workspace_id, &id)
+            .await
+    }
+
+    pub async fn delete_request(
+        &self,
+        workspace_id: String,
+        request_id: String,
+    ) -> AppResult<Vec<ApiSavedRequest>> {
+        validate_workspace_id(&workspace_id)?;
+        if request_id.trim().is_empty() {
+            return Err(AppError::Validation(
+                "api request id cannot be empty".to_string(),
+            ));
+        }
+
+        let now = Utc::now().to_rfc3339();
+        let result = sqlx::query(
+            r#"
+            UPDATE api_requests
+            SET deleted_at = ?1, updated_at = ?1, revision = revision + 1, sync_status = 'deleted'
+            WHERE workspace_id = ?2 AND id = ?3 AND deleted_at IS NULL
+            "#,
+        )
+        .bind(now)
+        .bind(&workspace_id)
+        .bind(&request_id)
+        .execute(self.db.pool())
+        .await?;
+
+        if result.rows_affected() == 0 {
+            return Err(AppError::NotFound("api request".to_string()));
+        }
+
+        self.list_saved_requests(workspace_id).await
+    }
+
     async fn get_saved_request(&self, id: &str) -> AppResult<ApiSavedRequest> {
         let saved = sqlx::query_as::<_, ApiSavedRequest>(
             r#"
             SELECT
-              id, workspace_id, name, method, url, headers_json, query_json, body, body_kind,
-              created_at, updated_at, deleted_at, revision, sync_status, remote_id
+              id, workspace_id, name, folder_path, method, url, headers_json, query_json, body,
+              body_kind, created_at, updated_at, deleted_at, revision, sync_status, remote_id
             FROM api_requests
             WHERE id = ?1 AND deleted_at IS NULL
             "#,
         )
+        .bind(id)
+        .fetch_optional(self.db.pool())
+        .await?;
+
+        saved.ok_or_else(|| AppError::NotFound("api request".to_string()))
+    }
+
+    async fn get_saved_request_for_workspace(
+        &self,
+        workspace_id: &str,
+        id: &str,
+    ) -> AppResult<ApiSavedRequest> {
+        let saved = sqlx::query_as::<_, ApiSavedRequest>(
+            r#"
+            SELECT
+              id, workspace_id, name, folder_path, method, url, headers_json, query_json, body,
+              body_kind, created_at, updated_at, deleted_at, revision, sync_status, remote_id
+            FROM api_requests
+            WHERE workspace_id = ?1 AND id = ?2 AND deleted_at IS NULL
+            "#,
+        )
+        .bind(workspace_id)
         .bind(id)
         .fetch_optional(self.db.pool())
         .await?;
@@ -321,6 +424,32 @@ fn validate_workspace_id(workspace_id: &str) -> AppResult<()> {
         ));
     }
     Ok(())
+}
+
+fn normalize_folder_path(value: Option<String>) -> AppResult<Option<String>> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let trimmed = value.trim().trim_matches('/').trim_matches('\\');
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    if trimmed.chars().count() > 160 {
+        return Err(AppError::Validation(
+            "api request folder path must be 160 characters or fewer".to_string(),
+        ));
+    }
+    if trimmed
+        .chars()
+        .any(|ch| ch.is_control() || matches!(ch, '<' | '>' | '"' | '|'))
+    {
+        return Err(AppError::Validation(format!(
+            "invalid api request folder path: {}",
+            value
+        )));
+    }
+
+    Ok(Some(trimmed.replace('\\', "/")))
 }
 
 fn resolve_input(
@@ -437,6 +566,7 @@ mod tests {
             .save_request(ApiRequestInput {
                 workspace_id: "workspace-a".to_string(),
                 name: Some("Secret request".to_string()),
+                folder_path: None,
                 method: "GET".to_string(),
                 url: "https://example.test".to_string(),
                 headers: vec![KeyValue {
@@ -487,5 +617,243 @@ mod tests {
 
         assert_eq!(detail.method, "GET");
         assert!(matches!(wrong_workspace, Err(AppError::NotFound(_))));
+    }
+
+    #[tokio::test]
+    async fn resolve_input_applies_environment_across_request_parts() {
+        let input = ApiRequestInput {
+            workspace_id: "workspace-a".to_string(),
+            name: Some("Templated".to_string()),
+            folder_path: Some("Users".to_string()),
+            method: "POST".to_string(),
+            url: "{{base_url}}/users/{{user_id}}".to_string(),
+            headers: vec![KeyValue {
+                key: "X-Tenant".to_string(),
+                value: "{{tenant}}".to_string(),
+                enabled: true,
+            }],
+            query: vec![KeyValue {
+                key: "source".to_string(),
+                value: "{{source}}".to_string(),
+                enabled: true,
+            }],
+            body: Some("{\"user\":\"{{user_id}}\"}".to_string()),
+            body_kind: "json".to_string(),
+            timeout_ms: None,
+        };
+
+        let resolved = resolve_input(
+            input,
+            &[
+                KeyValue {
+                    key: "base_url".to_string(),
+                    value: "https://api.example.test".to_string(),
+                    enabled: true,
+                },
+                KeyValue {
+                    key: "user_id".to_string(),
+                    value: "42".to_string(),
+                    enabled: true,
+                },
+                KeyValue {
+                    key: "tenant".to_string(),
+                    value: "ops".to_string(),
+                    enabled: true,
+                },
+                KeyValue {
+                    key: "source".to_string(),
+                    value: "workspace".to_string(),
+                    enabled: true,
+                },
+            ],
+        )
+        .expect("resolve input");
+
+        assert_eq!(resolved.url, "https://api.example.test/users/42");
+        assert_eq!(resolved.headers[0].value, "ops");
+        assert_eq!(resolved.query[0].value, "workspace");
+        assert_eq!(resolved.body.as_deref(), Some("{\"user\":\"42\"}"));
+    }
+
+    #[tokio::test]
+    async fn resolve_input_reports_missing_environment_variable() {
+        let input = ApiRequestInput {
+            workspace_id: "workspace-a".to_string(),
+            name: None,
+            folder_path: None,
+            method: "GET".to_string(),
+            url: "https://example.test/{{missing}}".to_string(),
+            headers: vec![],
+            query: vec![],
+            body: None,
+            body_kind: "json".to_string(),
+            timeout_ms: None,
+        };
+
+        let result = resolve_input(input, &[]);
+
+        assert!(
+            matches!(result, Err(AppError::Validation(message)) if message.contains("missing"))
+        );
+    }
+
+    #[tokio::test]
+    async fn build_url_appends_enabled_query_pairs_only() {
+        let url = build_url(
+            "https://example.test/search?existing=true",
+            &[
+                KeyValue {
+                    key: "q".to_string(),
+                    value: "hello world".to_string(),
+                    enabled: true,
+                },
+                KeyValue {
+                    key: "disabled".to_string(),
+                    value: "ignored".to_string(),
+                    enabled: false,
+                },
+                KeyValue {
+                    key: "".to_string(),
+                    value: "ignored".to_string(),
+                    enabled: true,
+                },
+            ],
+        )
+        .expect("build url");
+
+        assert_eq!(
+            url.as_str(),
+            "https://example.test/search?existing=true&q=hello+world"
+        );
+    }
+
+    #[tokio::test]
+    async fn save_request_defaults_name_and_lists_by_workspace() {
+        let service = service().await;
+        service
+            .save_request(ApiRequestInput {
+                workspace_id: "workspace-a".to_string(),
+                name: None,
+                folder_path: Some("Users".to_string()),
+                method: "post".to_string(),
+                url: "https://example.test/users".to_string(),
+                headers: vec![],
+                query: vec![],
+                body: Some("{}".to_string()),
+                body_kind: "json".to_string(),
+                timeout_ms: None,
+            })
+            .await
+            .expect("save request");
+        service
+            .save_request(ApiRequestInput {
+                workspace_id: "workspace-b".to_string(),
+                name: Some("Other workspace".to_string()),
+                folder_path: None,
+                method: "GET".to_string(),
+                url: "https://other.example.test".to_string(),
+                headers: vec![],
+                query: vec![],
+                body: None,
+                body_kind: "json".to_string(),
+                timeout_ms: None,
+            })
+            .await
+            .expect("save other request");
+
+        let workspace_a = service
+            .list_saved_requests("workspace-a".to_string())
+            .await
+            .expect("list workspace a");
+
+        assert_eq!(workspace_a.len(), 1);
+        assert_eq!(workspace_a[0].workspace_id, "workspace-a");
+        assert_eq!(workspace_a[0].folder_path.as_deref(), Some("Users"));
+        assert_eq!(workspace_a[0].name, "POST https://example.test/users");
+    }
+
+    #[tokio::test]
+    async fn duplicate_request_copies_template_inside_workspace() {
+        let service = service().await;
+        let saved = service
+            .save_request(ApiRequestInput {
+                workspace_id: "workspace-a".to_string(),
+                name: Some("Create user".to_string()),
+                folder_path: Some("Users/Admin".to_string()),
+                method: "POST".to_string(),
+                url: "https://example.test/users".to_string(),
+                headers: vec![KeyValue {
+                    key: "Accept".to_string(),
+                    value: "application/json".to_string(),
+                    enabled: true,
+                }],
+                query: vec![],
+                body: Some("{}".to_string()),
+                body_kind: "json".to_string(),
+                timeout_ms: None,
+            })
+            .await
+            .expect("save request");
+
+        let duplicate = service
+            .duplicate_request("workspace-a".to_string(), saved.id.clone())
+            .await
+            .expect("duplicate request");
+        let wrong_workspace = service
+            .duplicate_request("workspace-b".to_string(), saved.id.clone())
+            .await;
+
+        assert_ne!(duplicate.id, saved.id);
+        assert_eq!(duplicate.name, "Create user Copy");
+        assert_eq!(duplicate.folder_path.as_deref(), Some("Users/Admin"));
+        assert_eq!(duplicate.url, saved.url);
+        assert!(matches!(wrong_workspace, Err(AppError::NotFound(_))));
+    }
+
+    #[tokio::test]
+    async fn delete_request_soft_deletes_and_returns_remaining_workspace_items() {
+        let service = service().await;
+        let first = service
+            .save_request(ApiRequestInput {
+                workspace_id: "workspace-a".to_string(),
+                name: Some("First".to_string()),
+                folder_path: None,
+                method: "GET".to_string(),
+                url: "https://example.test/first".to_string(),
+                headers: vec![],
+                query: vec![],
+                body: None,
+                body_kind: "json".to_string(),
+                timeout_ms: None,
+            })
+            .await
+            .expect("save first request");
+        let second = service
+            .save_request(ApiRequestInput {
+                workspace_id: "workspace-a".to_string(),
+                name: Some("Second".to_string()),
+                folder_path: Some("Folder".to_string()),
+                method: "GET".to_string(),
+                url: "https://example.test/second".to_string(),
+                headers: vec![],
+                query: vec![],
+                body: None,
+                body_kind: "json".to_string(),
+                timeout_ms: None,
+            })
+            .await
+            .expect("save second request");
+
+        let remaining = service
+            .delete_request("workspace-a".to_string(), first.id.clone())
+            .await
+            .expect("delete request");
+        let deleted_again = service
+            .delete_request("workspace-a".to_string(), first.id)
+            .await;
+
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].id, second.id);
+        assert!(matches!(deleted_again, Err(AppError::NotFound(_))));
     }
 }

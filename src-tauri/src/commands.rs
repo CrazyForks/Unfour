@@ -140,6 +140,30 @@ pub async fn api_saved_requests(
 }
 
 #[tauri::command]
+pub async fn api_request_duplicate(
+    workspace_id: String,
+    request_id: String,
+    state: State<'_, AppState>,
+) -> AppResult<ApiSavedRequest> {
+    state
+        .command_bus
+        .duplicate_api_request(workspace_id, request_id)
+        .await
+}
+
+#[tauri::command]
+pub async fn api_request_delete(
+    workspace_id: String,
+    request_id: String,
+    state: State<'_, AppState>,
+) -> AppResult<Vec<ApiSavedRequest>> {
+    state
+        .command_bus
+        .delete_api_request(workspace_id, request_id)
+        .await
+}
+
+#[tauri::command]
 pub async fn database_connections_list(
     workspace_id: String,
     state: State<'_, AppState>,

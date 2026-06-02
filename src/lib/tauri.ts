@@ -184,6 +184,7 @@ async function mockInvoke<T>(
       id: crypto.randomUUID(),
       workspaceId: input.workspaceId,
       name: input.name || `${input.method} ${input.url}`,
+      folderPath: normalizeFolderPath(input.folderPath),
       method: input.method,
       url: input.url,
       headersJson: JSON.stringify(input.headers),
@@ -199,6 +200,39 @@ async function mockInvoke<T>(
     };
     mockSavedRequests = [saved, ...mockSavedRequests];
     return saved as T;
+  }
+
+  if (command === "api_request_duplicate") {
+    const workspaceId = String(args?.workspaceId ?? "");
+    const requestId = String(args?.requestId ?? "");
+    const source = mockSavedRequests.find(
+      (item) => item.workspaceId === workspaceId && item.id === requestId,
+    );
+    if (!source) throw new Error("api request not found");
+    const now = new Date().toISOString();
+    const duplicate: ApiSavedRequest = {
+      ...source,
+      id: crypto.randomUUID(),
+      name: `${source.name} Copy`,
+      createdAt: now,
+      updatedAt: now,
+      revision: 1,
+      syncStatus: "local",
+      remoteId: null,
+    };
+    mockSavedRequests = [duplicate, ...mockSavedRequests];
+    return duplicate as T;
+  }
+
+  if (command === "api_request_delete") {
+    const workspaceId = String(args?.workspaceId ?? "");
+    const requestId = String(args?.requestId ?? "");
+    const initialLength = mockSavedRequests.length;
+    mockSavedRequests = mockSavedRequests.filter(
+      (item) => !(item.workspaceId === workspaceId && item.id === requestId),
+    );
+    if (mockSavedRequests.length === initialLength) throw new Error("api request not found");
+    return mockSavedRequests.filter((item) => item.workspaceId === workspaceId) as T;
   }
 
   if (command === "api_send_request") {
@@ -496,6 +530,14 @@ export function saveApiRequest(input: ApiRequestInput) {
   return call<ApiSavedRequest>("api_request_save", { input });
 }
 
+export function duplicateApiRequest(workspaceId: string, requestId: string) {
+  return call<ApiSavedRequest>("api_request_duplicate", { workspaceId, requestId });
+}
+
+export function deleteApiRequest(workspaceId: string, requestId: string) {
+  return call<ApiSavedRequest[]>("api_request_delete", { workspaceId, requestId });
+}
+
 export function listApiHistory(workspaceId: string) {
   return call<ApiHistoryItem[]>("api_history_list", { workspaceId, limit: 50 });
 }
@@ -584,6 +626,11 @@ function redactHeaders(headers: ApiRequestInput["headers"]) {
     ...item,
     value: sensitive.has(item.key.toLowerCase()) ? "<redacted>" : item.value,
   }));
+}
+
+function normalizeFolderPath(value: ApiRequestInput["folderPath"]) {
+  const trimmed = value?.trim().replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+  return trimmed ? trimmed : null;
 }
 
 function getMockLayout(workspaceId: string): WorkspaceLayout {

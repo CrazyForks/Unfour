@@ -45,6 +45,8 @@ pub fn run() {
             commands::workspace_set_active,
             commands::api_history_detail,
             commands::api_history_list,
+            commands::api_request_delete,
+            commands::api_request_duplicate,
             commands::api_request_save,
             commands::api_saved_requests,
             commands::api_send_request,
