@@ -312,21 +312,33 @@ impl DatabaseService {
         ensure_sqlite_table_exists(&pool, table_name).await?;
 
         let limit = input.limit.unwrap_or(100).clamp(1, 1_000);
+        let offset = input.offset.unwrap_or(0);
+        let total_rows = sqlite_table_row_count(&pool, table_name).await?;
         let sql = format!(
-            "SELECT * FROM {} LIMIT {}",
+            "SELECT * FROM {} LIMIT {} OFFSET {}",
             quote_identifier(table_name),
-            limit
+            limit,
+            offset
         );
         let started = Instant::now();
         let rows = sqlx::query(&sql).fetch_all(&pool).await?;
-        let columns = rows.first().map(sqlite_result_columns).unwrap_or_default();
+        let columns = if let Some(row) = rows.first() {
+            sqlite_result_columns(row)
+        } else {
+            sqlite_table_result_columns(&pool, table_name).await?
+        };
         let values = rows
             .iter()
             .map(sqlite_row_values)
             .collect::<AppResult<Vec<_>>>()?;
 
         Ok(DatabaseBrowseResult {
+            table_name: table_name.to_string(),
             sql,
+            limit,
+            offset,
+            total_rows,
+            read_only: true,
             result: DatabaseQueryResult {
                 columns,
                 rows: values,
@@ -353,6 +365,7 @@ impl DatabaseService {
                 "sqlite-connection-test",
                 "sqlite-schema-browser",
                 "sqlite-sql-editor",
+                "sqlite-read-only-table-data",
                 "paged-query-results"
             ]
         })
@@ -424,6 +437,30 @@ async fn ensure_sqlite_table_exists(pool: &sqlx::SqlitePool, table_name: &str) -
 
     row.map(|_| ())
         .ok_or_else(|| AppError::NotFound("database table".to_string()))
+}
+
+async fn sqlite_table_row_count(pool: &sqlx::SqlitePool, table_name: &str) -> AppResult<u64> {
+    let sql = format!(
+        "SELECT COUNT(*) AS total_rows FROM {}",
+        quote_identifier(table_name)
+    );
+    let row = sqlx::query(&sql).fetch_one(pool).await?;
+    let total_rows: i64 = row.try_get("total_rows")?;
+    Ok(total_rows.max(0) as u64)
+}
+
+async fn sqlite_table_result_columns(
+    pool: &sqlx::SqlitePool,
+    table_name: &str,
+) -> AppResult<Vec<DatabaseResultColumn>> {
+    Ok(sqlite_columns(pool, table_name)
+        .await?
+        .into_iter()
+        .map(|column| DatabaseResultColumn {
+            name: column.name,
+            data_type: column.data_type,
+        })
+        .collect())
 }
 
 fn sqlite_result_columns(row: &sqlx::sqlite::SqliteRow) -> Vec<DatabaseResultColumn> {
@@ -747,6 +784,16 @@ mod tests {
         .await
         .expect("create deploys");
         pool.execute(
+            r#"
+            CREATE TABLE empty_deploys (
+              id INTEGER PRIMARY KEY,
+              service TEXT NOT NULL
+            )
+            "#,
+        )
+        .await
+        .expect("create empty deploys");
+        pool.execute(
             "INSERT INTO deploys (service, version) VALUES ('api', '1.0.0'), ('worker', '1.0.1')",
         )
         .await
@@ -866,11 +913,45 @@ mod tests {
                 connection_id: connection.id.clone(),
                 table_name: "deploys".to_string(),
                 limit: Some(2),
+                offset: Some(1),
             })
             .await
             .expect("browse table");
-        assert_eq!(browse.sql, "SELECT * FROM \"deploys\" LIMIT 2");
-        assert_eq!(browse.result.rows.len(), 2);
+        assert_eq!(browse.table_name, "deploys");
+        assert_eq!(browse.sql, "SELECT * FROM \"deploys\" LIMIT 2 OFFSET 1");
+        assert_eq!(browse.limit, 2);
+        assert_eq!(browse.offset, 1);
+        assert_eq!(browse.total_rows, 2);
+        assert!(browse.read_only);
+        assert_eq!(browse.result.rows.len(), 1);
+        assert_eq!(browse.result.rows[0][1].as_deref(), Some("worker"));
+
+        let first_page = service
+            .browse_table(DatabaseBrowseInput {
+                workspace_id: workspace_id.clone(),
+                connection_id: connection.id.clone(),
+                table_name: "deploys".to_string(),
+                limit: Some(2),
+                offset: None,
+            })
+            .await
+            .expect("browse first page");
+        assert_eq!(first_page.result.rows.len(), 2);
+
+        let empty = service
+            .browse_table(DatabaseBrowseInput {
+                workspace_id: workspace_id.clone(),
+                connection_id: connection.id.clone(),
+                table_name: "empty_deploys".to_string(),
+                limit: Some(10),
+                offset: None,
+            })
+            .await
+            .expect("browse empty table");
+        assert_eq!(empty.total_rows, 0);
+        assert_eq!(empty.result.rows.len(), 0);
+        assert_eq!(empty.result.columns.len(), 2);
+        assert_eq!(empty.result.columns[1].name, "service");
 
         let missing = service
             .browse_table(DatabaseBrowseInput {
@@ -878,6 +959,7 @@ mod tests {
                 connection_id: connection.id,
                 table_name: "missing".to_string(),
                 limit: Some(10),
+                offset: None,
             })
             .await;
         assert!(matches!(missing, Err(AppError::NotFound(_))));

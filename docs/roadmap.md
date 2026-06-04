@@ -36,7 +36,7 @@ Status: UI preview and backend boundary exist. Real session lifecycle is next.
 - SQL execution.
 - Paginated result grids.
 
-Status: SQLite connection metadata, test, schema browsing, and SQL execution are implemented. PostgreSQL/MySQL live connections, pagination polish, and controlled editing remain.
+Status: SQLite connection metadata, test, schema browsing, SQL execution, read-only table browsing, pagination, and result virtualization are implemented. PostgreSQL/MySQL live connections and controlled editing remain.
 
 ## v0.5 Hardening
 

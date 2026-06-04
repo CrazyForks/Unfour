@@ -50,10 +50,10 @@
 - DONE TASK-DB-002: SQLite connection test.
 - TODO TASK-DB-003: PostgreSQL/MySQL connection tests.
 - PARTIAL TASK-DB-004: Schema tree for tables and columns. SQLite is implemented; PostgreSQL/MySQL remain.
-- PARTIAL TASK-DB-005: SQL editor execution and paginated results. SQLite is implemented; PostgreSQL/MySQL remain.
-- TODO TASK-DB-006: Read-only table data view, then controlled edit support.
+- PARTIAL TASK-DB-005: SQL editor execution and paginated results. SQLite execution and frontend result pagination are implemented; PostgreSQL/MySQL remain.
+- PARTIAL TASK-DB-006: Read-only table data view, then controlled edit support. SQLite read-only browsing is implemented; controlled editing remains.
 - DONE TASK-DB-007: Add safe table browse action from schema tree.
-- PARTIAL TASK-DB-008: Add frontend pagination, copy/export, and large result virtualization. Pagination, column width handling, TSV copy, and CSV export are implemented; virtualization remains.
+- DONE TASK-DB-008: Add frontend pagination, copy/export, and large result virtualization.
 - DONE TASK-DB-009: Add mutation confirmation policy for destructive SQL and future AI calls.
 
 ## P2: Reserved Extensions

@@ -373,7 +373,10 @@ impl CommandBus {
                 serde_json::json!({
                     "table": input.table_name,
                     "rows": result.result.rows.len(),
-                    "limit": input.limit.unwrap_or(100).clamp(1, 1_000)
+                    "limit": result.limit,
+                    "offset": result.offset,
+                    "totalRows": result.total_rows,
+                    "readOnly": result.read_only
                 }),
             )
             .await?;

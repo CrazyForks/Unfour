@@ -205,10 +205,16 @@ export type DatabaseBrowseInput = {
   connectionId: string;
   tableName: string;
   limit?: number;
+  offset?: number;
 };
 
 export type DatabaseBrowseResult = {
+  tableName: string;
   sql: string;
+  limit: number;
+  offset: number;
+  totalRows: number;
+  readOnly: boolean;
   result: DatabaseQueryResult;
 };
 

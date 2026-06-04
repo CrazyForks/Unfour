@@ -4,6 +4,7 @@ import {
   Braces,
   CheckCircle2,
   ChevronLeft,
+  ChevronRight,
   Clock,
   Clipboard,
   Copy,
@@ -14,6 +15,7 @@ import {
   Pencil,
   Play,
   Plus,
+  RefreshCw,
   Save,
   Send,
   Server,
@@ -23,7 +25,7 @@ import {
   Upload,
   XCircle,
 } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   createColumnHelper,
   flexRender,
@@ -2037,6 +2039,8 @@ function DatabasePanel({ workspaceId }: { workspaceId: string }) {
   const [sql, setSql] = useState(
     "select name, type\nfrom sqlite_master\nwhere type in ('table', 'view')\nlimit 100;",
   );
+  const [tableView, setTableView] = useState<DatabaseTableViewState | null>(null);
+  const [resultMode, setResultMode] = useState<"sql" | "table">("sql");
   const [form, setForm] = useState<DatabaseConnectionInput>({
     workspaceId,
     name: "Local SQLite",
@@ -2096,6 +2100,8 @@ function DatabasePanel({ workspaceId }: { workspaceId: string }) {
     });
     setTestResult(null);
     setQueryResult(null);
+    setTableView(null);
+    setResultMode("sql");
     setPendingSqlConfirmation(false);
   }, [selectedConnection, workspaceId]);
 
@@ -2113,6 +2119,8 @@ function DatabasePanel({ workspaceId }: { workspaceId: string }) {
       setSelectedDatabaseConnection(null);
       setTestResult(null);
       setQueryResult(null);
+      setTableView(null);
+      setResultMode("sql");
       setPendingSqlConfirmation(false);
       queryClient.invalidateQueries({ queryKey: ["database-connections", workspaceId] });
     },
@@ -2129,6 +2137,10 @@ function DatabasePanel({ workspaceId }: { workspaceId: string }) {
   });
 
   const executeMutation = useMutation({
+    onMutate: () => {
+      setTableView(null);
+      setResultMode("sql");
+    },
     mutationFn: (confirmMutation: boolean) =>
       executeDatabaseQuery({
         workspaceId,
@@ -2142,22 +2154,44 @@ function DatabasePanel({ workspaceId }: { workspaceId: string }) {
     },
     onSuccess: (result) => {
       setPendingSqlConfirmation(false);
+      setTableView(null);
       setQueryResult(result);
     },
   });
 
   const browseMutation = useMutation({
-    mutationFn: (table: DatabaseTable) =>
+    onMutate: () => {
+      setPendingSqlConfirmation(false);
+      setResultMode("table");
+    },
+    mutationFn: ({
+      pageIndex,
+      pageSize,
+      tableName,
+    }: {
+      pageIndex: number;
+      pageSize: number;
+      tableName: string;
+    }) =>
       browseDatabaseTable({
         workspaceId,
         connectionId: selectedConnectionId ?? "",
-        tableName: table.name,
-        limit: 100,
+        tableName,
+        limit: pageSize,
+        offset: pageIndex * pageSize,
     }),
     onSuccess: (browse) => {
       setPendingSqlConfirmation(false);
       setSql(browse.sql);
       setQueryResult(browse.result);
+      setResultMode("table");
+      setTableView({
+        pageIndex: Math.floor(browse.offset / Math.max(1, browse.limit)),
+        pageSize: browse.limit,
+        readOnly: browse.readOnly,
+        tableName: browse.tableName,
+        totalRows: browse.totalRows,
+      });
     },
   });
 
@@ -2174,6 +2208,8 @@ function DatabasePanel({ workspaceId }: { workspaceId: string }) {
     setSelectedDatabaseConnection(null);
     setTestResult(null);
     setQueryResult(null);
+    setTableView(null);
+    setResultMode("sql");
     setPendingSqlConfirmation(false);
     setForm({
       workspaceId,
@@ -2182,6 +2218,38 @@ function DatabasePanel({ workspaceId }: { workspaceId: string }) {
       sqlitePath: "",
     });
   }
+
+  function browseTablePage(tableName: string, pageIndex: number, pageSize: number) {
+    browseMutation.mutate({
+      pageIndex: Math.max(0, pageIndex),
+      pageSize,
+      tableName,
+    });
+  }
+
+  function refreshTableView() {
+    if (!tableView) {
+      return;
+    }
+    browseTablePage(tableView.tableName, tableView.pageIndex, tableView.pageSize);
+  }
+
+  function changeTablePageSize(pageSize: number) {
+    if (!tableView) {
+      return;
+    }
+    browseTablePage(tableView.tableName, 0, pageSize);
+  }
+
+  const tableViewPageCount = tableView
+    ? Math.max(1, Math.ceil(tableView.totalRows / tableView.pageSize))
+    : 1;
+  const tableViewStart = tableView?.totalRows
+    ? tableView.pageIndex * tableView.pageSize + 1
+    : 0;
+  const tableViewEnd = tableView
+    ? Math.min((tableView.pageIndex + 1) * tableView.pageSize, tableView.totalRows)
+    : 0;
 
   return (
     <div className="grid h-full min-h-0 grid-cols-[280px_minmax(0,1fr)] gap-3">
@@ -2333,7 +2401,7 @@ function DatabasePanel({ workspaceId }: { workspaceId: string }) {
               disabled={!selectedConnectionId || browseMutation.isPending}
               error={schemaQuery.error}
               loading={schemaQuery.isFetching}
-              onBrowse={(table) => browseMutation.mutate(table)}
+              onBrowse={(table) => browseTablePage(table.name, 0, tableView?.pageSize ?? 100)}
               schema={schemaQuery.data}
             />
           </div>
@@ -2344,6 +2412,71 @@ function DatabasePanel({ workspaceId }: { workspaceId: string }) {
           actions={
             <>
               {selectedConnection && <Badge tone="neutral">{selectedConnection.name}</Badge>}
+              {tableView && (
+                <>
+                  <Badge tone={tableView.readOnly ? "green" : "amber"}>read only</Badge>
+                  <span className="text-xs text-slate-500">
+                    {tableViewStart}-{tableViewEnd} of {tableView.totalRows}
+                  </span>
+                  <select
+                    aria-label="Rows per page"
+                    className="h-8 rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-700 shadow-xs outline-none transition-colors hover:border-slate-400 focus:border-teal-700 focus:ring-2 focus:ring-teal-700/15"
+                    onChange={(event) => changeTablePageSize(Number(event.target.value))}
+                    value={tableView.pageSize}
+                  >
+                    {[50, 100, 250, 500].map((pageSize) => (
+                      <option key={pageSize} value={pageSize}>
+                        {pageSize}
+                      </option>
+                    ))}
+                  </select>
+                  <Button
+                    aria-label="Previous table page"
+                    disabled={browseMutation.isPending || tableView.pageIndex <= 0}
+                    onClick={() =>
+                      browseTablePage(
+                        tableView.tableName,
+                        tableView.pageIndex - 1,
+                        tableView.pageSize,
+                      )
+                    }
+                    size="icon"
+                    type="button"
+                    variant="ghost"
+                  >
+                    <ChevronLeft size={15} />
+                  </Button>
+                  <Button
+                    aria-label="Next table page"
+                    disabled={
+                      browseMutation.isPending ||
+                      tableView.pageIndex >= tableViewPageCount - 1
+                    }
+                    onClick={() =>
+                      browseTablePage(
+                        tableView.tableName,
+                        tableView.pageIndex + 1,
+                        tableView.pageSize,
+                      )
+                    }
+                    size="icon"
+                    type="button"
+                    variant="ghost"
+                  >
+                    <ChevronRight size={15} />
+                  </Button>
+                  <Button
+                    aria-label="Refresh table data"
+                    disabled={browseMutation.isPending}
+                    onClick={refreshTableView}
+                    size="icon"
+                    type="button"
+                    variant="ghost"
+                  >
+                    <RefreshCw size={15} />
+                  </Button>
+                </>
+              )}
               <Button
                 disabled={!selectedConnectionId || executeMutation.isPending}
                 className={pendingSqlConfirmation ? "bg-rose-700 hover:bg-rose-800" : undefined}
@@ -2356,8 +2489,9 @@ function DatabasePanel({ workspaceId }: { workspaceId: string }) {
               </Button>
             </>
           }
-          icon={<Clock size={15} />}
-          title="SQL Editor"
+          icon={tableView ? <Table2 size={15} /> : <Clock size={15} />}
+          subtitle={tableView ? tableView.tableName : undefined}
+          title={tableView ? "Table Data" : "SQL Editor"}
         />
         <div className="min-h-0 flex-[0.55] border-b border-slate-200">
           <Editor
@@ -2373,8 +2507,8 @@ function DatabasePanel({ workspaceId }: { workspaceId: string }) {
           />
         </div>
         <DatabaseResultView
-          error={executeMutation.error}
-          isPending={executeMutation.isPending}
+          error={resultMode === "table" ? browseMutation.error : executeMutation.error}
+          isPending={executeMutation.isPending || browseMutation.isPending}
           pendingConfirmation={pendingSqlConfirmation}
           result={queryResult}
         />
@@ -2480,6 +2614,14 @@ function SchemaTree({
   );
 }
 
+type DatabaseTableViewState = {
+  pageIndex: number;
+  pageSize: number;
+  readOnly: boolean;
+  tableName: string;
+  totalRows: number;
+};
+
 function DatabaseResultView({
   error,
   isPending,
@@ -2491,13 +2633,19 @@ function DatabaseResultView({
   pendingConfirmation: boolean;
   result: DatabaseQueryResult | null;
 }) {
-  const pageSize = 25;
+  const pageSize = 250;
   const [pageIndex, setPageIndex] = useState(0);
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">("idle");
+  const [scrollTop, setScrollTop] = useState(0);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     setPageIndex(0);
     setCopyStatus("idle");
+    setScrollTop(0);
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = 0;
+    }
   }, [result]);
 
   if (error) {
@@ -2536,6 +2684,23 @@ function DatabaseResultView({
   const pageRows = queryResult.rows.slice(startIndex, startIndex + pageSize);
   const displayStart = queryResult.rows.length ? startIndex + 1 : 0;
   const displayEnd = Math.min(startIndex + pageRows.length, queryResult.rows.length);
+  const rowHeight = 33;
+  const viewportHeight = scrollRef.current?.clientHeight ?? 420;
+  const virtualized = pageRows.length > 80;
+  const virtualStart = virtualized
+    ? Math.max(0, Math.floor(scrollTop / rowHeight) - 8)
+    : 0;
+  const virtualEnd = virtualized
+    ? Math.min(
+        pageRows.length,
+        virtualStart + Math.ceil(viewportHeight / rowHeight) + 16,
+      )
+    : pageRows.length;
+  const visibleRows = pageRows.slice(virtualStart, virtualEnd);
+  const topSpacerHeight = virtualized ? virtualStart * rowHeight : 0;
+  const bottomSpacerHeight = virtualized
+    ? Math.max(0, (pageRows.length - virtualEnd) * rowHeight)
+    : 0;
   const columnWidths = queryResult.columns.map((column, columnIndex) =>
     queryResult.rows.reduce((width, row) => {
       const value = row[columnIndex] ?? "";
@@ -2569,7 +2734,11 @@ function DatabaseResultView({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="min-h-0 flex-1 overflow-auto">
+      <div
+        className="min-h-0 flex-1 overflow-auto"
+        onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
+        ref={scrollRef}
+      >
         <table className="data-table w-max min-w-full table-fixed text-left text-xs">
           <colgroup>
             {columnWidths.map((width, index) => (
@@ -2591,8 +2760,16 @@ function DatabaseResultView({
             </tr>
           </thead>
           <tbody>
-            {pageRows.map((row, rowIndex) => (
-              <tr className="border-b" key={`db-row-${startIndex + rowIndex}`}>
+            {topSpacerHeight > 0 && (
+              <tr aria-hidden="true">
+                <td colSpan={queryResult.columns.length} style={{ height: topSpacerHeight }} />
+              </tr>
+            )}
+            {visibleRows.map((row, rowIndex) => (
+              <tr
+                className="border-b"
+                key={`db-row-${startIndex + virtualStart + rowIndex}`}
+              >
                 {row.map((value, cellIndex) => (
                   <td className="truncate px-3 py-2" key={`db-cell-${cellIndex}`}>
                     {value ?? <span className="text-slate-400">NULL</span>}
@@ -2600,6 +2777,14 @@ function DatabaseResultView({
                 ))}
               </tr>
             ))}
+            {bottomSpacerHeight > 0 && (
+              <tr aria-hidden="true">
+                <td
+                  colSpan={queryResult.columns.length}
+                  style={{ height: bottomSpacerHeight }}
+                />
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
@@ -2623,7 +2808,13 @@ function DatabaseResultView({
           </Button>
           <Button
             disabled={safePageIndex === 0}
-            onClick={() => setPageIndex((current) => Math.max(0, current - 1))}
+            onClick={() => {
+              setPageIndex((current) => Math.max(0, current - 1));
+              setScrollTop(0);
+              if (scrollRef.current) {
+                scrollRef.current.scrollTop = 0;
+              }
+            }}
             size="sm"
             type="button"
             variant="outline"
@@ -2635,7 +2826,13 @@ function DatabaseResultView({
           </span>
           <Button
             disabled={safePageIndex >= pageCount - 1}
-            onClick={() => setPageIndex((current) => Math.min(pageCount - 1, current + 1))}
+            onClick={() => {
+              setPageIndex((current) => Math.min(pageCount - 1, current + 1));
+              setScrollTop(0);
+              if (scrollRef.current) {
+                scrollRef.current.scrollTop = 0;
+              }
+            }}
             size="sm"
             type="button"
             variant="outline"

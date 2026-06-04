@@ -305,12 +305,18 @@ pub struct DatabaseBrowseInput {
     pub connection_id: String,
     pub table_name: String,
     pub limit: Option<u32>,
+    pub offset: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DatabaseBrowseResult {
+    pub table_name: String,
     pub sql: String,
+    pub limit: u32,
+    pub offset: u32,
+    pub total_rows: u64,
+    pub read_only: bool,
     pub result: DatabaseQueryResult,
 }
 

@@ -449,18 +449,28 @@ async function mockInvoke<T>(
 
   if (command === "database_table_browse") {
     const input = args?.input as DatabaseBrowseInput;
+    const limit = input.limit ?? 100;
+    const offset = input.offset ?? 0;
+    const mockRows = [
+      ["mock-workspace", "Default Workspace", "local"],
+      ["mock-api", "API Client", "local"],
+      ["mock-db", "Database", "local"],
+      ["mock-ssh", "SSH Terminal", "reserved"],
+    ];
     return ({
-      sql: `SELECT * FROM "${input.tableName.split('"').join('""')}" LIMIT ${input.limit ?? 100}`,
+      tableName: input.tableName,
+      sql: `SELECT * FROM "${input.tableName.split('"').join('""')}" LIMIT ${limit} OFFSET ${offset}`,
+      limit,
+      offset,
+      totalRows: mockRows.length,
+      readOnly: true,
       result: {
         columns: [
           { name: "id", dataType: "TEXT" },
           { name: "name", dataType: "TEXT" },
           { name: "sync_status", dataType: "TEXT" },
         ],
-        rows: [
-          ["mock-workspace", "Default Workspace", "local"],
-          ["mock-api", "API Client", "local"],
-        ].slice(0, input.limit ?? 100),
+        rows: mockRows.slice(offset, offset + limit),
         affectedRows: 0,
         durationMs: 5,
         safety: {

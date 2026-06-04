@@ -48,12 +48,13 @@ This document records the current implementation state and the next work slices.
 - DONE: SQLite connection test is implemented.
 - DONE: SQLite schema browsing reads tables, views, and columns.
 - DONE: SQLite SQL editor execution supports row results and affected row counts.
-- DONE: SQLite table browse action uses a backend-generated safe `SELECT * FROM table LIMIT ?` query.
+- DONE: SQLite table browse action uses backend-generated safe `SELECT * FROM table LIMIT/OFFSET` queries.
+- DONE: SQLite read-only table data browsing supports page size, offset pagination, total row counts, refresh, and read-only UI state.
 - DONE: DatabaseService has automated tests for connection CRUD, SQLite test, schema browsing, query execution, and table browsing.
 - DONE: Mutating, schema-changing, transaction-control, and unknown SQL require explicit confirmation before execution.
-- DONE: Database result grids use frontend pagination, stable column widths, TSV copy, and CSV export.
+- DONE: Database result grids use frontend pagination, stable column widths, large-result row virtualization, TSV copy, and CSV export.
 - PARTIAL: PostgreSQL/MySQL metadata can be saved, but live credential-backed connections are still reserved.
-- TODO: PostgreSQL/MySQL connection tests, schema browsing, paginated result grids, and controlled editing.
+- TODO: PostgreSQL/MySQL connection tests, schema browsing, and controlled editing.
 
 ### SSH
 
@@ -74,7 +75,7 @@ This document records the current implementation state and the next work slices.
 - PASS: `npm run build` with local permission elevation for the Vite/esbuild helper process.
 - PASS: `cargo check` with local permission elevation for Rust target artifacts.
 - PASS: `cargo test workspace::tests` with local permission elevation for Rust target artifacts.
-- PASS: `cargo test database::tests` with local permission elevation for Rust target artifacts.
+- PASS: `cargo test --manifest-path src-tauri/Cargo.toml database::tests`.
 - PASS: In-app browser loaded `http://127.0.0.1:1420/` and reported no console errors.
 - BLOCKED CURRENT RUN: In-app browser automation tools were not exposed while checking the workspace resource-tree UI; the Vite dev server was already available at `http://127.0.0.1:1420/`.
 
@@ -98,8 +99,9 @@ Goal: turn the SQLite database MVP into a dependable local database tool.
 
 - DONE: Add backend tests around connection CRUD, SQLite test, schema browsing, query execution, and table browsing.
 - DONE: Add query safety policy for mutating SQL, including confirmation metadata for future AI/automation.
-- DONE: Add table data browse action that generates safe `SELECT * FROM table LIMIT ?` queries.
-- DONE: Add result pagination and column width handling in the frontend.
+- DONE: Add table data browse action that generates safe `SELECT * FROM table LIMIT/OFFSET` queries.
+- DONE: Add read-only table data mode with backend offset pagination and total row metadata.
+- DONE: Add result pagination, column width handling, and large-result virtualization in the frontend.
 - Add Postgres/MySQL live connection tests after secret storage is ready.
 
 ### Slice 3: Secret Store
