@@ -97,6 +97,9 @@ function App() {
     selectedSshConnectionId,
     setActiveTab,
     setActiveWorkspace,
+    setSelectedApiRequest,
+    setSelectedDatabaseConnection,
+    setSelectedSshConnection,
     sidebarCollapsed,
     snapshotLayout,
     toggleSidebar,
@@ -124,6 +127,25 @@ function App() {
     queryKey: ["workspace-layout", activeWorkspace?.id],
     queryFn: () => getWorkspaceLayout(activeWorkspace?.id ?? ""),
   });
+  const sidebarSavedRequestsQuery = useQuery({
+    enabled: Boolean(activeWorkspace?.id),
+    queryKey: ["api-saved", activeWorkspace?.id],
+    queryFn: () => listSavedApiRequests(activeWorkspace?.id ?? ""),
+  });
+  const sidebarDatabaseConnectionsQuery = useQuery({
+    enabled: Boolean(activeWorkspace?.id),
+    queryKey: ["database-connections", activeWorkspace?.id],
+    queryFn: () => listDatabaseConnections(activeWorkspace?.id ?? ""),
+  });
+  const sidebarSshConnectionsQuery = useQuery({
+    enabled: Boolean(activeWorkspace?.id),
+    queryKey: ["ssh-connections", activeWorkspace?.id],
+    queryFn: () => listSshConnections(activeWorkspace?.id ?? ""),
+  });
+  const apiResourceGroups = useMemo(
+    () => groupApiRequestsByFolder(sidebarSavedRequestsQuery.data ?? []),
+    [sidebarSavedRequestsQuery.data],
+  );
 
   useEffect(() => {
     if (workspaceQuery.data?.activeWorkspaceId && !activeWorkspaceId) {
@@ -142,6 +164,43 @@ function App() {
       hydrateLayout(workspaceLayoutQuery.data);
     }
   }, [hydrateLayout, workspaceLayoutQuery.data]);
+
+  useEffect(() => {
+    const items = sidebarSavedRequestsQuery.data;
+    if (
+      selectedApiRequestId &&
+      items &&
+      !items.some((item) => item.id === selectedApiRequestId)
+    ) {
+      setSelectedApiRequest(null);
+    }
+  }, [selectedApiRequestId, setSelectedApiRequest, sidebarSavedRequestsQuery.data]);
+
+  useEffect(() => {
+    const items = sidebarDatabaseConnectionsQuery.data;
+    if (
+      selectedDatabaseConnectionId &&
+      items &&
+      !items.some((item) => item.id === selectedDatabaseConnectionId)
+    ) {
+      setSelectedDatabaseConnection(null);
+    }
+  }, [
+    selectedDatabaseConnectionId,
+    setSelectedDatabaseConnection,
+    sidebarDatabaseConnectionsQuery.data,
+  ]);
+
+  useEffect(() => {
+    const items = sidebarSshConnectionsQuery.data;
+    if (
+      selectedSshConnectionId &&
+      items &&
+      !items.some((item) => item.id === selectedSshConnectionId)
+    ) {
+      setSelectedSshConnection(null);
+    }
+  }, [selectedSshConnectionId, setSelectedSshConnection, sidebarSshConnectionsQuery.data]);
 
   const layoutMutation = useMutation({
     mutationFn: (workspaceId: string) =>
@@ -296,8 +355,22 @@ function App() {
               collapsed={sidebarCollapsed}
               icon={<Braces size={14} />}
               label="REST Client"
-              onClick={() => setActiveTab("api-main")}
-              selected={activeTabId === "api-main"}
+              onClick={() => {
+                setSelectedApiRequest(null);
+                setActiveTab("api-main");
+              }}
+              selected={
+                activeTabId === "api-main" && (sidebarCollapsed || !selectedApiRequestId)
+              }
+            />
+            <SidebarApiResources
+              collapsed={sidebarCollapsed}
+              groups={apiResourceGroups}
+              onSelect={(request) => {
+                setSelectedApiRequest(request.id);
+                setActiveTab("api-main");
+              }}
+              selectedId={selectedApiRequestId}
             />
           </ResourceGroup>
 
@@ -311,14 +384,39 @@ function App() {
               icon={<TerminalSquare size={14} />}
               label="SSH Sessions"
               onClick={() => setActiveTab("ssh-main")}
-              selected={activeTabId === "ssh-main"}
+              selected={
+                activeTabId === "ssh-main" && (sidebarCollapsed || !selectedSshConnectionId)
+              }
+            />
+            <SidebarConnectionResources
+              collapsed={sidebarCollapsed}
+              items={sidebarSshConnectionsQuery.data ?? []}
+              kind="ssh"
+              onSelect={(connection) => {
+                setSelectedSshConnection(connection.id);
+                setActiveTab("ssh-main");
+              }}
+              selectedId={selectedSshConnectionId}
             />
             <SidebarAction
               collapsed={sidebarCollapsed}
               icon={<Database size={14} />}
               label="Databases"
               onClick={() => setActiveTab("database-main")}
-              selected={activeTabId === "database-main"}
+              selected={
+                activeTabId === "database-main" &&
+                (sidebarCollapsed || !selectedDatabaseConnectionId)
+              }
+            />
+            <SidebarConnectionResources
+              collapsed={sidebarCollapsed}
+              items={sidebarDatabaseConnectionsQuery.data ?? []}
+              kind="database"
+              onSelect={(connection) => {
+                setSelectedDatabaseConnection(connection.id);
+                setActiveTab("database-main");
+              }}
+              selectedId={selectedDatabaseConnectionId}
             />
           </ResourceGroup>
         </div>
@@ -475,6 +573,150 @@ function SidebarAction({
       {!collapsed && <span className="truncate">{label}</span>}
     </button>
   );
+}
+
+type ApiResourceGroup = {
+  folder: string;
+  items: ApiSavedRequest[];
+};
+
+function SidebarApiResources({
+  collapsed,
+  groups,
+  onSelect,
+  selectedId,
+}: {
+  collapsed: boolean;
+  groups: ApiResourceGroup[];
+  onSelect: (request: ApiSavedRequest) => void;
+  selectedId: string | null;
+}) {
+  if (collapsed || groups.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="mt-1 space-y-2 border-l border-white/10 pl-2">
+      {groups.map((group) => (
+        <div key={group.folder}>
+          <div className="flex h-6 items-center gap-1.5 px-2 text-[11px] font-medium text-slate-500">
+            <Folder size={12} />
+            <span className="min-w-0 truncate">{group.folder}</span>
+          </div>
+          <div className="space-y-1">
+            {group.items.map((request) => (
+              <SidebarResourceItem
+                icon={<Braces size={13} />}
+                key={request.id}
+                label={request.name}
+                meta={request.method}
+                onClick={() => onSelect(request)}
+                selected={selectedId === request.id}
+              />
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SidebarConnectionResources({
+  collapsed,
+  items,
+  kind,
+  onSelect,
+  selectedId,
+}: {
+  collapsed: boolean;
+  items: Array<DatabaseConnection | SshConnection>;
+  kind: "database" | "ssh";
+  onSelect: (connection: DatabaseConnection | SshConnection) => void;
+  selectedId: string | null;
+}) {
+  if (collapsed || items.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="mb-2 mt-1 space-y-1 border-l border-white/10 pl-2">
+      {items.map((connection) => (
+        <SidebarResourceItem
+          icon={kind === "ssh" ? <TerminalSquare size={13} /> : <Database size={13} />}
+          key={connection.id}
+          label={connection.name}
+          meta={sidebarConnectionMeta(connection, kind)}
+          onClick={() => onSelect(connection)}
+          selected={selectedId === connection.id}
+        />
+      ))}
+    </div>
+  );
+}
+
+function SidebarResourceItem({
+  icon,
+  label,
+  meta,
+  onClick,
+  selected,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  meta?: string;
+  onClick: () => void;
+  selected: boolean;
+}) {
+  return (
+    <button
+      className={cn(
+        "flex h-7 w-full items-center gap-2 rounded-md px-2 text-left text-xs transition-colors duration-150",
+        selected
+          ? "bg-teal-500/20 text-white ring-1 ring-inset ring-teal-400/35"
+          : "text-slate-400 hover:bg-white/10 hover:text-white",
+      )}
+      onClick={onClick}
+      type="button"
+    >
+      <span className="flex h-4 w-4 shrink-0 items-center justify-center">{icon}</span>
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+      {meta && (
+        <span className="shrink-0 rounded bg-white/10 px-1.5 text-[10px] font-medium uppercase leading-5 text-slate-400">
+          {meta}
+        </span>
+      )}
+    </button>
+  );
+}
+
+function groupApiRequestsByFolder(items: ApiSavedRequest[]): ApiResourceGroup[] {
+  const folders = new Map<string, ApiSavedRequest[]>();
+
+  for (const item of items) {
+    const folder = item.folderPath?.trim() || "Unfiled";
+    const folderItems = folders.get(folder) ?? [];
+    folderItems.push(item);
+    folders.set(folder, folderItems);
+  }
+
+  return Array.from(folders.entries())
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([folder, folderItems]) => ({
+      folder,
+      items: [...folderItems].sort((left, right) => left.name.localeCompare(right.name)),
+    }));
+}
+
+function sidebarConnectionMeta(
+  connection: DatabaseConnection | SshConnection,
+  kind: "database" | "ssh",
+) {
+  if (kind === "ssh") {
+    const ssh = connection as SshConnection;
+    return `${ssh.username}@${ssh.host}`;
+  }
+
+  return (connection as DatabaseConnection).driver;
 }
 
 function Panel({

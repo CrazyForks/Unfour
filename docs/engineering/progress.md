@@ -24,6 +24,7 @@ This document records the current implementation state and the next work slices.
 - DONE: Active workspace is persisted in `app_settings`.
 - DONE: Workspace environment variables are stored in `workspace_settings.env_json`.
 - DONE: Workspace layout JSON persists sidebar state, active tab, open tabs, and selected resource slots.
+- DONE: The sidebar resource tree lists workspace-scoped API saved requests, database connections, and SSH connections, and selecting them restores the matching work surface.
 - DONE: WorkspaceService tests cover lifecycle, active workspace fallback, environment persistence, and layout validation.
 
 ### API Client
@@ -39,7 +40,6 @@ This document records the current implementation state and the next work slices.
 - DONE: Request history entries can be replayed into the editable API request form.
 - DONE: Response viewer shows body, headers, cookies, timing, and payload sizes.
 - DONE: Saved API request collections can be exported/imported as secret-redacted JSON.
-- TODO: Collection folders and request duplication.
 
 ### Database
 
@@ -68,7 +68,7 @@ This document records the current implementation state and the next work slices.
 - PASS: `pnpm run test:rust`.
 - PASS: `pnpm run check:rust`.
 - PASS: `pnpm run check:rust:ssh`.
-- PASS: `pnpm run build`.
+- PASS: `pnpm run build` after workspace resource-tree changes.
 - PASS: `node .\node_modules\typescript\bin\tsc --noEmit`.
 - PASS: `cargo fmt`.
 - PASS: `npm run build` with local permission elevation for the Vite/esbuild helper process.
@@ -76,7 +76,7 @@ This document records the current implementation state and the next work slices.
 - PASS: `cargo test workspace::tests` with local permission elevation for Rust target artifacts.
 - PASS: `cargo test database::tests` with local permission elevation for Rust target artifacts.
 - PASS: In-app browser loaded `http://127.0.0.1:1420/` and reported no console errors.
-- BLOCKED THIS RUN: In-app browser automation did not expose an available `iab` browser while checking the database UI after Slice 2 changes.
+- BLOCKED CURRENT RUN: In-app browser automation tools were not exposed while checking the workspace resource-tree UI; the Vite dev server was already available at `http://127.0.0.1:1420/`.
 
 ## Next Work Slices
 
@@ -87,6 +87,8 @@ Goal: make the workspace shell remember layout and open tabs.
 - DONE: Add `workspace_layout_get` and `workspace_layout_update` commands.
 - DONE: Store sidebar state, active tab, open tabs, and selected resource slots in `workspace_settings.layout_json`.
 - DONE: Hydrate Zustand state after workspace load.
+- DONE: Add workspace-scoped resource tree entries for API saved requests, database connections, and SSH connections.
+- DONE: Clear stale selected resource IDs when saved requests or connections are removed.
 - DONE: Add tests for layout JSON defaults and update validation.
 - DONE: Add tests for workspace lifecycle, active fallback, and environment validation.
 

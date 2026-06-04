@@ -10,7 +10,7 @@
 - Workspace environments.
 - Engineering docs.
 
-Status: mostly implemented. Remaining foundation work is automated testing and workspace layout/tab restore.
+Status: implemented. Workspace layout restore, selected resource slots, and resource-tree navigation are in place.
 
 ## v0.2 API Client
 
@@ -18,7 +18,7 @@ Status: mostly implemented. Remaining foundation work is automated testing and w
 - Response headers/cookies/timing panels.
 - Import/export without secrets.
 
-Status: request execution, history, saved requests, and environments are implemented. Collections/folders and richer response panels remain.
+Status: request execution, history, saved requests, environments, collections/folders, import/export, and richer response panels are implemented.
 
 ## v0.3 SSH
 

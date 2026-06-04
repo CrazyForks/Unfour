@@ -19,8 +19,8 @@
 - DONE TASK-WORKSPACE-002: List, create, switch, rename, and soft-delete workspaces.
 - DONE TASK-WORKSPACE-003: Persist environment variables and workspace layout JSON.
 - DONE TASK-WORKSPACE-004: Restore tabs per workspace.
-- PARTIAL TASK-WORKSPACE-005: Persist sidebar state, active tab, and selected resource slots in `layout_json`. Active resource wiring remains for future resource-tree entries.
-- TODO TASK-WORKSPACE-006: Add workspace-scoped resource tree entries for API collections and database/SSH connections.
+- DONE TASK-WORKSPACE-005: Persist sidebar state, active tab, and selected resource slots in `layout_json`.
+- DONE TASK-WORKSPACE-006: Add workspace-scoped resource tree entries for API collections and database/SSH connections.
 
 ## P0: API MVP
 
