@@ -3,7 +3,8 @@ use crate::models::{
     ApiHistoryDetail, ApiHistoryItem, ApiRequestInput, ApiResponse, ApiSavedRequest,
     DatabaseBrowseInput, DatabaseBrowseResult, DatabaseConnection, DatabaseConnectionInput,
     DatabaseQueryInput, DatabaseQueryResult, DatabaseSchema, DatabaseTestResult, KeyValue,
-    SystemHealth, Workspace, WorkspaceEnvironment, WorkspaceLayout, WorkspaceState,
+    SshConnection, SshConnectionInput, SystemHealth, Workspace, WorkspaceEnvironment,
+    WorkspaceLayout, WorkspaceState,
 };
 use crate::AppState;
 use tauri::State;
@@ -232,4 +233,32 @@ pub async fn database_table_browse(
     state: State<'_, AppState>,
 ) -> AppResult<DatabaseBrowseResult> {
     state.command_bus.browse_database_table(input).await
+}
+
+#[tauri::command]
+pub async fn ssh_connections_list(
+    workspace_id: String,
+    state: State<'_, AppState>,
+) -> AppResult<Vec<SshConnection>> {
+    state.command_bus.list_ssh_connections(workspace_id).await
+}
+
+#[tauri::command]
+pub async fn ssh_connection_save(
+    input: SshConnectionInput,
+    state: State<'_, AppState>,
+) -> AppResult<SshConnection> {
+    state.command_bus.save_ssh_connection(input).await
+}
+
+#[tauri::command]
+pub async fn ssh_connection_delete(
+    workspace_id: String,
+    connection_id: String,
+    state: State<'_, AppState>,
+) -> AppResult<Vec<SshConnection>> {
+    state
+        .command_bus
+        .delete_ssh_connection(workspace_id, connection_id)
+        .await
 }

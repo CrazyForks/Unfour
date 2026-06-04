@@ -12,7 +12,6 @@ import {
   Folder,
   Globe2,
   History,
-  KeyRound,
   Pencil,
   Play,
   Plus,
@@ -43,6 +42,7 @@ import {
   createWorkspace,
   deleteApiRequest,
   deleteDatabaseConnection,
+  deleteSshConnection,
   executeDatabaseQuery,
   getApiHistoryDetail,
   getDatabaseSchema,
@@ -54,10 +54,12 @@ import {
   listDatabaseConnections,
   listApiHistory,
   listSavedApiRequests,
+  listSshConnections,
   renameWorkspace,
   saveApiRequest,
   duplicateApiRequest,
   saveDatabaseConnection,
+  saveSshConnection,
   sendApiRequest,
   setActiveWorkspace as setActiveWorkspaceCommand,
   testDatabaseConnection,
@@ -79,6 +81,8 @@ import type {
   DatabaseTable,
   DatabaseTestResult,
   KeyValue,
+  SshConnection,
+  SshConnectionInput,
 } from "./types";
 
 const methods = ["GET", "POST", "PUT", "PATCH", "DELETE"];
@@ -409,7 +413,9 @@ function App() {
           {activeTab.kind === "api" && activeWorkspace && (
             <ApiClientPanel workspaceId={activeWorkspace.id} />
           )}
-          {activeTab.kind === "ssh" && <SshPanel />}
+          {activeTab.kind === "ssh" && activeWorkspace && (
+            <SshPanel workspaceId={activeWorkspace.id} />
+          )}
           {activeTab.kind === "database" && activeWorkspace && (
             <DatabasePanel workspaceId={activeWorkspace.id} />
           )}
@@ -1351,28 +1357,221 @@ function HistoryTable({
   );
 }
 
-function SshPanel() {
+function SshPanel({ workspaceId }: { workspaceId: string }) {
+  const queryClient = useQueryClient();
+  const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
+  const [form, setForm] = useState<SshConnectionInput>({
+    workspaceId,
+    name: "Deploy host",
+    host: "example.internal",
+    port: 22,
+    username: "deploy",
+    authKind: "password",
+    credentialRef: "credential://ssh/deploy-host",
+  });
+
+  const connectionsQuery = useQuery({
+    enabled: Boolean(workspaceId),
+    queryKey: ["ssh-connections", workspaceId],
+    queryFn: () => listSshConnections(workspaceId),
+  });
+
+  const selectedConnection: SshConnection | null =
+    connectionsQuery.data?.find((item) => item.id === selectedConnectionId) ?? null;
+
+  useEffect(() => {
+    setForm((current) => ({ ...current, workspaceId }));
+  }, [workspaceId]);
+
+  useEffect(() => {
+    if (!connectionsQuery.data?.length) {
+      setSelectedConnectionId(null);
+      return;
+    }
+    if (!selectedConnectionId) {
+      setSelectedConnectionId(connectionsQuery.data[0].id);
+    }
+  }, [connectionsQuery.data, selectedConnectionId]);
+
+  useEffect(() => {
+    if (!selectedConnection) {
+      return;
+    }
+    setForm({
+      id: selectedConnection.id,
+      workspaceId,
+      name: selectedConnection.name,
+      host: selectedConnection.host,
+      port: selectedConnection.port,
+      username: selectedConnection.username,
+      authKind: selectedConnection.authKind,
+      keyPath: selectedConnection.keyPath,
+      credentialRef: selectedConnection.credentialRef,
+    });
+  }, [selectedConnection, workspaceId]);
+
+  const saveMutation = useMutation({
+    mutationFn: saveSshConnection,
+    onSuccess: (connection) => {
+      setSelectedConnectionId(connection.id);
+      queryClient.invalidateQueries({ queryKey: ["ssh-connections", workspaceId] });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (connectionId: string) => deleteSshConnection(workspaceId, connectionId),
+    onSuccess: () => {
+      setSelectedConnectionId(null);
+      queryClient.invalidateQueries({ queryKey: ["ssh-connections", workspaceId] });
+    },
+  });
+
+  function updateForm(patch: Partial<SshConnectionInput>) {
+    setForm((current) => ({ ...current, ...patch, workspaceId }));
+  }
+
+  function newConnection() {
+    setSelectedConnectionId(null);
+    setForm({
+      workspaceId,
+      name: "Deploy host",
+      host: "example.internal",
+      port: 22,
+      username: "deploy",
+      authKind: "password",
+      credentialRef: "credential://ssh/deploy-host",
+    });
+  }
+
+  function submitConnection(event: FormEvent) {
+    event.preventDefault();
+    saveMutation.mutate(form);
+  }
+
   return (
     <div className="grid h-full min-h-0 grid-cols-[300px_minmax(0,1fr)] gap-2">
-      <section className="surface-panel rounded-md">
-        <div className="surface-header flex h-10 items-center gap-2 px-3 text-sm font-semibold">
-          <TerminalSquare size={16} />
-          SSH Sessions
+      <section className="surface-panel flex min-h-0 flex-col rounded-md">
+        <div className="surface-header flex h-10 items-center justify-between px-3">
+          <div className="flex items-center gap-2 text-sm font-semibold">
+            <TerminalSquare size={16} />
+            SSH Connections
+          </div>
+          <Button onClick={newConnection} size="icon" type="button" variant="ghost">
+            <Plus size={15} />
+          </Button>
         </div>
-        <div className="space-y-3 p-3">
-          <Input placeholder="Host" value="example.internal" readOnly />
-          <Input placeholder="User" value="deploy" readOnly />
-          <div className="grid grid-cols-2 gap-2">
-            <Button type="button" variant="outline">
-              <KeyRound size={15} />
-              Password
+
+        <form className="space-y-3 border-b border-slate-200 bg-slate-50/55 p-3" onSubmit={submitConnection}>
+          <FieldGroup title="Name">
+            <Input onChange={(event) => updateForm({ name: event.target.value })} value={form.name} />
+          </FieldGroup>
+          <div className="grid grid-cols-[1fr_84px] gap-2">
+            <FieldGroup title="Host">
+              <Input onChange={(event) => updateForm({ host: event.target.value })} value={form.host} />
+            </FieldGroup>
+            <FieldGroup title="Port">
+              <Input
+                onChange={(event) =>
+                  updateForm({ port: event.target.value ? Number(event.target.value) : null })
+                }
+                type="number"
+                value={form.port ?? ""}
+              />
+            </FieldGroup>
+          </div>
+          <FieldGroup title="Username">
+            <Input onChange={(event) => updateForm({ username: event.target.value })} value={form.username} />
+          </FieldGroup>
+          <FieldGroup title="Auth">
+            <select
+              className="h-9 w-full rounded-md border border-slate-300 bg-white px-2 text-sm text-slate-950 outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/15"
+              onChange={(event) =>
+                updateForm({
+                  authKind: event.target.value as SshConnectionInput["authKind"],
+                  keyPath: event.target.value === "private-key" ? form.keyPath : null,
+                })
+              }
+              value={form.authKind}
+            >
+              <option value="password">Password</option>
+              <option value="private-key">Private key</option>
+            </select>
+          </FieldGroup>
+          {form.authKind === "private-key" && (
+            <FieldGroup title="Key Path">
+              <Input
+                onChange={(event) => updateForm({ keyPath: event.target.value })}
+                placeholder="C:\\Users\\me\\.ssh\\id_ed25519"
+                value={form.keyPath ?? ""}
+              />
+            </FieldGroup>
+          )}
+          <FieldGroup title="Credential Ref">
+            <Input
+              onChange={(event) => updateForm({ credentialRef: event.target.value })}
+              placeholder="credential://ssh/deploy-host"
+              value={form.credentialRef ?? ""}
+            />
+          </FieldGroup>
+
+          <div className="flex items-center gap-2">
+            <Button disabled={saveMutation.isPending} type="submit">
+              <Save size={15} />
+              Save
             </Button>
-            <Button type="button" variant="outline">
-              <KeyRound size={15} />
-              Private key
+            <Button
+              aria-label="Delete SSH connection"
+              disabled={!selectedConnectionId || deleteMutation.isPending}
+              onClick={() => selectedConnectionId && deleteMutation.mutate(selectedConnectionId)}
+              size="icon"
+              type="button"
+              variant="ghost"
+            >
+              <Trash2 size={15} />
             </Button>
           </div>
-          <Badge tone="amber">reserved backend</Badge>
+          {(saveMutation.error || deleteMutation.error) && (
+            <div className="rounded-md bg-rose-50 px-2 py-2 text-xs text-rose-800 ring-1 ring-inset ring-rose-200">
+              {formatError(saveMutation.error ?? deleteMutation.error)}
+            </div>
+          )}
+        </form>
+
+        <div className="min-h-0 flex-1 overflow-y-auto p-3">
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Saved Connections
+            </span>
+            <Badge tone="neutral">{connectionsQuery.data?.length ?? 0}</Badge>
+          </div>
+          <div className="space-y-1">
+            {connectionsQuery.data?.map((connection) => (
+              <button
+                className={cn(
+                  "flex min-h-9 w-full items-center justify-between gap-2 rounded-md px-2 text-left text-sm transition-colors",
+                  selectedConnectionId === connection.id
+                    ? "bg-teal-50 text-teal-900 ring-1 ring-inset ring-teal-200"
+                    : "text-slate-700 hover:bg-slate-100 hover:text-slate-950",
+                )}
+                key={connection.id}
+                onClick={() => setSelectedConnectionId(connection.id)}
+                type="button"
+              >
+                <span className="min-w-0 flex-1 truncate">{connection.name}</span>
+                <Badge tone={connection.authKind === "password" ? "amber" : "teal"}>
+                  {connection.authKind}
+                </Badge>
+              </button>
+            ))}
+            {connectionsQuery.data?.length === 0 && (
+              <div className="empty-state rounded-md py-4 text-center text-sm">
+                No SSH connections
+              </div>
+            )}
+          </div>
+          <div className="mt-3 rounded-md bg-amber-50 px-2 py-2 text-xs text-amber-800 ring-1 ring-inset ring-amber-200">
+            Session login and terminal streaming remain reserved for the russh backend.
+          </div>
         </div>
       </section>
       <TerminalPreview />

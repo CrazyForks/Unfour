@@ -165,6 +165,50 @@ pub struct DatabaseConnectionInput {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct SshConnectionInput {
+    pub id: Option<String>,
+    pub workspace_id: String,
+    pub name: String,
+    pub host: String,
+    pub port: Option<u16>,
+    pub username: String,
+    pub auth_kind: String,
+    pub key_path: Option<String>,
+    pub credential_ref: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SshConnection {
+    pub id: String,
+    pub workspace_id: String,
+    pub name: String,
+    pub host: String,
+    pub port: u16,
+    pub username: String,
+    pub auth_kind: String,
+    pub key_path: Option<String>,
+    pub credential_ref: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+    pub deleted_at: Option<String>,
+    pub revision: i64,
+    pub sync_status: String,
+    pub remote_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SshConnectionConfig {
+    pub host: String,
+    pub port: u16,
+    pub username: String,
+    pub auth_kind: String,
+    pub key_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DatabaseConnection {
     pub id: String,
     pub workspace_id: String,

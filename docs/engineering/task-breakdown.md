@@ -37,7 +37,7 @@
 ## P1: SSH MVP
 
 - DONE TASK-SSH-001: Add `russh` dependency compatible with the selected Rust toolchain.
-- TODO TASK-SSH-002: Add SSH connection metadata CRUD with `credential_ref`.
+- DONE TASK-SSH-002: Add SSH connection metadata CRUD with `credential_ref`.
 - TODO TASK-SSH-003: Password auth returns `session_id`.
 - TODO TASK-SSH-004: Private-key auth using local key path and passphrase ref.
 - TODO TASK-SSH-005: PTY allocation, xterm input, resize, and event output.

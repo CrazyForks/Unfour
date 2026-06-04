@@ -12,6 +12,7 @@ Unfour Workspace is a Tauri 2 desktop app for unified operations and development
 - Workspace environment variables with `{{variable}}` resolution for API requests.
 - Saved API requests can be grouped into folders, duplicated, deleted, and loaded back into the editor.
 - Database connection metadata, SQLite connection test, SQLite schema browsing, and SQLite SQL execution.
+- SSH connection metadata with credential references; live sessions remain reserved.
 - AI and cloud sync extension points reserved.
 
 ## Commands

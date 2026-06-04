@@ -119,6 +119,36 @@ export type DatabaseConnectionInput = {
   credentialRef?: string | null;
 };
 
+export type SshConnectionInput = {
+  id?: string;
+  workspaceId: string;
+  name: string;
+  host: string;
+  port?: number | null;
+  username: string;
+  authKind: "password" | "private-key";
+  keyPath?: string | null;
+  credentialRef?: string | null;
+};
+
+export type SshConnection = {
+  id: string;
+  workspaceId: string;
+  name: string;
+  host: string;
+  port: number;
+  username: string;
+  authKind: "password" | "private-key";
+  keyPath: string | null;
+  credentialRef: string | null;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+  revision: number;
+  syncStatus: string;
+  remoteId: string | null;
+};
+
 export type DatabaseConnection = {
   id: string;
   workspaceId: string;

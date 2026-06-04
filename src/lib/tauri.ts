@@ -13,6 +13,8 @@ import type {
   DatabaseQueryResult,
   DatabaseSchema,
   DatabaseTestResult,
+  SshConnection,
+  SshConnectionInput,
   SystemHealth,
   Workspace,
   WorkspaceEnvironment,
@@ -48,6 +50,7 @@ let mockHistory: ApiHistoryItem[] = [];
 let mockHistoryDetails: ApiHistoryDetail[] = [];
 let mockSavedRequests: ApiSavedRequest[] = [];
 let mockDatabaseConnections: DatabaseConnection[] = [];
+let mockSshConnections: SshConnection[] = [];
 let mockEnvironment: WorkspaceEnvironment = {
   workspaceId: mockWorkspace.id,
   variables: [
@@ -470,6 +473,51 @@ async function mockInvoke<T>(
     } satisfies DatabaseBrowseResult) as T;
   }
 
+  if (command === "ssh_connections_list") {
+    const workspaceId = String(args?.workspaceId ?? mockState.activeWorkspaceId);
+    return mockSshConnections.filter((item) => item.workspaceId === workspaceId) as T;
+  }
+
+  if (command === "ssh_connection_save") {
+    const input = args?.input as SshConnectionInput;
+    const now = new Date().toISOString();
+    const existingIndex = input.id
+      ? mockSshConnections.findIndex((item) => item.id === input.id)
+      : -1;
+    const connection: SshConnection = {
+      id: input.id || crypto.randomUUID(),
+      workspaceId: input.workspaceId,
+      name: input.name.trim(),
+      host: input.host.trim(),
+      port: input.port || 22,
+      username: input.username.trim(),
+      authKind: input.authKind,
+      keyPath: input.keyPath?.trim() || null,
+      credentialRef: input.credentialRef?.trim() || null,
+      createdAt: existingIndex >= 0 ? mockSshConnections[existingIndex].createdAt : now,
+      updatedAt: now,
+      deletedAt: null,
+      revision: existingIndex >= 0 ? mockSshConnections[existingIndex].revision + 1 : 1,
+      syncStatus: existingIndex >= 0 ? "pending" : "local",
+      remoteId: null,
+    };
+    if (existingIndex >= 0) {
+      mockSshConnections[existingIndex] = connection;
+    } else {
+      mockSshConnections = [connection, ...mockSshConnections];
+    }
+    return connection as T;
+  }
+
+  if (command === "ssh_connection_delete") {
+    const workspaceId = String(args?.workspaceId ?? mockState.activeWorkspaceId);
+    const connectionId = String(args?.connectionId ?? "");
+    mockSshConnections = mockSshConnections.filter(
+      (item) => !(item.workspaceId === workspaceId && item.id === connectionId),
+    );
+    return mockSshConnections.filter((item) => item.workspaceId === workspaceId) as T;
+  }
+
   throw new Error(`Mock command is not implemented: ${command}`);
 }
 
@@ -585,6 +633,21 @@ export function executeDatabaseQuery(input: DatabaseQueryInput) {
 
 export function browseDatabaseTable(input: DatabaseBrowseInput) {
   return call<DatabaseBrowseResult>("database_table_browse", { input });
+}
+
+export function listSshConnections(workspaceId: string) {
+  return call<SshConnection[]>("ssh_connections_list", { workspaceId });
+}
+
+export function saveSshConnection(input: SshConnectionInput) {
+  return call<SshConnection>("ssh_connection_save", { input });
+}
+
+export function deleteSshConnection(workspaceId: string, connectionId: string) {
+  return call<SshConnection[]>("ssh_connection_delete", {
+    workspaceId,
+    connectionId,
+  });
 }
 
 function resolveInput(input: ApiRequestInput, variables: WorkspaceEnvironment["variables"]) {

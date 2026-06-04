@@ -57,6 +57,9 @@ pub fn run() {
             commands::database_query_execute,
             commands::database_schema_get,
             commands::database_table_browse,
+            commands::ssh_connection_delete,
+            commands::ssh_connection_save,
+            commands::ssh_connections_list,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Unfour Workspace");

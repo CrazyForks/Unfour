@@ -5,8 +5,9 @@ use crate::local_db::LocalDb;
 use crate::models::{
     ApiHistoryDetail, ApiHistoryItem, ApiRequestInput, ApiResponse, ApiSavedRequest,
     DatabaseBrowseInput, DatabaseBrowseResult, DatabaseConnection, DatabaseConnectionInput,
-    DatabaseQueryInput, DatabaseQueryResult, DatabaseSchema, DatabaseTestResult, SystemHealth,
-    Workspace, WorkspaceEnvironment, WorkspaceLayout, WorkspaceState,
+    DatabaseQueryInput, DatabaseQueryResult, DatabaseSchema, DatabaseTestResult, SshConnection,
+    SshConnectionInput, SystemHealth, Workspace, WorkspaceEnvironment, WorkspaceLayout,
+    WorkspaceState,
 };
 use crate::services::api_client::ApiClientService;
 use crate::services::database::DatabaseService;
@@ -41,7 +42,7 @@ impl CommandBus {
             audit_log,
             database: DatabaseService::new(db.clone()),
             secret_store,
-            ssh: SshService::new(),
+            ssh: SshService::new(db.clone()),
             workspace,
         })
     }
@@ -377,6 +378,51 @@ impl CommandBus {
             )
             .await?;
         Ok(result)
+    }
+
+    pub async fn list_ssh_connections(
+        &self,
+        workspace_id: String,
+    ) -> AppResult<Vec<SshConnection>> {
+        self.ssh.list_connections(workspace_id).await
+    }
+
+    pub async fn save_ssh_connection(&self, input: SshConnectionInput) -> AppResult<SshConnection> {
+        let connection = self.ssh.save_connection(input).await?;
+        self.audit_log
+            .record(
+                Some(&connection.workspace_id),
+                "ssh.connection.save",
+                Some(&connection.id),
+                serde_json::json!({
+                    "name": connection.name,
+                    "host": connection.host,
+                    "authKind": connection.auth_kind,
+                    "credentialRef": connection.credential_ref.is_some()
+                }),
+            )
+            .await?;
+        Ok(connection)
+    }
+
+    pub async fn delete_ssh_connection(
+        &self,
+        workspace_id: String,
+        connection_id: String,
+    ) -> AppResult<Vec<SshConnection>> {
+        let connections = self
+            .ssh
+            .delete_connection(workspace_id.clone(), connection_id.clone())
+            .await?;
+        self.audit_log
+            .record(
+                Some(&workspace_id),
+                "ssh.connection.delete",
+                Some(&connection_id),
+                serde_json::json!({ "softDelete": true }),
+            )
+            .await?;
+        Ok(connections)
     }
 
     pub fn reserved_status(&self) -> serde_json::Value {

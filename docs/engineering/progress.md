@@ -59,6 +59,8 @@ This document records the current implementation state and the next work slices.
 
 - DONE: Frontend has an SSH work surface and xterm preview component.
 - DONE: Rust service boundary and dependency strategy are reserved.
+- DONE: SSH connection metadata CRUD stores host/user/auth metadata with `credential_ref` only.
+- DONE: SSH connection metadata is workspace-scoped and covered by Rust service tests.
 - TODO: Real session lifecycle, password/private-key auth, PTY allocation, event streaming, resize, close, and redacted logs.
 
 ## Verification Status
