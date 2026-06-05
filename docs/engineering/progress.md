@@ -56,6 +56,14 @@ This document records the current implementation state and the next work slices.
 - PARTIAL: PostgreSQL/MySQL metadata can be saved, but live credential-backed connections are still reserved.
 - TODO: PostgreSQL/MySQL connection tests, schema browsing, and controlled editing.
 
+### Secret Store
+
+- DONE: `SecretStore` uses the OS keychain in production and an in-memory backend for tests.
+- DONE: Credential create, inspect, rotate, and delete are exposed through the Command Bus and Tauri adapters.
+- DONE: Credential references are workspace-scoped and secrets are never returned by metadata commands.
+- DONE: Shared Rust redaction helpers cover sensitive HTTP-style keys and credential-bearing log lines.
+- TODO: Add frontend credential management UI for attaching, rotating, and deleting credential references from SSH/database forms.
+
 ### SSH
 
 - DONE: Frontend has an SSH work surface and xterm preview component.
@@ -109,10 +117,12 @@ Goal: turn the SQLite database MVP into a dependable local database tool.
 
 Goal: stop all credential-bearing workflows at a real OS secret boundary.
 
-- Implement `SecretStore` using OS keychain or Stronghold.
-- Add commands for creating, reading metadata for, rotating, and deleting credentials.
+- DONE: Implement `SecretStore` using OS keychain or Stronghold.
+- DONE: Add commands for creating, reading metadata for, rotating, and deleting credentials.
 - Store only `credential_ref` in SQLite.
-- Add redaction helpers shared by API, SSH, database, local activity, and future sync.
+- DONE: Store only `credential_ref` in SQLite.
+- DONE: Add redaction helpers shared by API, SSH, database, local activity, and future sync.
+- Add frontend credential management UI for SSH/database credential references.
 
 ### Slice 4: SSH MVP
 

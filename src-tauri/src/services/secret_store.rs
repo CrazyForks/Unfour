@@ -86,6 +86,47 @@ impl SecretStore {
         self.load_secret(&credential_ref).await
     }
 
+    pub async fn inspect_credential(
+        &self,
+        workspace_id: String,
+        credential_ref: String,
+    ) -> AppResult<CredentialMetadata> {
+        let workspace_id = normalize_segment(&workspace_id, "workspace id")?;
+        let parsed = self.parse_ref(&credential_ref)?;
+        if parsed.workspace_id != workspace_id {
+            return Err(AppError::Validation(
+                "credential reference does not belong to the workspace".to_string(),
+            ));
+        }
+
+        Ok(CredentialMetadata {
+            workspace_id,
+            kind: parsed.kind,
+            label: "Credential reference".to_string(),
+            credential_ref,
+        })
+    }
+
+    pub async fn rotate_credential(
+        &self,
+        workspace_id: String,
+        credential_ref: String,
+        secret: String,
+    ) -> AppResult<CredentialMetadata> {
+        if secret.is_empty() {
+            return Err(AppError::Validation(
+                "credential secret cannot be empty".to_string(),
+            ));
+        }
+        let metadata = self.inspect_credential(workspace_id, credential_ref).await?;
+        self.write_secret(&metadata.credential_ref, &secret).await?;
+
+        Ok(CredentialMetadata {
+            label: "Rotated credential".to_string(),
+            ..metadata
+        })
+    }
+
     pub async fn delete_credential(
         &self,
         workspace_id: String,
@@ -190,12 +231,14 @@ impl SecretStore {
 
         Ok(ParsedCredentialRef {
             workspace_id: workspace_id.to_string(),
+            kind: kind.to_string(),
         })
     }
 }
 
 struct ParsedCredentialRef {
     workspace_id: String,
+    kind: String,
 }
 
 fn normalize_segment(value: &str, label: &str) -> AppResult<String> {
@@ -288,5 +331,66 @@ mod tests {
             .read_secret("workspace-b".to_string(), created.credential_ref)
             .await;
         assert!(cross_workspace.is_err());
+    }
+
+    #[tokio::test]
+    async fn credentials_can_be_rotated_without_changing_reference() {
+        let store = SecretStore::in_memory("unfour-test");
+        let created = store
+            .create_credential(
+                "workspace-a".to_string(),
+                "ssh-password".to_string(),
+                "Deploy password".to_string(),
+                "old-secret".to_string(),
+            )
+            .await
+            .expect("create credential");
+
+        let rotated = store
+            .rotate_credential(
+                "workspace-a".to_string(),
+                created.credential_ref.clone(),
+                "new-secret".to_string(),
+            )
+            .await
+            .expect("rotate credential");
+
+        assert_eq!(rotated.credential_ref, created.credential_ref);
+        assert_eq!(rotated.workspace_id, "workspace-a");
+        assert_eq!(rotated.kind, "ssh-password");
+        assert_eq!(rotated.label, "Rotated credential");
+        let loaded = store
+            .read_secret("workspace-a".to_string(), rotated.credential_ref)
+            .await
+            .expect("read rotated credential");
+        assert_eq!(loaded, "new-secret");
+    }
+
+    #[tokio::test]
+    async fn credential_reference_metadata_is_derived_without_loading_secret() {
+        let store = SecretStore::in_memory("unfour-test");
+        let created = store
+            .create_credential(
+                "workspace-a".to_string(),
+                "database-password".to_string(),
+                "Database password".to_string(),
+                "secret-value".to_string(),
+            )
+            .await
+            .expect("create credential");
+
+        let metadata = store
+            .inspect_credential("workspace-a".to_string(), created.credential_ref.clone())
+            .await
+            .expect("inspect credential");
+        let wrong_workspace = store
+            .inspect_credential("workspace-b".to_string(), created.credential_ref)
+            .await;
+
+        assert_eq!(metadata.workspace_id, "workspace-a");
+        assert_eq!(metadata.kind, "database-password");
+        assert_eq!(metadata.label, "Credential reference");
+        assert!(!metadata.credential_ref.contains("secret-value"));
+        assert!(wrong_workspace.is_err());
     }
 }

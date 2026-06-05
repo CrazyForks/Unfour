@@ -1,12 +1,13 @@
 use crate::app_error::AppResult;
 use crate::models::{
     ApiHistoryDetail, ApiHistoryItem, ApiRequestInput, ApiResponse, ApiSavedRequest,
-    CredentialCreateInput, CredentialDeleteInput, CredentialMetadata, DatabaseBrowseInput,
-    DatabaseBrowseResult, DatabaseConnection, DatabaseConnectionInput, DatabaseQueryInput,
-    DatabaseQueryResult, DatabaseSchema, DatabaseTestResult, KeyValue, SshCloseInput,
-    SshConnectInput, SshConnection, SshConnectionInput, SshLogExport, SshLogExportInput,
-    SshResizeInput, SshSessionEvent, SshSessionInput, SshSessionSummary, SystemHealth, Workspace,
-    WorkspaceEnvironment, WorkspaceLayout, WorkspaceState,
+    CredentialCreateInput, CredentialDeleteInput, CredentialInspectInput, CredentialMetadata,
+    CredentialRotateInput, DatabaseBrowseInput, DatabaseBrowseResult, DatabaseConnection,
+    DatabaseConnectionInput, DatabaseQueryInput, DatabaseQueryResult, DatabaseSchema,
+    DatabaseTestResult, KeyValue, SshCloseInput, SshConnectInput, SshConnection,
+    SshConnectionInput, SshLogExport, SshLogExportInput, SshResizeInput, SshSessionEvent,
+    SshSessionInput, SshSessionSummary, SystemHealth, Workspace, WorkspaceEnvironment,
+    WorkspaceLayout, WorkspaceState,
 };
 use crate::AppState;
 use tauri::State;
@@ -180,6 +181,22 @@ pub async fn credential_delete(
     state: State<'_, AppState>,
 ) -> AppResult<()> {
     state.command_bus.delete_credential(input).await
+}
+
+#[tauri::command]
+pub async fn credential_inspect(
+    input: CredentialInspectInput,
+    state: State<'_, AppState>,
+) -> AppResult<CredentialMetadata> {
+    state.command_bus.inspect_credential(input).await
+}
+
+#[tauri::command]
+pub async fn credential_rotate(
+    input: CredentialRotateInput,
+    state: State<'_, AppState>,
+) -> AppResult<CredentialMetadata> {
+    state.command_bus.rotate_credential(input).await
 }
 
 #[tauri::command]

@@ -3,6 +3,7 @@ use crate::local_db::LocalDb;
 use crate::models::{
     ApiHistoryDetail, ApiHistoryItem, ApiRequestInput, ApiResponse, ApiSavedRequest, KeyValue,
 };
+use crate::redaction::redact_key_values;
 use chrono::Utc;
 use reqwest::header::{HeaderName, HeaderValue, CONTENT_TYPE};
 use reqwest::{Client, Method, Url};
@@ -396,25 +397,9 @@ fn build_url(raw_url: &str, query: &[KeyValue]) -> AppResult<Url> {
 }
 
 fn redact_headers(headers: &[KeyValue]) -> Vec<KeyValue> {
-    headers
-        .iter()
-        .map(|item| {
-            let key = item.key.to_ascii_lowercase();
-            let sensitive = matches!(
-                key.as_str(),
-                "authorization" | "cookie" | "proxy-authorization" | "x-api-key" | "x-auth-token"
-            );
-            KeyValue {
-                key: item.key.clone(),
-                value: if sensitive {
-                    "<redacted>".to_string()
-                } else {
-                    item.value.clone()
-                },
-                enabled: item.enabled,
-            }
-        })
-        .collect()
+    redact_key_values(headers.to_vec(), |item| &item.key, |item, value| {
+        item.value = value;
+    })
 }
 
 fn validate_workspace_id(workspace_id: &str) -> AppResult<()> {

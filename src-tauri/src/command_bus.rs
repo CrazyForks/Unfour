@@ -4,12 +4,13 @@ use crate::activity_log::ActivityLogService;
 use crate::local_db::LocalDb;
 use crate::models::{
     ApiHistoryDetail, ApiHistoryItem, ApiRequestInput, ApiResponse, ApiSavedRequest,
-    CredentialCreateInput, CredentialDeleteInput, CredentialMetadata, DatabaseBrowseInput,
-    DatabaseBrowseResult, DatabaseConnection, DatabaseConnectionInput, DatabaseQueryInput,
-    DatabaseQueryResult, DatabaseSchema, DatabaseTestResult, SshCloseInput, SshConnectInput,
-    SshConnection, SshConnectionInput, SshLogExport, SshLogExportInput, SshResizeInput,
-    SshSessionEvent, SshSessionInput, SshSessionSummary, SystemHealth, Workspace,
-    WorkspaceEnvironment, WorkspaceLayout, WorkspaceState,
+    CredentialCreateInput, CredentialDeleteInput, CredentialInspectInput, CredentialMetadata,
+    CredentialRotateInput, DatabaseBrowseInput, DatabaseBrowseResult, DatabaseConnection,
+    DatabaseConnectionInput, DatabaseQueryInput, DatabaseQueryResult, DatabaseSchema,
+    DatabaseTestResult, SshCloseInput, SshConnectInput, SshConnection, SshConnectionInput,
+    SshLogExport, SshLogExportInput, SshResizeInput, SshSessionEvent, SshSessionInput,
+    SshSessionSummary, SystemHealth, Workspace, WorkspaceEnvironment, WorkspaceLayout,
+    WorkspaceState,
 };
 use crate::services::api_client::ApiClientService;
 use crate::services::database::DatabaseService;
@@ -287,6 +288,37 @@ impl CommandBus {
             )
             .await?;
         Ok(())
+    }
+
+    pub async fn inspect_credential(
+        &self,
+        input: CredentialInspectInput,
+    ) -> AppResult<CredentialMetadata> {
+        self.secret_store
+            .inspect_credential(input.workspace_id, input.credential_ref)
+            .await
+    }
+
+    pub async fn rotate_credential(
+        &self,
+        input: CredentialRotateInput,
+    ) -> AppResult<CredentialMetadata> {
+        let credential = self
+            .secret_store
+            .rotate_credential(input.workspace_id, input.credential_ref, input.secret)
+            .await?;
+        self.activity_log
+            .record(
+                Some(&credential.workspace_id),
+                "credential.rotate",
+                Some(&credential.credential_ref),
+                serde_json::json!({
+                    "kind": credential.kind,
+                    "secretStored": true
+                }),
+            )
+            .await?;
+        Ok(credential)
     }
 
     pub async fn list_database_connections(

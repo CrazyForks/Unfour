@@ -5,6 +5,7 @@ mod command_bus;
 mod commands;
 mod local_db;
 mod models;
+mod redaction;
 mod services;
 mod sync_reserved;
 
@@ -52,6 +53,8 @@ pub fn run() {
             commands::api_send_request,
             commands::credential_create,
             commands::credential_delete,
+            commands::credential_inspect,
+            commands::credential_rotate,
             commands::database_connection_delete,
             commands::database_connection_save,
             commands::database_connection_test,

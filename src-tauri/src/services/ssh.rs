@@ -5,6 +5,7 @@ use crate::models::{
     SshLogExport, SshLogExportInput, SshResizeInput, SshSessionEvent, SshSessionInput,
     SshSessionSummary, StoredConnection,
 };
+use crate::redaction::redact_sensitive_lines;
 use chrono::Utc;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -554,35 +555,7 @@ fn ensure_session_active(state: &SshSessionState) -> AppResult<()> {
 }
 
 fn redact_ssh_log(value: &str) -> (String, bool) {
-    let mut redacted = false;
-    let lines = value
-        .lines()
-        .map(|line| {
-            let lower = line.to_ascii_lowercase();
-            if [
-                "authorization",
-                "cookie",
-                "proxy-authorization",
-                "x-api-key",
-                "x-auth-token",
-                "password",
-                "passphrase",
-            ]
-            .iter()
-            .any(|needle| lower.contains(needle))
-            {
-                redacted = true;
-                "<redacted>".to_string()
-            } else {
-                line.to_string()
-            }
-        })
-        .collect::<Vec<_>>();
-    let mut output = lines.join("\n");
-    if value.ends_with('\n') {
-        output.push('\n');
-    }
-    (output, redacted)
+    redact_sensitive_lines(value)
 }
 
 #[cfg(test)]

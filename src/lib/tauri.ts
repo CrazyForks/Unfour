@@ -7,7 +7,9 @@ import type {
   ApiSavedRequest,
   CredentialCreateInput,
   CredentialDeleteInput,
+  CredentialInspectInput,
   CredentialMetadata,
+  CredentialRotateInput,
   DatabaseBrowseInput,
   DatabaseBrowseResult,
   DatabaseConnection,
@@ -346,6 +348,22 @@ async function mockInvoke<T>(
     const input = args?.input as CredentialDeleteInput;
     delete mockCredentials[input.credentialRef];
     return undefined as T;
+  }
+
+  if (command === "credential_inspect") {
+    const input = args?.input as CredentialInspectInput;
+    const metadata = inspectMockCredential(input.workspaceId, input.credentialRef);
+    return metadata as T;
+  }
+
+  if (command === "credential_rotate") {
+    const input = args?.input as CredentialRotateInput;
+    const metadata = inspectMockCredential(input.workspaceId, input.credentialRef);
+    mockCredentials[input.credentialRef] = input.secret;
+    return {
+      ...metadata,
+      label: "Rotated credential",
+    } as T;
   }
 
   if (command === "database_connections_list") {
@@ -761,6 +779,14 @@ export function deleteCredential(input: CredentialDeleteInput) {
   return call<void>("credential_delete", { input });
 }
 
+export function inspectCredential(input: CredentialInspectInput) {
+  return call<CredentialMetadata>("credential_inspect", { input });
+}
+
+export function rotateCredential(input: CredentialRotateInput) {
+  return call<CredentialMetadata>("credential_rotate", { input });
+}
+
 export function listDatabaseConnections(workspaceId: string) {
   return call<DatabaseConnection[]>("database_connections_list", { workspaceId });
 }
@@ -901,6 +927,29 @@ function redactSshLog(value: string) {
         : line;
     })
     .join("\n");
+}
+
+function inspectMockCredential(
+  workspaceId: string,
+  credentialRef: string,
+): CredentialMetadata {
+  const [serviceName, refWorkspaceId, kind, recordId] = credentialRef.split(":");
+  if (
+    serviceName !== "unfour-workspace" ||
+    refWorkspaceId !== workspaceId ||
+    !kind ||
+    !recordId ||
+    !(credentialRef in mockCredentials)
+  ) {
+    throw new Error("credential not found");
+  }
+
+  return {
+    workspaceId,
+    kind,
+    label: "Credential reference",
+    credentialRef,
+  };
 }
 
 function getMockLayout(workspaceId: string): WorkspaceLayout {

@@ -143,6 +143,17 @@ export type CredentialDeleteInput = {
   credentialRef: string;
 };
 
+export type CredentialInspectInput = {
+  workspaceId: string;
+  credentialRef: string;
+};
+
+export type CredentialRotateInput = {
+  workspaceId: string;
+  credentialRef: string;
+  secret: string;
+};
+
 export type CredentialMetadata = {
   workspaceId: string;
   kind: string;
