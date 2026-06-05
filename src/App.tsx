@@ -1,8 +1,11 @@
 import Editor from "@monaco-editor/react";
+import * as Dialog from "@radix-ui/react-dialog";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
   Activity,
   Braces,
   CheckCircle2,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clock,
@@ -12,20 +15,29 @@ import {
   Download,
   Folder,
   Globe2,
+  Home,
+  Maximize2,
+  Minus,
+  MoreHorizontal,
   Pencil,
+  PanelLeftClose,
+  PanelLeftOpen,
   Play,
   Plus,
   RefreshCw,
   Save,
+  Search,
   Send,
-  Server,
+  Square,
   Table2,
   TerminalSquare,
   Trash2,
   Upload,
+  X,
   XCircle,
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   createColumnHelper,
   flexRender,
@@ -90,6 +102,8 @@ import type {
   SshConnectionInput,
   SshSessionEvent,
   SshSessionSummary,
+  Workspace,
+  WorkspaceTab,
 } from "./types";
 
 const methods = ["GET", "POST", "PUT", "PATCH", "DELETE"];
@@ -114,9 +128,6 @@ function App() {
     toggleSidebar,
     tabs,
   } = useWorkspaceStore();
-  const [newWorkspaceName, setNewWorkspaceName] = useState("");
-  const [workspaceDraftName, setWorkspaceDraftName] = useState("");
-
   const healthQuery = useQuery({
     queryKey: ["system-health"],
     queryFn: getSystemHealth,
@@ -161,12 +172,6 @@ function App() {
       setActiveWorkspace(workspaceQuery.data.activeWorkspaceId);
     }
   }, [activeWorkspaceId, setActiveWorkspace, workspaceQuery.data?.activeWorkspaceId]);
-
-  useEffect(() => {
-    if (activeWorkspace?.name) {
-      setWorkspaceDraftName(activeWorkspace.name);
-    }
-  }, [activeWorkspace?.id, activeWorkspace?.name]);
 
   useEffect(() => {
     if (workspaceLayoutQuery.data) {
@@ -240,7 +245,6 @@ function App() {
   const createWorkspaceMutation = useMutation({
     mutationFn: createWorkspace,
     onSuccess: (workspace) => {
-      setNewWorkspaceName("");
       setActiveWorkspace(workspace.id);
       queryClient.invalidateQueries({ queryKey: ["workspaces"] });
     },
@@ -271,252 +275,55 @@ function App() {
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? tabs[0];
 
   return (
-    <div className="app-shell flex h-screen min-h-[680px] text-slate-950">
-      <aside
-        className={cn(
-          "sidebar-shell flex h-full shrink-0 flex-col border-r transition-all duration-200",
-          sidebarCollapsed ? "w-[64px]" : "w-[240px]",
-        )}
-      >
-        <div className="sidebar-divider flex h-14 items-center gap-2 border-b px-3">
-          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-teal-500 text-white shadow-sm shadow-teal-950/20">
-            <Activity size={17} />
-          </div>
-          {!sidebarCollapsed && (
-            <div className="min-w-0">
-              <div className="truncate text-sm font-semibold">Unfour Workspace</div>
-              <div className="truncate text-xs text-slate-400">
-                {healthQuery.data?.syncStrategy ?? "local-first"}
-              </div>
-            </div>
-          )}
-          <Button
-            aria-label="Toggle sidebar"
-            className="ml-auto text-slate-300 hover:bg-white/10 hover:text-white"
-            onClick={toggleSidebar}
-            size="icon"
-            type="button"
-            variant="ghost"
-          >
-            <ChevronLeft
-              className={cn("transition-transform", sidebarCollapsed && "rotate-180")}
-              size={17}
-            />
-          </Button>
-        </div>
+    <div className="app-shell flex h-screen min-h-[680px] flex-col text-slate-950">
+      <AppTitleBar
+        activeWorkspace={activeWorkspace}
+        createWorkspaceMutation={createWorkspaceMutation}
+        deleteWorkspaceMutation={deleteWorkspaceMutation}
+        healthReady={healthQuery.data?.storageReady === true}
+        onActivateWorkspace={(workspaceId) => activateWorkspaceMutation.mutate(workspaceId)}
+        renameWorkspaceMutation={renameWorkspaceMutation}
+        syncStrategy={healthQuery.data?.syncStrategy ?? "local-first"}
+        workspaces={workspaceQuery.data?.workspaces ?? []}
+      />
 
-        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-3">
-          {!sidebarCollapsed && (
-            <form
-              className="workspace-card flex gap-2 rounded-md p-1.5"
-              onSubmit={(event) => {
-                event.preventDefault();
-                if (newWorkspaceName.trim()) {
-                  createWorkspaceMutation.mutate(newWorkspaceName);
-                }
-              }}
-            >
-              <Input
-                onChange={(event) => setNewWorkspaceName(event.target.value)}
-                placeholder="Workspace name"
-                value={newWorkspaceName}
-              />
-              <Button disabled={createWorkspaceMutation.isPending} size="icon" type="submit">
-                <Plus size={16} />
-              </Button>
-            </form>
-          )}
+      <ModuleSwitcher
+        activeTabId={activeTabId}
+        onSelect={setActiveTab}
+        syncStrategy={healthQuery.data?.syncStrategy ?? "local-first"}
+        tabs={tabs}
+      />
 
-          <ResourceGroup
-            collapsed={sidebarCollapsed}
-            icon={<Folder size={16} />}
-            title="Workspaces"
-          >
-            {workspaceQuery.data?.workspaces.map((workspace) => (
-              <button
-                className={cn(
-                  "flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-sm transition-colors",
-                  activeWorkspace?.id === workspace.id
-                    ? "bg-teal-500/20 text-white ring-1 ring-inset ring-teal-400/35"
-                    : "text-slate-300 hover:bg-white/10 hover:text-white",
-                )}
-                key={workspace.id}
-                onClick={() => activateWorkspaceMutation.mutate(workspace.id)}
-                type="button"
-              >
-                <Folder size={14} />
-                {!sidebarCollapsed && (
-                  <>
-                    <span className="min-w-0 flex-1 truncate">{workspace.name}</span>
-                    {workspace.isDefault && <Badge tone="teal">default</Badge>}
-                  </>
-                )}
-              </button>
-            ))}
-          </ResourceGroup>
+      <div className="flex min-h-0 flex-1">
+        <ModuleSidebar
+          activeTab={activeTab}
+          activeTabId={activeTabId}
+          apiResourceGroups={apiResourceGroups}
+          collapsed={sidebarCollapsed}
+          databaseConnections={sidebarDatabaseConnectionsQuery.data ?? []}
+          onSelectApiRequest={(request) => {
+            setSelectedApiRequest(request.id);
+            setActiveTab("api-main");
+          }}
+          onSelectDatabaseConnection={(connection) => {
+            setSelectedDatabaseConnection(connection.id);
+            setActiveTab("database-main");
+          }}
+          onSelectSshConnection={(connection) => {
+            setSelectedSshConnection(connection.id);
+            setActiveTab("ssh-main");
+          }}
+          onToggle={toggleSidebar}
+          selectedApiRequestId={selectedApiRequestId}
+          selectedDatabaseConnectionId={selectedDatabaseConnectionId}
+          selectedSshConnectionId={selectedSshConnectionId}
+          sshConnections={sidebarSshConnectionsQuery.data ?? []}
+          setActiveTab={setActiveTab}
+          setSelectedApiRequest={setSelectedApiRequest}
+        />
 
-          <ResourceGroup
-            collapsed={sidebarCollapsed}
-            icon={<Globe2 size={16} />}
-            title="API Collections"
-          >
-            <SidebarAction
-              collapsed={sidebarCollapsed}
-              icon={<Braces size={14} />}
-              label="REST Client"
-              onClick={() => {
-                setSelectedApiRequest(null);
-                setActiveTab("api-main");
-              }}
-              selected={
-                activeTabId === "api-main" && (sidebarCollapsed || !selectedApiRequestId)
-              }
-            />
-            <SidebarApiResources
-              collapsed={sidebarCollapsed}
-              groups={apiResourceGroups}
-              onSelect={(request) => {
-                setSelectedApiRequest(request.id);
-                setActiveTab("api-main");
-              }}
-              selectedId={selectedApiRequestId}
-            />
-          </ResourceGroup>
-
-          <ResourceGroup
-            collapsed={sidebarCollapsed}
-            icon={<Server size={16} />}
-            title="Connections"
-          >
-            <SidebarAction
-              collapsed={sidebarCollapsed}
-              icon={<TerminalSquare size={14} />}
-              label="SSH Sessions"
-              onClick={() => setActiveTab("ssh-main")}
-              selected={
-                activeTabId === "ssh-main" && (sidebarCollapsed || !selectedSshConnectionId)
-              }
-            />
-            <SidebarConnectionResources
-              collapsed={sidebarCollapsed}
-              items={sidebarSshConnectionsQuery.data ?? []}
-              kind="ssh"
-              onSelect={(connection) => {
-                setSelectedSshConnection(connection.id);
-                setActiveTab("ssh-main");
-              }}
-              selectedId={selectedSshConnectionId}
-            />
-            <SidebarAction
-              collapsed={sidebarCollapsed}
-              icon={<Database size={14} />}
-              label="Databases"
-              onClick={() => setActiveTab("database-main")}
-              selected={
-                activeTabId === "database-main" &&
-                (sidebarCollapsed || !selectedDatabaseConnectionId)
-              }
-            />
-            <SidebarConnectionResources
-              collapsed={sidebarCollapsed}
-              items={sidebarDatabaseConnectionsQuery.data ?? []}
-              kind="database"
-              onSelect={(connection) => {
-                setSelectedDatabaseConnection(connection.id);
-                setActiveTab("database-main");
-              }}
-              selectedId={selectedDatabaseConnectionId}
-            />
-          </ResourceGroup>
-        </div>
-
-        {!sidebarCollapsed && (
-          <div className="sidebar-divider border-t px-3 py-2 text-xs text-slate-500">
-            Local workspace
-          </div>
-        )}
-      </aside>
-
-      <main className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-14 items-center justify-between border-b border-slate-300/80 bg-white/95 px-4 shadow-sm">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <Input
-                className="h-8 w-[260px] border-transparent bg-slate-100 font-semibold shadow-none hover:bg-white"
-                onChange={(event) => setWorkspaceDraftName(event.target.value)}
-                value={workspaceDraftName}
-              />
-              <Button
-                disabled={
-                  !activeWorkspace ||
-                  renameWorkspaceMutation.isPending ||
-                  workspaceDraftName.trim() === activeWorkspace.name
-                }
-                onClick={() =>
-                  activeWorkspace &&
-                  renameWorkspaceMutation.mutate({
-                    workspaceId: activeWorkspace.id,
-                    name: workspaceDraftName,
-                  })
-                }
-                size="icon"
-                type="button"
-                variant="ghost"
-              >
-                <Pencil size={15} />
-              </Button>
-              <Button
-                disabled={
-                  !activeWorkspace ||
-                  activeWorkspace.isDefault ||
-                  deleteWorkspaceMutation.isPending ||
-                  (workspaceQuery.data?.workspaces.length ?? 0) <= 1
-                }
-                onClick={() =>
-                  activeWorkspace && deleteWorkspaceMutation.mutate(activeWorkspace.id)
-                }
-                size="icon"
-                type="button"
-                variant="ghost"
-              >
-                <Trash2 size={15} />
-              </Button>
-            </div>
-            <div className="flex items-center gap-2 text-xs text-slate-500">
-              <Badge tone={healthQuery.data?.storageReady ? "green" : "amber"}>
-                {healthQuery.data?.storageReady ? "local storage" : "checking"}
-              </Badge>
-              <span>{healthQuery.data?.syncStrategy ?? "local-first"}</span>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <Badge tone="neutral">{activeTab.title}</Badge>
-            <Badge tone="teal">offline-first</Badge>
-          </div>
-        </header>
-
-        <div className="flex h-10 items-end gap-1 border-b border-slate-300/80 bg-slate-100/80 px-3">
-          {tabs.map((tab) => (
-            <button
-              className={cn(
-                "flex h-8 items-center gap-2 rounded-t-md border border-b-0 px-3 text-sm transition-colors duration-150",
-                activeTabId === tab.id
-                  ? "border-slate-300 bg-white text-slate-950 shadow-sm"
-                  : "border-transparent text-slate-500 hover:bg-white/70 hover:text-slate-800",
-              )}
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              type="button"
-            >
-              {tab.kind === "api" && <Globe2 size={14} />}
-              {tab.kind === "ssh" && <TerminalSquare size={14} />}
-              {tab.kind === "database" && <Database size={14} />}
-              {tab.title}
-            </button>
-          ))}
-        </div>
-
-        <section className="min-h-0 flex-1 overflow-hidden p-3">
+        <main className="flex min-w-0 flex-1 flex-col bg-slate-100/70">
+          <section className="min-h-0 flex-1 overflow-hidden p-3">
           {activeTab.kind === "api" && activeWorkspace && (
             <ApiClientPanel workspaceId={activeWorkspace.id} />
           )}
@@ -526,10 +333,733 @@ function App() {
           {activeTab.kind === "database" && activeWorkspace && (
             <DatabasePanel workspaceId={activeWorkspace.id} />
           )}
-        </section>
-      </main>
+          </section>
+        </main>
+      </div>
     </div>
   );
+}
+
+type PendingMutation<TVariables> = {
+  isPending: boolean;
+  mutate: (variables: TVariables) => void;
+};
+
+function AppTitleBar({
+  activeWorkspace,
+  createWorkspaceMutation,
+  deleteWorkspaceMutation,
+  healthReady,
+  onActivateWorkspace,
+  renameWorkspaceMutation,
+  syncStrategy,
+  workspaces,
+}: {
+  activeWorkspace?: Workspace;
+  createWorkspaceMutation: PendingMutation<string>;
+  deleteWorkspaceMutation: PendingMutation<string>;
+  healthReady: boolean;
+  onActivateWorkspace: (workspaceId: string) => void;
+  renameWorkspaceMutation: PendingMutation<{ name: string; workspaceId: string }>;
+  syncStrategy: string;
+  workspaces: Workspace[];
+}) {
+  async function dragWindow(event: React.MouseEvent<HTMLDivElement>) {
+    if (event.button !== 0 || !isTauriRuntime()) {
+      return;
+    }
+
+    await getCurrentWindow().startDragging();
+  }
+
+  return (
+    <header className="flex h-11 shrink-0 items-center border-b border-slate-200 bg-white text-slate-800">
+      <div className="flex h-full items-center gap-1 px-2">
+        <TitlebarIconButton ariaLabel="Back" disabled icon={<ChevronLeft size={16} />} />
+        <TitlebarIconButton ariaLabel="Forward" disabled icon={<ChevronRight size={16} />} />
+        <TitlebarIconButton ariaLabel="Home" icon={<Home size={16} />} />
+      </div>
+
+      <div className="h-6 w-px bg-slate-200" />
+
+      <div className="flex h-full min-w-0 items-center px-2">
+        <div className="flex h-7 w-7 items-center justify-center rounded-md bg-teal-600 text-white shadow-sm">
+          <Activity size={15} />
+        </div>
+        <WorkspaceMenu
+          activeWorkspace={activeWorkspace}
+          createWorkspaceMutation={createWorkspaceMutation}
+          deleteWorkspaceMutation={deleteWorkspaceMutation}
+          onActivateWorkspace={onActivateWorkspace}
+          renameWorkspaceMutation={renameWorkspaceMutation}
+          workspaces={workspaces}
+        />
+      </div>
+
+      <div
+        className="flex h-full min-w-0 flex-1 items-center justify-center px-4"
+        onMouseDown={dragWindow}
+      >
+        <div
+          className="flex h-8 w-full max-w-[520px] items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 text-sm text-slate-500 shadow-xs"
+          onMouseDown={(event) => event.stopPropagation()}
+        >
+          <Search size={15} />
+          <span className="truncate">Search</span>
+        </div>
+      </div>
+
+      <div className="flex h-full shrink-0 items-center gap-1 px-2">
+        <Badge tone={healthReady ? "green" : "amber"}>
+          {healthReady ? "local storage" : "checking"}
+        </Badge>
+        <Badge tone="neutral">{syncStrategy}</Badge>
+        <TitlebarIconButton ariaLabel="Notifications" icon={<MoreHorizontal size={16} />} />
+        <WindowControls />
+      </div>
+    </header>
+  );
+}
+
+function WorkspaceMenu({
+  activeWorkspace,
+  createWorkspaceMutation,
+  deleteWorkspaceMutation,
+  onActivateWorkspace,
+  renameWorkspaceMutation,
+  workspaces,
+}: {
+  activeWorkspace?: Workspace;
+  createWorkspaceMutation: PendingMutation<string>;
+  deleteWorkspaceMutation: PendingMutation<string>;
+  onActivateWorkspace: (workspaceId: string) => void;
+  renameWorkspaceMutation: PendingMutation<{ name: string; workspaceId: string }>;
+  workspaces: Workspace[];
+}) {
+  const [createOpen, setCreateOpen] = useState(false);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [workspaceName, setWorkspaceName] = useState("");
+  const [renameDraft, setRenameDraft] = useState(activeWorkspace?.name ?? "");
+  const canDelete =
+    Boolean(activeWorkspace) && !activeWorkspace?.isDefault && workspaces.length > 1;
+
+  useEffect(() => {
+    setRenameDraft(activeWorkspace?.name ?? "");
+  }, [activeWorkspace?.id, activeWorkspace?.name]);
+
+  function createWorkspaceFromDialog(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const name = workspaceName.trim();
+    if (!name) {
+      return;
+    }
+    createWorkspaceMutation.mutate(name);
+    setWorkspaceName("");
+    setCreateOpen(false);
+  }
+
+  function renameWorkspaceFromDialog(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const name = renameDraft.trim();
+    if (!activeWorkspace || !name || name === activeWorkspace.name) {
+      return;
+    }
+    renameWorkspaceMutation.mutate({ workspaceId: activeWorkspace.id, name });
+    setRenameOpen(false);
+  }
+
+  function deleteWorkspaceFromDialog() {
+    if (!activeWorkspace || !canDelete) {
+      return;
+    }
+    deleteWorkspaceMutation.mutate(activeWorkspace.id);
+    setDeleteOpen(false);
+  }
+
+  return (
+    <>
+      <DropdownMenu.Root>
+        <DropdownMenu.Trigger asChild>
+          <Button
+            className="ml-2 max-w-[240px] justify-start gap-1 border-transparent bg-white px-2 font-semibold shadow-none hover:bg-slate-100"
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            <span className="min-w-0 truncate">
+              {activeWorkspace?.name ?? "No workspace"}
+            </span>
+            <ChevronDown className="shrink-0 text-slate-500" size={14} />
+          </Button>
+        </DropdownMenu.Trigger>
+        <DropdownMenu.Portal>
+          <DropdownMenu.Content
+            align="start"
+            className="z-50 w-72 rounded-md border border-slate-200 bg-white p-1 text-sm text-slate-800 shadow-xl"
+            sideOffset={6}
+          >
+            <DropdownMenu.Label className="px-2 py-1.5 text-xs font-semibold uppercase text-slate-500">
+              Workspaces
+            </DropdownMenu.Label>
+            {workspaces.map((workspace) => (
+              <DropdownMenu.Item
+                className={cn(
+                  "flex min-h-8 cursor-pointer items-center gap-2 rounded px-2 py-1.5 outline-none hover:bg-slate-100 focus:bg-slate-100",
+                  activeWorkspace?.id === workspace.id && "bg-teal-50 text-teal-900",
+                )}
+                key={workspace.id}
+                onSelect={() => onActivateWorkspace(workspace.id)}
+              >
+                <Folder size={14} />
+                <span className="min-w-0 flex-1 truncate">{workspace.name}</span>
+                {workspace.isDefault && <Badge tone="teal">default</Badge>}
+              </DropdownMenu.Item>
+            ))}
+            {workspaces.length === 0 && (
+              <div className="px-2 py-4 text-center text-xs text-slate-500">
+                No workspaces
+              </div>
+            )}
+            <DropdownMenu.Separator className="my-1 h-px bg-slate-200" />
+            <DropdownMenu.Item
+              className="flex h-8 cursor-pointer items-center gap-2 rounded px-2 outline-none hover:bg-slate-100 focus:bg-slate-100"
+              onSelect={() => setCreateOpen(true)}
+            >
+              <Plus size={14} />
+              New workspace
+            </DropdownMenu.Item>
+            <DropdownMenu.Item
+              className="flex h-8 cursor-pointer items-center gap-2 rounded px-2 outline-none hover:bg-slate-100 focus:bg-slate-100 disabled:pointer-events-none disabled:opacity-50"
+              disabled={!activeWorkspace}
+              onSelect={() => setRenameOpen(true)}
+            >
+              <Pencil size={14} />
+              Rename current
+            </DropdownMenu.Item>
+            <DropdownMenu.Item
+              className="flex h-8 cursor-pointer items-center gap-2 rounded px-2 text-rose-700 outline-none hover:bg-rose-50 focus:bg-rose-50 disabled:pointer-events-none disabled:opacity-50"
+              disabled={!canDelete}
+              onSelect={() => setDeleteOpen(true)}
+            >
+              <Trash2 size={14} />
+              Delete current
+            </DropdownMenu.Item>
+          </DropdownMenu.Content>
+        </DropdownMenu.Portal>
+      </DropdownMenu.Root>
+
+      <WorkspaceDialog
+        description="Create a workspace for a separate set of API requests, SSH connections, and database resources."
+        disabled={createWorkspaceMutation.isPending || !workspaceName.trim()}
+        onOpenChange={setCreateOpen}
+        onSubmit={createWorkspaceFromDialog}
+        open={createOpen}
+        setValue={setWorkspaceName}
+        submitLabel="Create"
+        title="New workspace"
+        value={workspaceName}
+      />
+
+      <WorkspaceDialog
+        description="Rename the active workspace. Existing workspace-scoped records stay attached to it."
+        disabled={
+          renameWorkspaceMutation.isPending ||
+          !renameDraft.trim() ||
+          renameDraft.trim() === activeWorkspace?.name
+        }
+        onOpenChange={setRenameOpen}
+        onSubmit={renameWorkspaceFromDialog}
+        open={renameOpen}
+        setValue={setRenameDraft}
+        submitLabel="Rename"
+        title="Rename workspace"
+        value={renameDraft}
+      />
+
+      <Dialog.Root onOpenChange={setDeleteOpen} open={deleteOpen}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-50 bg-slate-950/30" />
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[360px] -translate-x-1/2 -translate-y-1/2 rounded-md border border-slate-200 bg-white p-4 shadow-xl">
+            <Dialog.Title className="text-base font-semibold text-slate-950">
+              Delete workspace
+            </Dialog.Title>
+            <Dialog.Description className="mt-2 text-sm text-slate-600">
+              Delete {activeWorkspace?.name ?? "this workspace"} locally. The app will switch
+              to another available workspace.
+            </Dialog.Description>
+            <div className="mt-4 flex justify-end gap-2">
+              <Dialog.Close asChild>
+                <Button type="button" variant="outline">
+                  Cancel
+                </Button>
+              </Dialog.Close>
+              <Button
+                className="bg-rose-700 hover:bg-rose-800"
+                disabled={deleteWorkspaceMutation.isPending || !canDelete}
+                onClick={deleteWorkspaceFromDialog}
+                type="button"
+              >
+                <Trash2 size={15} />
+                Delete
+              </Button>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+    </>
+  );
+}
+
+function WorkspaceDialog({
+  description,
+  disabled,
+  onOpenChange,
+  onSubmit,
+  open,
+  setValue,
+  submitLabel,
+  title,
+  value,
+}: {
+  description: string;
+  disabled: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  open: boolean;
+  setValue: (value: string) => void;
+  submitLabel: string;
+  title: string;
+  value: string;
+}) {
+  return (
+    <Dialog.Root onOpenChange={onOpenChange} open={open}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 z-50 bg-slate-950/30" />
+        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[360px] -translate-x-1/2 -translate-y-1/2 rounded-md border border-slate-200 bg-white p-4 shadow-xl">
+          <Dialog.Title className="text-base font-semibold text-slate-950">
+            {title}
+          </Dialog.Title>
+          <Dialog.Description className="mt-2 text-sm text-slate-600">
+            {description}
+          </Dialog.Description>
+          <form className="mt-4 space-y-4" onSubmit={onSubmit}>
+            <Input
+              autoFocus
+              onChange={(event) => setValue(event.target.value)}
+              placeholder="Workspace name"
+              value={value}
+            />
+            <div className="flex justify-end gap-2">
+              <Dialog.Close asChild>
+                <Button type="button" variant="outline">
+                  Cancel
+                </Button>
+              </Dialog.Close>
+              <Button disabled={disabled} type="submit">
+                {submitLabel}
+              </Button>
+            </div>
+          </form>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}
+
+function ModuleSwitcher({
+  activeTabId,
+  onSelect,
+  syncStrategy,
+  tabs,
+}: {
+  activeTabId: string;
+  onSelect: (tabId: string) => void;
+  syncStrategy: string;
+  tabs: WorkspaceTab[];
+}) {
+  return (
+    <nav className="flex h-11 shrink-0 items-center justify-between border-b border-slate-200 bg-slate-50 px-3">
+      <div className="flex h-full items-center gap-1">
+        {tabs.map((tab) => (
+          <button
+            className={cn(
+              "flex h-8 min-w-[116px] items-center justify-center gap-2 rounded-md px-3 text-sm font-medium transition-colors",
+              activeTabId === tab.id
+                ? "bg-white text-teal-800 shadow-sm ring-1 ring-inset ring-slate-200"
+                : "text-slate-600 hover:bg-white/80 hover:text-slate-950",
+            )}
+            key={tab.id}
+            onClick={() => onSelect(tab.id)}
+            type="button"
+          >
+            {tab.kind === "api" && <Globe2 size={15} />}
+            {tab.kind === "ssh" && <TerminalSquare size={15} />}
+            {tab.kind === "database" && <Database size={15} />}
+            {moduleLabel(tab)}
+          </button>
+        ))}
+      </div>
+      <div className="flex items-center gap-2 text-xs text-slate-500">
+        <span>No environment</span>
+        <ChevronDown size={14} />
+        <span className="h-4 w-px bg-slate-300" />
+        <span>{syncStrategy}</span>
+      </div>
+    </nav>
+  );
+}
+
+function ModuleSidebar({
+  activeTab,
+  activeTabId,
+  apiResourceGroups,
+  collapsed,
+  databaseConnections,
+  onSelectApiRequest,
+  onSelectDatabaseConnection,
+  onSelectSshConnection,
+  onToggle,
+  selectedApiRequestId,
+  selectedDatabaseConnectionId,
+  selectedSshConnectionId,
+  setActiveTab,
+  setSelectedApiRequest,
+  sshConnections,
+}: {
+  activeTab: WorkspaceTab;
+  activeTabId: string;
+  apiResourceGroups: ApiResourceGroup[];
+  collapsed: boolean;
+  databaseConnections: DatabaseConnection[];
+  onSelectApiRequest: (request: ApiSavedRequest) => void;
+  onSelectDatabaseConnection: (connection: DatabaseConnection | SshConnection) => void;
+  onSelectSshConnection: (connection: DatabaseConnection | SshConnection) => void;
+  onToggle: () => void;
+  selectedApiRequestId: string | null;
+  selectedDatabaseConnectionId: string | null;
+  selectedSshConnectionId: string | null;
+  setActiveTab: (tabId: string) => void;
+  setSelectedApiRequest: (requestId: string | null) => void;
+  sshConnections: SshConnection[];
+}) {
+  return (
+    <aside
+      className={cn(
+        "flex min-h-0 shrink-0 flex-col border-r border-slate-200 bg-slate-50 transition-all duration-200",
+        collapsed ? "w-[58px]" : "w-[270px]",
+      )}
+    >
+      <div className="flex h-11 shrink-0 items-center gap-2 border-b border-slate-200 px-3">
+        <div className="flex h-7 w-7 items-center justify-center rounded-md bg-white text-slate-600 shadow-xs ring-1 ring-inset ring-slate-200">
+          {activeTab.kind === "api" && <Globe2 size={15} />}
+          {activeTab.kind === "ssh" && <TerminalSquare size={15} />}
+          {activeTab.kind === "database" && <Database size={15} />}
+        </div>
+        {!collapsed && (
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-sm font-semibold text-slate-900">
+              {moduleLabel(activeTab)}
+            </div>
+            <div className="truncate text-xs text-slate-500">{moduleSubtitle(activeTab)}</div>
+          </div>
+        )}
+        <Button
+          aria-label="Toggle sidebar"
+          className="ml-auto"
+          onClick={onToggle}
+          size="icon"
+          type="button"
+          variant="ghost"
+        >
+          {collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+        </Button>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto p-3">
+        {activeTab.kind === "api" && (
+          <ApiModuleSidebar
+            activeTabId={activeTabId}
+            collapsed={collapsed}
+            groups={apiResourceGroups}
+            onOpenClient={() => {
+              setSelectedApiRequest(null);
+              setActiveTab("api-main");
+            }}
+            onSelect={onSelectApiRequest}
+            selectedId={selectedApiRequestId}
+          />
+        )}
+        {activeTab.kind === "ssh" && (
+          <SshModuleSidebar
+            activeTabId={activeTabId}
+            collapsed={collapsed}
+            items={sshConnections}
+            onOpenClient={() => setActiveTab("ssh-main")}
+            onSelect={onSelectSshConnection}
+            selectedId={selectedSshConnectionId}
+          />
+        )}
+        {activeTab.kind === "database" && (
+          <DatabaseModuleSidebar
+            activeTabId={activeTabId}
+            collapsed={collapsed}
+            items={databaseConnections}
+            onOpenClient={() => setActiveTab("database-main")}
+            onSelect={onSelectDatabaseConnection}
+            selectedId={selectedDatabaseConnectionId}
+          />
+        )}
+      </div>
+    </aside>
+  );
+}
+
+function ApiModuleSidebar({
+  activeTabId,
+  collapsed,
+  groups,
+  onOpenClient,
+  onSelect,
+  selectedId,
+}: {
+  activeTabId: string;
+  collapsed: boolean;
+  groups: ApiResourceGroup[];
+  onOpenClient: () => void;
+  onSelect: (request: ApiSavedRequest) => void;
+  selectedId: string | null;
+}) {
+  return (
+    <div className="space-y-3">
+      <ResourceGroup collapsed={collapsed} icon={<Braces size={16} />} title="Collections">
+        <SidebarAction
+          collapsed={collapsed}
+          icon={<Send size={14} />}
+          label="REST Client"
+          onClick={onOpenClient}
+          selected={activeTabId === "api-main" && (collapsed || !selectedId)}
+        />
+        <SidebarApiResources
+          collapsed={collapsed}
+          groups={groups}
+          onSelect={onSelect}
+          selectedId={selectedId}
+        />
+        {!collapsed && groups.length === 0 && (
+          <SidebarEmptyState>No saved requests</SidebarEmptyState>
+        )}
+      </ResourceGroup>
+      <ResourceGroup collapsed={collapsed} icon={<Globe2 size={16} />} title="Environments">
+        {!collapsed && <SidebarEmptyState>No environment selected</SidebarEmptyState>}
+      </ResourceGroup>
+      <ResourceGroup collapsed={collapsed} icon={<Clock size={16} />} title="History">
+        {!collapsed && <SidebarEmptyState>Send a request to build history</SidebarEmptyState>}
+      </ResourceGroup>
+    </div>
+  );
+}
+
+function SshModuleSidebar({
+  activeTabId,
+  collapsed,
+  items,
+  onOpenClient,
+  onSelect,
+  selectedId,
+}: {
+  activeTabId: string;
+  collapsed: boolean;
+  items: SshConnection[];
+  onOpenClient: () => void;
+  onSelect: (connection: DatabaseConnection | SshConnection) => void;
+  selectedId: string | null;
+}) {
+  return (
+    <div className="space-y-3">
+      <ResourceGroup collapsed={collapsed} icon={<TerminalSquare size={16} />} title="SSH">
+        <SidebarAction
+          collapsed={collapsed}
+          icon={<TerminalSquare size={14} />}
+          label="SSH Sessions"
+          onClick={onOpenClient}
+          selected={activeTabId === "ssh-main" && (collapsed || !selectedId)}
+        />
+        <SidebarConnectionResources
+          collapsed={collapsed}
+          items={items}
+          kind="ssh"
+          onSelect={onSelect}
+          selectedId={selectedId}
+        />
+        {!collapsed && items.length === 0 && (
+          <SidebarEmptyState>No SSH connections</SidebarEmptyState>
+        )}
+      </ResourceGroup>
+      <ResourceGroup collapsed={collapsed} icon={<Clock size={16} />} title="Sessions">
+        {!collapsed && <SidebarEmptyState>No active session selected</SidebarEmptyState>}
+      </ResourceGroup>
+    </div>
+  );
+}
+
+function DatabaseModuleSidebar({
+  activeTabId,
+  collapsed,
+  items,
+  onOpenClient,
+  onSelect,
+  selectedId,
+}: {
+  activeTabId: string;
+  collapsed: boolean;
+  items: DatabaseConnection[];
+  onOpenClient: () => void;
+  onSelect: (connection: DatabaseConnection | SshConnection) => void;
+  selectedId: string | null;
+}) {
+  return (
+    <div className="space-y-3">
+      <ResourceGroup collapsed={collapsed} icon={<Database size={16} />} title="Database">
+        <SidebarAction
+          collapsed={collapsed}
+          icon={<Database size={14} />}
+          label="SQL Workspace"
+          onClick={onOpenClient}
+          selected={activeTabId === "database-main" && (collapsed || !selectedId)}
+        />
+        <SidebarConnectionResources
+          collapsed={collapsed}
+          items={items}
+          kind="database"
+          onSelect={onSelect}
+          selectedId={selectedId}
+        />
+        {!collapsed && items.length === 0 && (
+          <SidebarEmptyState>No database connections</SidebarEmptyState>
+        )}
+      </ResourceGroup>
+      <ResourceGroup collapsed={collapsed} icon={<Table2 size={16} />} title="Schema">
+        {!collapsed && <SidebarEmptyState>Select a connection</SidebarEmptyState>}
+      </ResourceGroup>
+    </div>
+  );
+}
+
+function SidebarEmptyState({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="rounded-md border border-dashed border-slate-200 bg-white/70 px-2 py-3 text-xs text-slate-500">
+      {children}
+    </div>
+  );
+}
+
+function TitlebarIconButton({
+  ariaLabel,
+  disabled,
+  icon,
+}: {
+  ariaLabel: string;
+  disabled?: boolean;
+  icon: React.ReactNode;
+}) {
+  return (
+    <Button
+      aria-label={ariaLabel}
+      className="h-8 w-8 text-slate-600"
+      disabled={disabled}
+      size="icon"
+      type="button"
+      variant="ghost"
+    >
+      {icon}
+    </Button>
+  );
+}
+
+function WindowControls() {
+  if (!isTauriRuntime()) {
+    return (
+      <div className="ml-1 flex items-center gap-1 text-slate-300">
+        <Minus size={15} />
+        <Square size={13} />
+        <X size={15} />
+      </div>
+    );
+  }
+
+  const appWindow = getCurrentWindow();
+
+  return (
+    <div className="ml-1 flex items-center">
+      <TitlebarWindowButton
+        ariaLabel="Minimize"
+        icon={<Minus size={16} />}
+        onClick={() => void appWindow.minimize()}
+      />
+      <TitlebarWindowButton
+        ariaLabel="Maximize"
+        icon={<Maximize2 size={14} />}
+        onClick={() => void appWindow.toggleMaximize()}
+      />
+      <TitlebarWindowButton
+        ariaLabel="Close"
+        className="hover:bg-rose-600 hover:text-white"
+        icon={<X size={16} />}
+        onClick={() => void appWindow.close()}
+      />
+    </div>
+  );
+}
+
+function TitlebarWindowButton({
+  ariaLabel,
+  className,
+  icon,
+  onClick,
+}: {
+  ariaLabel: string;
+  className?: string;
+  icon: React.ReactNode;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      aria-label={ariaLabel}
+      className={cn(
+        "flex h-8 w-10 items-center justify-center rounded-sm text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-950",
+        className,
+      )}
+      onClick={onClick}
+      type="button"
+    >
+      {icon}
+    </button>
+  );
+}
+
+function moduleLabel(tab: WorkspaceTab) {
+  if (tab.kind === "api") {
+    return "API";
+  }
+  if (tab.kind === "ssh") {
+    return "SSH";
+  }
+  return "Database";
+}
+
+function moduleSubtitle(tab: WorkspaceTab) {
+  if (tab.kind === "api") {
+    return "Collections and requests";
+  }
+  if (tab.kind === "ssh") {
+    return "Connections and sessions";
+  }
+  return "Connections and schemas";
+}
+
+function isTauriRuntime() {
+  return typeof window !== "undefined" && Boolean(window.__TAURI_INTERNALS__);
 }
 
 function ResourceGroup({
@@ -545,7 +1075,7 @@ function ResourceGroup({
 }) {
   return (
     <div>
-      <div className="mb-1 flex h-7 items-center gap-2 px-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
+      <div className="mb-1 flex h-7 items-center gap-2 px-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
         {icon}
         {!collapsed && title}
       </div>
@@ -572,8 +1102,8 @@ function SidebarAction({
       className={cn(
         "flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-sm transition-colors duration-150",
         selected
-          ? "bg-white text-slate-950 shadow-sm"
-          : "text-slate-300 hover:bg-white/10 hover:text-white",
+          ? "bg-white text-slate-950 shadow-sm ring-1 ring-inset ring-slate-200"
+          : "text-slate-600 hover:bg-white hover:text-slate-950",
       )}
       onClick={onClick}
       type="button"
@@ -605,7 +1135,7 @@ function SidebarApiResources({
   }
 
   return (
-    <div className="mt-1 space-y-2 border-l border-white/10 pl-2">
+    <div className="mt-1 space-y-2 border-l border-slate-200 pl-2">
       {groups.map((group) => (
         <div key={group.folder}>
           <div className="flex h-6 items-center gap-1.5 px-2 text-[11px] font-medium text-slate-500">
@@ -648,7 +1178,7 @@ function SidebarConnectionResources({
   }
 
   return (
-    <div className="mb-2 mt-1 space-y-1 border-l border-white/10 pl-2">
+    <div className="mb-2 mt-1 space-y-1 border-l border-slate-200 pl-2">
       {items.map((connection) => (
         <SidebarResourceItem
           icon={kind === "ssh" ? <TerminalSquare size={13} /> : <Database size={13} />}
@@ -681,8 +1211,8 @@ function SidebarResourceItem({
       className={cn(
         "flex h-7 w-full items-center gap-2 rounded-md px-2 text-left text-xs transition-colors duration-150",
         selected
-          ? "bg-teal-500/20 text-white ring-1 ring-inset ring-teal-400/35"
-          : "text-slate-400 hover:bg-white/10 hover:text-white",
+          ? "bg-teal-50 text-teal-900 ring-1 ring-inset ring-teal-200"
+          : "text-slate-600 hover:bg-white hover:text-slate-950",
       )}
       onClick={onClick}
       type="button"
@@ -690,7 +1220,7 @@ function SidebarResourceItem({
       <span className="flex h-4 w-4 shrink-0 items-center justify-center">{icon}</span>
       <span className="min-w-0 flex-1 truncate">{label}</span>
       {meta && (
-        <span className="shrink-0 rounded bg-white/10 px-1.5 text-[10px] font-medium uppercase leading-5 text-slate-400">
+        <span className="shrink-0 rounded bg-slate-100 px-1.5 text-[10px] font-medium uppercase leading-5 text-slate-500">
           {meta}
         </span>
       )}
