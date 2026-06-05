@@ -16,8 +16,16 @@ import type {
   DatabaseQueryResult,
   DatabaseSchema,
   DatabaseTestResult,
+  SshCloseInput,
+  SshConnectInput,
   SshConnection,
   SshConnectionInput,
+  SshLogExport,
+  SshLogExportInput,
+  SshResizeInput,
+  SshSessionEvent,
+  SshSessionInput,
+  SshSessionSummary,
   SystemHealth,
   Workspace,
   WorkspaceEnvironment,
@@ -54,6 +62,8 @@ let mockHistoryDetails: ApiHistoryDetail[] = [];
 let mockSavedRequests: ApiSavedRequest[] = [];
 let mockDatabaseConnections: DatabaseConnection[] = [];
 let mockSshConnections: SshConnection[] = [];
+let mockSshSessions: SshSessionSummary[] = [];
+let mockSshEvents: SshSessionEvent[] = [];
 let mockCredentials: Record<string, string> = {};
 let mockEnvironment: WorkspaceEnvironment = {
   workspaceId: mockWorkspace.id,
@@ -550,6 +560,119 @@ async function mockInvoke<T>(
     return mockSshConnections.filter((item) => item.workspaceId === workspaceId) as T;
   }
 
+  if (command === "ssh_session_connect") {
+    const input = args?.input as SshConnectInput;
+    const connection = mockSshConnections.find(
+      (item) => item.workspaceId === input.workspaceId && item.id === input.connectionId,
+    );
+    if (!connection) throw new Error("ssh connection not found");
+    const now = new Date().toISOString();
+    const session: SshSessionSummary = {
+      sessionId: crypto.randomUUID(),
+      workspaceId: input.workspaceId,
+      connectionId: input.connectionId,
+      status: "active",
+      authKind: connection.authKind,
+      host: connection.host,
+      username: connection.username,
+      cols: input.cols ?? 120,
+      rows: input.rows ?? 32,
+      createdAt: now,
+      updatedAt: now,
+    };
+    mockSshSessions = [session, ...mockSshSessions];
+    mockSshEvents.push({
+      sessionId: session.sessionId,
+      kind: "output",
+      data: `Connected to ${session.username}@${session.host} with ${session.authKind} auth. PTY ${session.cols}x${session.rows} allocated.\r\n`,
+      createdAt: now,
+    });
+    return session as T;
+  }
+
+  if (command === "ssh_sessions_list") {
+    const workspaceId = String(args?.workspaceId ?? mockState.activeWorkspaceId);
+    return mockSshSessions.filter((item) => item.workspaceId === workspaceId) as T;
+  }
+
+  if (command === "ssh_session_input") {
+    const input = args?.input as SshSessionInput;
+    const session = mockSshSessions.find(
+      (item) => item.workspaceId === input.workspaceId && item.sessionId === input.sessionId,
+    );
+    if (!session) throw new Error("ssh session not found");
+    if (session.status !== "active") throw new Error("ssh session is closed");
+    const now = new Date().toISOString();
+    mockSshEvents.push({
+      sessionId: input.sessionId,
+      kind: "input",
+      data: redactSshLog(input.data),
+      createdAt: now,
+    });
+    const event: SshSessionEvent = {
+      sessionId: input.sessionId,
+      kind: "output",
+      data: "Input accepted by SSH PTY stream.\r\n",
+      createdAt: now,
+    };
+    mockSshEvents.push(event);
+    session.updatedAt = now;
+    return event as T;
+  }
+
+  if (command === "ssh_session_resize") {
+    const input = args?.input as SshResizeInput;
+    const session = mockSshSessions.find(
+      (item) => item.workspaceId === input.workspaceId && item.sessionId === input.sessionId,
+    );
+    if (!session) throw new Error("ssh session not found");
+    const now = new Date().toISOString();
+    session.cols = input.cols;
+    session.rows = input.rows;
+    session.updatedAt = now;
+    const event: SshSessionEvent = {
+      sessionId: input.sessionId,
+      kind: "resize",
+      data: `PTY resized to ${input.cols}x${input.rows}.\r\n`,
+      createdAt: now,
+    };
+    mockSshEvents.push(event);
+    return event as T;
+  }
+
+  if (command === "ssh_session_close") {
+    const input = args?.input as SshCloseInput;
+    const session = mockSshSessions.find(
+      (item) => item.workspaceId === input.workspaceId && item.sessionId === input.sessionId,
+    );
+    if (!session) throw new Error("ssh session not found");
+    const now = new Date().toISOString();
+    session.status = "closed";
+    session.updatedAt = now;
+    mockSshEvents.push({
+      sessionId: input.sessionId,
+      kind: "close",
+      data: "SSH session closed.\r\n",
+      createdAt: now,
+    });
+    return session as T;
+  }
+
+  if (command === "ssh_session_log_export") {
+    const input = args?.input as SshLogExportInput;
+    const events = mockSshEvents.filter((item) => item.sessionId === input.sessionId);
+    const content = events
+      .map((event) => `[${event.createdAt}] ${event.kind} ${redactSshLog(event.data)}`)
+      .join("\n");
+    return ({
+      sessionId: input.sessionId,
+      filename: `ssh-session-${input.sessionId}.log`,
+      content,
+      lineCount: events.length,
+      redacted: content.includes("<redacted>"),
+    } satisfies SshLogExport) as T;
+  }
+
   throw new Error(`Mock command is not implemented: ${command}`);
 }
 
@@ -690,6 +813,30 @@ export function deleteSshConnection(workspaceId: string, connectionId: string) {
   });
 }
 
+export function connectSshSession(input: SshConnectInput) {
+  return call<SshSessionSummary>("ssh_session_connect", { input });
+}
+
+export function listSshSessions(workspaceId: string) {
+  return call<SshSessionSummary[]>("ssh_sessions_list", { workspaceId });
+}
+
+export function sendSshInput(input: SshSessionInput) {
+  return call<SshSessionEvent>("ssh_session_input", { input });
+}
+
+export function resizeSshSession(input: SshResizeInput) {
+  return call<SshSessionEvent>("ssh_session_resize", { input });
+}
+
+export function closeSshSession(input: SshCloseInput) {
+  return call<SshSessionSummary>("ssh_session_close", { input });
+}
+
+export function exportSshLog(input: SshLogExportInput) {
+  return call<SshLogExport>("ssh_session_log_export", { input });
+}
+
 function resolveInput(input: ApiRequestInput, variables: WorkspaceEnvironment["variables"]) {
   return {
     ...input,
@@ -734,6 +881,26 @@ function redactHeaders(headers: ApiRequestInput["headers"]) {
 function normalizeFolderPath(value: ApiRequestInput["folderPath"]) {
   const trimmed = value?.trim().replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
   return trimmed ? trimmed : null;
+}
+
+function redactSshLog(value: string) {
+  return value
+    .split(/\r?\n/)
+    .map((line) => {
+      const lower = line.toLowerCase();
+      return [
+        "authorization",
+        "cookie",
+        "proxy-authorization",
+        "x-api-key",
+        "x-auth-token",
+        "password",
+        "passphrase",
+      ].some((needle) => lower.includes(needle))
+        ? "<redacted>"
+        : line;
+    })
+    .join("\n");
 }
 
 function getMockLayout(workspaceId: string): WorkspaceLayout {

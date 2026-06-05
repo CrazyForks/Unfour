@@ -62,7 +62,8 @@ This document records the current implementation state and the next work slices.
 - DONE: Rust service boundary and dependency strategy are reserved.
 - DONE: SSH connection metadata CRUD stores host/user/auth metadata with `credential_ref` only.
 - DONE: SSH connection metadata is workspace-scoped and covered by Rust service tests.
-- TODO: Real session lifecycle, password/private-key auth, PTY allocation, event streaming, resize, close, and redacted logs.
+- DONE: Session lifecycle command surface supports password/private-key connection sessions, PTY sizing, input events, resize events, close, redacted log export, and cleanup when a connection is deleted.
+- TODO: Replace the local session MVP stream with real remote `russh` channel IO under the existing command surface.
 
 ## Verification Status
 

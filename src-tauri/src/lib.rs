@@ -62,6 +62,12 @@ pub fn run() {
             commands::ssh_connection_delete,
             commands::ssh_connection_save,
             commands::ssh_connections_list,
+            commands::ssh_session_close,
+            commands::ssh_session_connect,
+            commands::ssh_session_input,
+            commands::ssh_session_log_export,
+            commands::ssh_session_resize,
+            commands::ssh_sessions_list,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Unfour Workspace");

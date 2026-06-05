@@ -168,6 +168,65 @@ export type SshConnection = {
   remoteId: string | null;
 };
 
+export type SshConnectInput = {
+  workspaceId: string;
+  connectionId: string;
+  cols?: number | null;
+  rows?: number | null;
+};
+
+export type SshSessionInput = {
+  workspaceId: string;
+  sessionId: string;
+  data: string;
+};
+
+export type SshResizeInput = {
+  workspaceId: string;
+  sessionId: string;
+  cols: number;
+  rows: number;
+};
+
+export type SshCloseInput = {
+  workspaceId: string;
+  sessionId: string;
+};
+
+export type SshLogExportInput = {
+  workspaceId: string;
+  sessionId: string;
+};
+
+export type SshSessionSummary = {
+  sessionId: string;
+  workspaceId: string;
+  connectionId: string;
+  status: "active" | "closed";
+  authKind: "password" | "private-key";
+  host: string;
+  username: string;
+  cols: number;
+  rows: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type SshSessionEvent = {
+  sessionId: string;
+  kind: "input" | "output" | "resize" | "close";
+  data: string;
+  createdAt: string;
+};
+
+export type SshLogExport = {
+  sessionId: string;
+  filename: string;
+  content: string;
+  lineCount: number;
+  redacted: boolean;
+};
+
 export type DatabaseConnection = {
   id: string;
   workspaceId: string;

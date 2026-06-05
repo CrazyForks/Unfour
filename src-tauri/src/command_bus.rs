@@ -6,8 +6,10 @@ use crate::models::{
     ApiHistoryDetail, ApiHistoryItem, ApiRequestInput, ApiResponse, ApiSavedRequest,
     CredentialCreateInput, CredentialDeleteInput, CredentialMetadata, DatabaseBrowseInput,
     DatabaseBrowseResult, DatabaseConnection, DatabaseConnectionInput, DatabaseQueryInput,
-    DatabaseQueryResult, DatabaseSchema, DatabaseTestResult, SshConnection, SshConnectionInput,
-    SystemHealth, Workspace, WorkspaceEnvironment, WorkspaceLayout, WorkspaceState,
+    DatabaseQueryResult, DatabaseSchema, DatabaseTestResult, SshCloseInput, SshConnectInput,
+    SshConnection, SshConnectionInput, SshLogExport, SshLogExportInput, SshResizeInput,
+    SshSessionEvent, SshSessionInput, SshSessionSummary, SystemHealth, Workspace,
+    WorkspaceEnvironment, WorkspaceLayout, WorkspaceState,
 };
 use crate::services::api_client::ApiClientService;
 use crate::services::database::DatabaseService;
@@ -464,6 +466,83 @@ impl CommandBus {
             )
             .await?;
         Ok(connections)
+    }
+
+    pub async fn connect_ssh_session(
+        &self,
+        input: SshConnectInput,
+    ) -> AppResult<SshSessionSummary> {
+        let session = self.ssh.connect(input.clone()).await?;
+        self.audit_log
+            .record(
+                Some(&input.workspace_id),
+                "ssh.session.connect",
+                Some(&session.session_id),
+                serde_json::json!({
+                    "connectionId": input.connection_id,
+                    "authKind": session.auth_kind,
+                    "host": session.host,
+                    "pty": {
+                        "cols": session.cols,
+                        "rows": session.rows
+                    }
+                }),
+            )
+            .await?;
+        Ok(session)
+    }
+
+    pub async fn list_ssh_sessions(
+        &self,
+        workspace_id: String,
+    ) -> AppResult<Vec<SshSessionSummary>> {
+        self.ssh.list_sessions(workspace_id)
+    }
+
+    pub async fn send_ssh_input(&self, input: SshSessionInput) -> AppResult<SshSessionEvent> {
+        self.ssh.send_input(input)
+    }
+
+    pub async fn resize_ssh_session(&self, input: SshResizeInput) -> AppResult<SshSessionEvent> {
+        let event = self.ssh.resize(input.clone())?;
+        self.audit_log
+            .record(
+                Some(&input.workspace_id),
+                "ssh.session.resize",
+                Some(&input.session_id),
+                serde_json::json!({ "cols": input.cols, "rows": input.rows }),
+            )
+            .await?;
+        Ok(event)
+    }
+
+    pub async fn close_ssh_session(&self, input: SshCloseInput) -> AppResult<SshSessionSummary> {
+        let session = self.ssh.close_session(input.clone())?;
+        self.audit_log
+            .record(
+                Some(&input.workspace_id),
+                "ssh.session.close",
+                Some(&input.session_id),
+                serde_json::json!({ "status": session.status }),
+            )
+            .await?;
+        Ok(session)
+    }
+
+    pub async fn export_ssh_log(&self, input: SshLogExportInput) -> AppResult<SshLogExport> {
+        let export = self.ssh.export_log(input.clone())?;
+        self.audit_log
+            .record(
+                Some(&input.workspace_id),
+                "ssh.session.log_export",
+                Some(&input.session_id),
+                serde_json::json!({
+                    "lineCount": export.line_count,
+                    "redacted": export.redacted
+                }),
+            )
+            .await?;
+        Ok(export)
     }
 
     pub fn reserved_status(&self) -> serde_json::Value {

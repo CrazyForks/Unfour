@@ -33,11 +33,12 @@ import {
   useReactTable,
 } from "@tanstack/react-table";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { TerminalPreview } from "./components/TerminalPreview";
 import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
 import {
+  closeSshSession,
+  connectSshSession,
   browseDatabaseTable,
   createWorkspace,
   deleteApiRequest,
@@ -55,12 +56,16 @@ import {
   listApiHistory,
   listSavedApiRequests,
   listSshConnections,
+  listSshSessions,
   renameWorkspace,
+  exportSshLog,
+  resizeSshSession,
   saveApiRequest,
   duplicateApiRequest,
   saveDatabaseConnection,
   saveSshConnection,
   sendApiRequest,
+  sendSshInput,
   setActiveWorkspace as setActiveWorkspaceCommand,
   testDatabaseConnection,
   updateWorkspaceEnvironment,
@@ -83,6 +88,8 @@ import type {
   KeyValue,
   SshConnection,
   SshConnectionInput,
+  SshSessionEvent,
+  SshSessionSummary,
 } from "./types";
 
 const methods = ["GET", "POST", "PUT", "PATCH", "DELETE"];
@@ -1810,6 +1817,10 @@ function SshPanel({ workspaceId }: { workspaceId: string }) {
   const queryClient = useQueryClient();
   const { selectedSshConnectionId: selectedConnectionId, setSelectedSshConnection } =
     useWorkspaceStore();
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [terminalInput, setTerminalInput] = useState("whoami\n");
+  const [terminalEvents, setTerminalEvents] = useState<SshSessionEvent[]>([]);
+  const [exportedLog, setExportedLog] = useState<string | null>(null);
   const [form, setForm] = useState<SshConnectionInput>({
     workspaceId,
     name: "Deploy host",
@@ -1825,9 +1836,16 @@ function SshPanel({ workspaceId }: { workspaceId: string }) {
     queryKey: ["ssh-connections", workspaceId],
     queryFn: () => listSshConnections(workspaceId),
   });
+  const sessionsQuery = useQuery({
+    enabled: Boolean(workspaceId),
+    queryKey: ["ssh-sessions", workspaceId],
+    queryFn: () => listSshSessions(workspaceId),
+  });
 
   const selectedConnection: SshConnection | null =
     connectionsQuery.data?.find((item) => item.id === selectedConnectionId) ?? null;
+  const activeSession: SshSessionSummary | null =
+    sessionsQuery.data?.find((item) => item.sessionId === activeSessionId) ?? null;
 
   useEffect(() => {
     setForm((current) => ({ ...current, workspaceId }));
@@ -1875,8 +1893,82 @@ function SshPanel({ workspaceId }: { workspaceId: string }) {
     mutationFn: (connectionId: string) => deleteSshConnection(workspaceId, connectionId),
     onSuccess: () => {
       setSelectedSshConnection(null);
+      setActiveSessionId(null);
+      setTerminalEvents([]);
       queryClient.invalidateQueries({ queryKey: ["ssh-connections", workspaceId] });
+      queryClient.invalidateQueries({ queryKey: ["ssh-sessions", workspaceId] });
     },
+  });
+  const connectMutation = useMutation({
+    mutationFn: (connectionId: string) =>
+      connectSshSession({ workspaceId, connectionId, cols: 120, rows: 32 }),
+    onSuccess: (session) => {
+      setActiveSessionId(session.sessionId);
+      setTerminalEvents([
+        {
+          sessionId: session.sessionId,
+          kind: "output",
+          data: `Connected to ${session.username}@${session.host}. PTY ${session.cols}x${session.rows} allocated.\r\n`,
+          createdAt: session.createdAt,
+        },
+      ]);
+      setExportedLog(null);
+      queryClient.invalidateQueries({ queryKey: ["ssh-sessions", workspaceId] });
+    },
+  });
+  const inputMutation = useMutation({
+    mutationFn: () =>
+      sendSshInput({
+        workspaceId,
+        sessionId: activeSessionId ?? "",
+        data: terminalInput,
+      }),
+    onSuccess: (event) => {
+      setTerminalEvents((current) => [
+        ...current,
+        {
+          sessionId: event.sessionId,
+          kind: "input",
+          data: terminalInput,
+          createdAt: new Date().toISOString(),
+        },
+        event,
+      ]);
+      setTerminalInput("");
+      queryClient.invalidateQueries({ queryKey: ["ssh-sessions", workspaceId] });
+    },
+  });
+  const resizeMutation = useMutation({
+    mutationFn: () =>
+      resizeSshSession({
+        workspaceId,
+        sessionId: activeSessionId ?? "",
+        cols: activeSession?.cols === 120 ? 140 : 120,
+        rows: activeSession?.rows === 32 ? 40 : 32,
+      }),
+    onSuccess: (event) => {
+      setTerminalEvents((current) => [...current, event]);
+      queryClient.invalidateQueries({ queryKey: ["ssh-sessions", workspaceId] });
+    },
+  });
+  const closeMutation = useMutation({
+    mutationFn: () => closeSshSession({ workspaceId, sessionId: activeSessionId ?? "" }),
+    onSuccess: (session) => {
+      setTerminalEvents((current) => [
+        ...current,
+        {
+          sessionId: session.sessionId,
+          kind: "close",
+          data: "SSH session closed.\r\n",
+          createdAt: session.updatedAt,
+        },
+      ]);
+      queryClient.invalidateQueries({ queryKey: ["ssh-sessions", workspaceId] });
+    },
+  });
+  const exportMutation = useMutation({
+    mutationFn: () => exportSshLog({ workspaceId, sessionId: activeSessionId ?? "" }),
+    onSuccess: (log) => setExportedLog(log.content),
   });
 
   function updateForm(patch: Partial<SshConnectionInput>) {
@@ -1901,13 +1993,19 @@ function SshPanel({ workspaceId }: { workspaceId: string }) {
     saveMutation.mutate(form);
   }
 
+  function connectSelectedConnection() {
+    if (selectedConnectionId) {
+      connectMutation.mutate(selectedConnectionId);
+    }
+  }
+
   return (
     <div className="grid h-full min-h-0 grid-cols-[280px_minmax(0,1fr)] gap-3">
       <Panel>
         <PanelHeader
           actions={
             <>
-              <Badge tone="amber">reserved</Badge>
+              <Badge tone="green">session mvp</Badge>
               <Button aria-label="New SSH connection" onClick={newConnection} size="icon" type="button" variant="ghost">
                 <Plus size={15} />
               </Button>
@@ -2017,12 +2115,139 @@ function SshPanel({ workspaceId }: { workspaceId: string }) {
               <EmptyState>No SSH connections</EmptyState>
             )}
           </div>
-          <InlineStatus className="mt-3" tone="warning">
-            Session login and terminal streaming remain reserved for the russh backend.
-          </InlineStatus>
         </div>
       </Panel>
-      <TerminalPreview />
+      <Panel>
+        <PanelHeader
+          actions={
+            <>
+              {activeSession && (
+                <Badge tone={activeSession.status === "active" ? "green" : "neutral"}>
+                  {activeSession.status}
+                </Badge>
+              )}
+              <Button
+                disabled={!selectedConnectionId || connectMutation.isPending}
+                onClick={connectSelectedConnection}
+                size="sm"
+                type="button"
+              >
+                <Play size={14} />
+                Connect
+              </Button>
+              <Button
+                aria-label="Resize SSH session"
+                disabled={!activeSessionId || activeSession?.status !== "active" || resizeMutation.isPending}
+                onClick={() => resizeMutation.mutate()}
+                size="icon"
+                type="button"
+                variant="ghost"
+              >
+                <RefreshCw size={15} />
+              </Button>
+              <Button
+                aria-label="Export SSH log"
+                disabled={!activeSessionId || exportMutation.isPending}
+                onClick={() => exportMutation.mutate()}
+                size="icon"
+                type="button"
+                variant="ghost"
+              >
+                <Download size={15} />
+              </Button>
+              <Button
+                aria-label="Close SSH session"
+                disabled={!activeSessionId || activeSession?.status !== "active" || closeMutation.isPending}
+                onClick={() => closeMutation.mutate()}
+                size="icon"
+                type="button"
+                variant="ghost"
+              >
+                <XCircle size={15} />
+              </Button>
+            </>
+          }
+          icon={<TerminalSquare size={16} />}
+          subtitle={
+            activeSession
+              ? `${activeSession.username}@${activeSession.host} ${activeSession.cols}x${activeSession.rows}`
+              : selectedConnection
+                ? `${selectedConnection.username}@${selectedConnection.host}`
+                : undefined
+          }
+          title="SSH Session"
+        />
+        <div className="flex min-h-0 flex-1 flex-col bg-slate-950">
+          <div className="min-h-0 flex-1 overflow-auto p-4 font-mono text-xs leading-6 text-emerald-100">
+            {terminalEvents.length === 0 ? (
+              <div className="text-slate-500">Select a connection and start a session.</div>
+            ) : (
+              terminalEvents.map((event, index) => (
+                <div
+                  className={cn(
+                    "whitespace-pre-wrap break-words",
+                    event.kind === "input" && "text-sky-200",
+                    event.kind === "resize" && "text-amber-200",
+                    event.kind === "close" && "text-slate-300",
+                  )}
+                  key={`${event.sessionId}-${event.kind}-${index}`}
+                >
+                  {event.kind === "input" ? `$ ${event.data}` : event.data}
+                </div>
+              ))
+            )}
+          </div>
+          <div className="border-t border-slate-800 p-3">
+            <div className="flex gap-2">
+              <Input
+                className="border-slate-700 bg-slate-900 font-mono text-emerald-100 placeholder:text-slate-500"
+                disabled={!activeSessionId || activeSession?.status !== "active"}
+                onChange={(event) => setTerminalInput(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+                    inputMutation.mutate();
+                  }
+                }}
+                placeholder="Command input"
+                value={terminalInput}
+              />
+              <Button
+                disabled={
+                  !activeSessionId ||
+                  activeSession?.status !== "active" ||
+                  !terminalInput ||
+                  inputMutation.isPending
+                }
+                onClick={() => inputMutation.mutate()}
+                type="button"
+              >
+                <Send size={14} />
+                Send
+              </Button>
+            </div>
+            {(connectMutation.error ||
+              inputMutation.error ||
+              resizeMutation.error ||
+              closeMutation.error ||
+              exportMutation.error) && (
+              <InlineStatus className="mt-2" icon={<XCircle size={14} />} tone="danger">
+                {formatError(
+                  connectMutation.error ??
+                    inputMutation.error ??
+                    resizeMutation.error ??
+                    closeMutation.error ??
+                    exportMutation.error,
+                )}
+              </InlineStatus>
+            )}
+            {exportedLog && (
+              <pre className="mt-3 max-h-32 overflow-auto rounded-md bg-slate-900 p-3 text-xs text-slate-300 ring-1 ring-inset ring-slate-800">
+                {exportedLog}
+              </pre>
+            )}
+          </div>
+        </div>
+      </Panel>
     </div>
   );
 }

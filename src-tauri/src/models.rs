@@ -224,6 +224,81 @@ pub struct SshConnection {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct SshConnectInput {
+    pub workspace_id: String,
+    pub connection_id: String,
+    pub cols: Option<u16>,
+    pub rows: Option<u16>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SshSessionInput {
+    pub workspace_id: String,
+    pub session_id: String,
+    pub data: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SshResizeInput {
+    pub workspace_id: String,
+    pub session_id: String,
+    pub cols: u16,
+    pub rows: u16,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SshCloseInput {
+    pub workspace_id: String,
+    pub session_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SshLogExportInput {
+    pub workspace_id: String,
+    pub session_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SshSessionSummary {
+    pub session_id: String,
+    pub workspace_id: String,
+    pub connection_id: String,
+    pub status: String,
+    pub auth_kind: String,
+    pub host: String,
+    pub username: String,
+    pub cols: u16,
+    pub rows: u16,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SshSessionEvent {
+    pub session_id: String,
+    pub kind: String,
+    pub data: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SshLogExport {
+    pub session_id: String,
+    pub filename: String,
+    pub content: String,
+    pub line_count: usize,
+    pub redacted: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SshConnectionConfig {
     pub host: String,
     pub port: u16,

@@ -38,11 +38,11 @@
 
 - DONE TASK-SSH-001: Add `russh` dependency compatible with the selected Rust toolchain.
 - DONE TASK-SSH-002: Add SSH connection metadata CRUD with `credential_ref`.
-- TODO TASK-SSH-003: Password auth returns `session_id`.
-- TODO TASK-SSH-004: Private-key auth using local key path and passphrase ref.
-- TODO TASK-SSH-005: PTY allocation, xterm input, resize, and event output.
-- TODO TASK-SSH-006: Session close and log export with redaction.
-- TODO TASK-SSH-007: Add multi-session tab lifecycle and backend cleanup on tab close.
+- DONE TASK-SSH-003: Password auth returns `session_id`.
+- DONE TASK-SSH-004: Private-key auth using local key path and passphrase ref.
+- DONE TASK-SSH-005: PTY allocation, xterm input, resize, and event output.
+- DONE TASK-SSH-006: Session close and log export with redaction.
+- DONE TASK-SSH-007: Add multi-session tab lifecycle and backend cleanup on tab close.
 
 ## P1: Database MVP
 

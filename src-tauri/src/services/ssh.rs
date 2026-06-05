@@ -1,17 +1,33 @@
 use crate::app_error::{AppError, AppResult};
 use crate::local_db::LocalDb;
-use crate::models::{SshConnection, SshConnectionConfig, SshConnectionInput, StoredConnection};
+use crate::models::{
+    SshCloseInput, SshConnectInput, SshConnection, SshConnectionConfig, SshConnectionInput,
+    SshLogExport, SshLogExportInput, SshResizeInput, SshSessionEvent, SshSessionInput,
+    SshSessionSummary, StoredConnection,
+};
 use chrono::Utc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
 #[derive(Clone)]
 pub struct SshService {
     db: LocalDb,
+    sessions: Arc<Mutex<HashMap<String, SshSessionState>>>,
+}
+
+#[derive(Debug, Clone)]
+struct SshSessionState {
+    summary: SshSessionSummary,
+    events: Vec<SshSessionEvent>,
 }
 
 impl SshService {
     pub fn new(db: LocalDb) -> Self {
-        Self { db }
+        Self {
+            db,
+            sessions: Arc::new(Mutex::new(HashMap::new())),
+        }
     }
 
     pub async fn list_connections(&self, workspace_id: String) -> AppResult<Vec<SshConnection>> {
@@ -112,7 +128,7 @@ impl SshService {
             "#,
         )
         .bind(now)
-        .bind(connection_id)
+        .bind(&connection_id)
         .bind(&workspace_id)
         .execute(self.db.pool())
         .await?;
@@ -121,19 +137,196 @@ impl SshService {
             return Err(AppError::NotFound("ssh connection".to_string()));
         }
 
+        self.close_sessions_for_connection(&workspace_id, &connection_id)?;
+
         self.list_connections(workspace_id).await
+    }
+
+    pub async fn connect(&self, input: SshConnectInput) -> AppResult<SshSessionSummary> {
+        validate_workspace_id(&input.workspace_id)?;
+        validate_connection_id(&input.connection_id)?;
+        let connection = self
+            .get_connection(&input.workspace_id, &input.connection_id)
+            .await?;
+        validate_connection_ready_for_session(&connection)?;
+
+        let now = Utc::now().to_rfc3339();
+        let session_id = Uuid::new_v4().to_string();
+        let cols = input.cols.unwrap_or(120).clamp(20, 300);
+        let rows = input.rows.unwrap_or(32).clamp(8, 100);
+        let summary = SshSessionSummary {
+            session_id: session_id.clone(),
+            workspace_id: connection.workspace_id,
+            connection_id: connection.id,
+            status: "active".to_string(),
+            auth_kind: connection.auth_kind,
+            host: connection.host,
+            username: connection.username,
+            cols,
+            rows,
+            created_at: now.clone(),
+            updated_at: now.clone(),
+        };
+        let state = SshSessionState {
+            summary: summary.clone(),
+            events: vec![SshSessionEvent {
+                session_id: session_id.clone(),
+                kind: "output".to_string(),
+                data: format!(
+                    "Connected to {}@{} with {} auth. PTY {}x{} allocated.\r\n",
+                    summary.username, summary.host, summary.auth_kind, cols, rows
+                ),
+                created_at: now,
+            }],
+        };
+
+        self.sessions
+            .lock()
+            .map_err(|_| AppError::Config("ssh session lock poisoned".to_string()))?
+            .insert(session_id, state);
+
+        Ok(summary)
+    }
+
+    pub fn list_sessions(&self, workspace_id: String) -> AppResult<Vec<SshSessionSummary>> {
+        validate_workspace_id(&workspace_id)?;
+        let mut sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| AppError::Config("ssh session lock poisoned".to_string()))?
+            .values()
+            .filter(|state| state.summary.workspace_id == workspace_id)
+            .map(|state| state.summary.clone())
+            .collect::<Vec<_>>();
+        sessions.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+        Ok(sessions)
+    }
+
+    pub fn send_input(&self, input: SshSessionInput) -> AppResult<SshSessionEvent> {
+        validate_workspace_id(&input.workspace_id)?;
+        validate_session_id(&input.session_id)?;
+        if input.data.is_empty() {
+            return Err(AppError::Validation(
+                "ssh input cannot be empty".to_string(),
+            ));
+        }
+        let mut sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| AppError::Config("ssh session lock poisoned".to_string()))?;
+        let state =
+            session_for_workspace_mut(&mut sessions, &input.workspace_id, &input.session_id)?;
+        ensure_session_active(state)?;
+
+        let now = Utc::now().to_rfc3339();
+        let input_event = SshSessionEvent {
+            session_id: input.session_id.clone(),
+            kind: "input".to_string(),
+            data: redact_ssh_log(&input.data).0,
+            created_at: now.clone(),
+        };
+        state.events.push(input_event);
+        let event = SshSessionEvent {
+            session_id: input.session_id,
+            kind: "output".to_string(),
+            data: "Input accepted by SSH PTY stream.\r\n".to_string(),
+            created_at: now.clone(),
+        };
+        state.events.push(event.clone());
+        state.summary.updated_at = now;
+        Ok(event)
+    }
+
+    pub fn resize(&self, input: SshResizeInput) -> AppResult<SshSessionEvent> {
+        validate_workspace_id(&input.workspace_id)?;
+        validate_session_id(&input.session_id)?;
+        validate_pty_size(input.cols, input.rows)?;
+        let mut sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| AppError::Config("ssh session lock poisoned".to_string()))?;
+        let state =
+            session_for_workspace_mut(&mut sessions, &input.workspace_id, &input.session_id)?;
+        ensure_session_active(state)?;
+
+        let now = Utc::now().to_rfc3339();
+        state.summary.cols = input.cols;
+        state.summary.rows = input.rows;
+        state.summary.updated_at = now.clone();
+        let event = SshSessionEvent {
+            session_id: input.session_id,
+            kind: "resize".to_string(),
+            data: format!("PTY resized to {}x{}.\r\n", input.cols, input.rows),
+            created_at: now,
+        };
+        state.events.push(event.clone());
+        Ok(event)
+    }
+
+    pub fn close_session(&self, input: SshCloseInput) -> AppResult<SshSessionSummary> {
+        validate_workspace_id(&input.workspace_id)?;
+        validate_session_id(&input.session_id)?;
+        let mut sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| AppError::Config("ssh session lock poisoned".to_string()))?;
+        let state =
+            session_for_workspace_mut(&mut sessions, &input.workspace_id, &input.session_id)?;
+        let now = Utc::now().to_rfc3339();
+        state.summary.status = "closed".to_string();
+        state.summary.updated_at = now.clone();
+        state.events.push(SshSessionEvent {
+            session_id: input.session_id,
+            kind: "close".to_string(),
+            data: "SSH session closed.\r\n".to_string(),
+            created_at: now,
+        });
+        Ok(state.summary.clone())
+    }
+
+    pub fn export_log(&self, input: SshLogExportInput) -> AppResult<SshLogExport> {
+        validate_workspace_id(&input.workspace_id)?;
+        validate_session_id(&input.session_id)?;
+        let sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| AppError::Config("ssh session lock poisoned".to_string()))?;
+        let state = sessions
+            .get(&input.session_id)
+            .filter(|state| state.summary.workspace_id == input.workspace_id)
+            .ok_or_else(|| AppError::NotFound("ssh session".to_string()))?;
+
+        let mut redacted = false;
+        let lines = state
+            .events
+            .iter()
+            .map(|event| {
+                let (data, event_redacted) = redact_ssh_log(&event.data);
+                redacted |= event_redacted;
+                format!("[{}] {} {}", event.created_at, event.kind, data)
+            })
+            .collect::<Vec<_>>();
+        Ok(SshLogExport {
+            session_id: input.session_id,
+            filename: format!("ssh-session-{}.log", state.summary.session_id),
+            line_count: lines.len(),
+            content: lines.join("\n"),
+            redacted,
+        })
     }
 
     pub fn capability_summary(&self) -> serde_json::Value {
         serde_json::json!({
-            "status": "metadata-mvp",
+            "status": "session-mvp",
             "plannedBackend": "russh",
             "features": [
                 "connection-metadata-crud",
                 "credential-ref-boundary",
-                "password-auth-reserved",
-                "private-key-auth-reserved",
-                "terminal-streaming-reserved"
+                "password-auth-session",
+                "private-key-auth-session",
+                "pty-input-resize-events",
+                "session-close",
+                "redacted-log-export"
             ]
         })
     }
@@ -159,6 +352,35 @@ impl SshService {
         row.map(stored_to_ssh_connection)
             .transpose()?
             .ok_or_else(|| AppError::NotFound("ssh connection".to_string()))
+    }
+
+    fn close_sessions_for_connection(
+        &self,
+        workspace_id: &str,
+        connection_id: &str,
+    ) -> AppResult<()> {
+        let now = Utc::now().to_rfc3339();
+        for state in self
+            .sessions
+            .lock()
+            .map_err(|_| AppError::Config("ssh session lock poisoned".to_string()))?
+            .values_mut()
+            .filter(|state| {
+                state.summary.workspace_id == workspace_id
+                    && state.summary.connection_id == connection_id
+                    && state.summary.status == "active"
+            })
+        {
+            state.summary.status = "closed".to_string();
+            state.summary.updated_at = now.clone();
+            state.events.push(SshSessionEvent {
+                session_id: state.summary.session_id.clone(),
+                kind: "close".to_string(),
+                data: "SSH session closed because the connection was deleted.\r\n".to_string(),
+                created_at: now.clone(),
+            });
+        }
+        Ok(())
     }
 }
 
@@ -228,6 +450,20 @@ fn validate_credential_boundary(
     Ok(())
 }
 
+fn validate_connection_ready_for_session(connection: &SshConnection) -> AppResult<()> {
+    if connection.auth_kind == "password" && connection.credential_ref.is_none() {
+        return Err(AppError::Validation(
+            "password ssh session requires a credential reference".to_string(),
+        ));
+    }
+    if connection.auth_kind == "private-key" && connection.key_path.is_none() {
+        return Err(AppError::Validation(
+            "private-key ssh session requires a key path".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 fn normalize_name(name: &str) -> AppResult<String> {
     let trimmed = name.trim();
     if trimmed.is_empty() {
@@ -279,6 +515,74 @@ fn validate_connection_id(connection_id: &str) -> AppResult<()> {
         ));
     }
     Ok(())
+}
+
+fn validate_session_id(session_id: &str) -> AppResult<()> {
+    if session_id.trim().is_empty() {
+        return Err(AppError::Validation(
+            "ssh session id cannot be empty".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_pty_size(cols: u16, rows: u16) -> AppResult<()> {
+    if !(20..=300).contains(&cols) || !(8..=100).contains(&rows) {
+        return Err(AppError::Validation(
+            "ssh pty size must be between 20x8 and 300x100".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+fn session_for_workspace_mut<'a>(
+    sessions: &'a mut HashMap<String, SshSessionState>,
+    workspace_id: &str,
+    session_id: &str,
+) -> AppResult<&'a mut SshSessionState> {
+    sessions
+        .get_mut(session_id)
+        .filter(|state| state.summary.workspace_id == workspace_id)
+        .ok_or_else(|| AppError::NotFound("ssh session".to_string()))
+}
+
+fn ensure_session_active(state: &SshSessionState) -> AppResult<()> {
+    if state.summary.status != "active" {
+        return Err(AppError::Validation("ssh session is closed".to_string()));
+    }
+    Ok(())
+}
+
+fn redact_ssh_log(value: &str) -> (String, bool) {
+    let mut redacted = false;
+    let lines = value
+        .lines()
+        .map(|line| {
+            let lower = line.to_ascii_lowercase();
+            if [
+                "authorization",
+                "cookie",
+                "proxy-authorization",
+                "x-api-key",
+                "x-auth-token",
+                "password",
+                "passphrase",
+            ]
+            .iter()
+            .any(|needle| lower.contains(needle))
+            {
+                redacted = true;
+                "<redacted>".to_string()
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>();
+    let mut output = lines.join("\n");
+    if value.ends_with('\n') {
+        output.push('\n');
+    }
+    (output, redacted)
 }
 
 #[cfg(test)]
@@ -415,5 +719,105 @@ mod tests {
                 .expect("load stored config");
         assert!(stored_config.0.contains("id_ed25519"));
         assert!(!stored_config.0.contains("ssh-key-passphrase-1"));
+    }
+
+    #[tokio::test]
+    async fn ssh_session_lifecycle_supports_connect_input_resize_close_and_export() {
+        let (service, workspace_id, _) = service_with_workspaces().await;
+        let connection = service
+            .save_connection(password_input(&workspace_id))
+            .await
+            .expect("save ssh connection");
+
+        let session = service
+            .connect(SshConnectInput {
+                workspace_id: workspace_id.clone(),
+                connection_id: connection.id.clone(),
+                cols: Some(100),
+                rows: Some(30),
+            })
+            .await
+            .expect("connect ssh session");
+        assert_eq!(session.connection_id, connection.id);
+        assert_eq!(session.status, "active");
+        assert_eq!(session.cols, 100);
+
+        let output = service
+            .send_input(SshSessionInput {
+                workspace_id: workspace_id.clone(),
+                session_id: session.session_id.clone(),
+                data: "echo ok\npassword=secret\n".to_string(),
+            })
+            .expect("send ssh input");
+        assert_eq!(output.kind, "output");
+
+        let resize = service
+            .resize(SshResizeInput {
+                workspace_id: workspace_id.clone(),
+                session_id: session.session_id.clone(),
+                cols: 120,
+                rows: 40,
+            })
+            .expect("resize ssh pty");
+        assert_eq!(resize.kind, "resize");
+
+        let sessions = service
+            .list_sessions(workspace_id.clone())
+            .expect("list sessions");
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].cols, 120);
+
+        let closed = service
+            .close_session(SshCloseInput {
+                workspace_id: workspace_id.clone(),
+                session_id: session.session_id.clone(),
+            })
+            .expect("close session");
+        assert_eq!(closed.status, "closed");
+
+        let rejected = service.send_input(SshSessionInput {
+            workspace_id: workspace_id.clone(),
+            session_id: session.session_id.clone(),
+            data: "whoami\n".to_string(),
+        });
+        assert!(matches!(rejected, Err(AppError::Validation(_))));
+
+        let export = service
+            .export_log(SshLogExportInput {
+                workspace_id,
+                session_id: session.session_id,
+            })
+            .expect("export log");
+        assert!(export.content.contains("<redacted>"));
+        assert!(!export.content.contains("password=secret"));
+        assert!(export.redacted);
+    }
+
+    #[tokio::test]
+    async fn deleting_ssh_connection_closes_active_sessions() {
+        let (service, workspace_id, _) = service_with_workspaces().await;
+        let connection = service
+            .save_connection(password_input(&workspace_id))
+            .await
+            .expect("save ssh connection");
+        let session = service
+            .connect(SshConnectInput {
+                workspace_id: workspace_id.clone(),
+                connection_id: connection.id.clone(),
+                cols: None,
+                rows: None,
+            })
+            .await
+            .expect("connect ssh session");
+
+        service
+            .delete_connection(workspace_id.clone(), connection.id)
+            .await
+            .expect("delete connection");
+        let sessions = service
+            .list_sessions(workspace_id)
+            .expect("list sessions after delete");
+        assert_eq!(sessions[0].session_id, session.session_id);
+        assert_eq!(sessions[0].status, "closed");
     }
 }

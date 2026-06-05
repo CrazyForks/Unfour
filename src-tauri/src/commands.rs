@@ -3,9 +3,10 @@ use crate::models::{
     ApiHistoryDetail, ApiHistoryItem, ApiRequestInput, ApiResponse, ApiSavedRequest,
     CredentialCreateInput, CredentialDeleteInput, CredentialMetadata, DatabaseBrowseInput,
     DatabaseBrowseResult, DatabaseConnection, DatabaseConnectionInput, DatabaseQueryInput,
-    DatabaseQueryResult, DatabaseSchema, DatabaseTestResult, KeyValue, SshConnection,
-    SshConnectionInput, SystemHealth, Workspace, WorkspaceEnvironment, WorkspaceLayout,
-    WorkspaceState,
+    DatabaseQueryResult, DatabaseSchema, DatabaseTestResult, KeyValue, SshCloseInput,
+    SshConnectInput, SshConnection, SshConnectionInput, SshLogExport, SshLogExportInput,
+    SshResizeInput, SshSessionEvent, SshSessionInput, SshSessionSummary, SystemHealth, Workspace,
+    WorkspaceEnvironment, WorkspaceLayout, WorkspaceState,
 };
 use crate::AppState;
 use tauri::State;
@@ -278,4 +279,52 @@ pub async fn ssh_connection_delete(
         .command_bus
         .delete_ssh_connection(workspace_id, connection_id)
         .await
+}
+
+#[tauri::command]
+pub async fn ssh_session_connect(
+    input: SshConnectInput,
+    state: State<'_, AppState>,
+) -> AppResult<SshSessionSummary> {
+    state.command_bus.connect_ssh_session(input).await
+}
+
+#[tauri::command]
+pub async fn ssh_sessions_list(
+    workspace_id: String,
+    state: State<'_, AppState>,
+) -> AppResult<Vec<SshSessionSummary>> {
+    state.command_bus.list_ssh_sessions(workspace_id).await
+}
+
+#[tauri::command]
+pub async fn ssh_session_input(
+    input: SshSessionInput,
+    state: State<'_, AppState>,
+) -> AppResult<SshSessionEvent> {
+    state.command_bus.send_ssh_input(input).await
+}
+
+#[tauri::command]
+pub async fn ssh_session_resize(
+    input: SshResizeInput,
+    state: State<'_, AppState>,
+) -> AppResult<SshSessionEvent> {
+    state.command_bus.resize_ssh_session(input).await
+}
+
+#[tauri::command]
+pub async fn ssh_session_close(
+    input: SshCloseInput,
+    state: State<'_, AppState>,
+) -> AppResult<SshSessionSummary> {
+    state.command_bus.close_ssh_session(input).await
+}
+
+#[tauri::command]
+pub async fn ssh_session_log_export(
+    input: SshLogExportInput,
+    state: State<'_, AppState>,
+) -> AppResult<SshLogExport> {
+    state.command_bus.export_ssh_log(input).await
 }
