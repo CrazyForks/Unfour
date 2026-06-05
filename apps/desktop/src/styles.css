@@ -1,29 +1,66 @@
 @import "tailwindcss";
+@source "../../../packages";
 
 :root {
-  --app-bg: #e7ebf0;
-  --app-surface: #f8fafc;
-  --panel-bg: #ffffff;
-  --panel-subtle: #f3f6f9;
-  --panel-muted: #e6ebf1;
-  --border: #cfd7e2;
-  --border-strong: #aeb9c8;
-  --text: #111827;
-  --text-muted: #526071;
-  --text-soft: #7c8999;
-  --focus: #0d9488;
-  --accent: #0f766e;
-  --accent-strong: #115e59;
-  --accent-soft: #e0f2f1;
-  --sidebar-bg: #111827;
-  --sidebar-muted: #9ca3af;
-  --sidebar-border: #263244;
-  --danger: #be123c;
-  --danger-soft: #ffe4e6;
-  --success: #047857;
-  --success-soft: #dcfce7;
-  --warning: #b45309;
-  --warning-soft: #fef3c7;
+  --u-color-bg: #e7ebf0;
+  --u-color-surface: #ffffff;
+  --u-color-surface-subtle: #f3f6f9;
+  --u-color-surface-muted: #e6ebf1;
+  --u-color-surface-hover: #eef3f7;
+  --u-color-surface-active: #e7f4f3;
+  --u-color-border: #cfd7e2;
+  --u-color-border-strong: #aeb9c8;
+  --u-color-input: #b9c4d1;
+  --u-color-text: #111827;
+  --u-color-text-muted: #526071;
+  --u-color-text-soft: #7c8999;
+  --u-color-focus: #0d9488;
+  --u-color-primary: #0f766e;
+  --u-color-primary-hover: #115e59;
+  --u-color-primary-foreground: #ffffff;
+  --u-color-primary-soft: #e0f2f1;
+  --u-color-danger: #be123c;
+  --u-color-danger-soft: #ffe4e6;
+  --u-color-success: #047857;
+  --u-color-success-soft: #dcfce7;
+  --u-color-warning: #b45309;
+  --u-color-warning-soft: #fef3c7;
+  --u-size-global-toolbar: 38px;
+  --u-size-section-toolbar: 34px;
+  --u-size-tabbar: 34px;
+  --u-size-sidebar-row: 28px;
+  --u-size-table-row: 30px;
+  --u-size-input: 32px;
+  --u-size-button: 30px;
+  --u-size-button-compact: 28px;
+  --u-size-statusbar: 24px;
+  --u-line-height-ui: 1.4;
+  --u-radius-sm: 4px;
+  --u-radius-md: 6px;
+  --u-radius-lg: 8px;
+  --app-bg: var(--u-color-bg);
+  --app-surface: var(--u-color-surface-subtle);
+  --panel-bg: var(--u-color-surface);
+  --panel-subtle: var(--u-color-surface-subtle);
+  --panel-muted: var(--u-color-surface-muted);
+  --border: var(--u-color-border);
+  --border-strong: var(--u-color-border-strong);
+  --text: var(--u-color-text);
+  --text-muted: var(--u-color-text-muted);
+  --text-soft: var(--u-color-text-soft);
+  --focus: var(--u-color-focus);
+  --accent: var(--u-color-primary);
+  --accent-strong: var(--u-color-primary-hover);
+  --accent-soft: var(--u-color-primary-soft);
+  --sidebar-bg: var(--u-color-surface-subtle);
+  --sidebar-muted: var(--u-color-text-muted);
+  --sidebar-border: var(--u-color-border);
+  --danger: var(--u-color-danger);
+  --danger-soft: var(--u-color-danger-soft);
+  --success: var(--u-color-success);
+  --success-soft: var(--u-color-success-soft);
+  --warning: var(--u-color-warning);
+  --warning-soft: var(--u-color-warning-soft);
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     sans-serif;
@@ -71,22 +108,17 @@ textarea:focus-visible {
 }
 
 .app-shell {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.08)),
-    var(--app-bg);
+  background: var(--app-bg);
 }
 
 .surface-panel {
   background: var(--panel-bg);
   border: 1px solid var(--border);
-  box-shadow:
-    0 1px 2px rgba(15, 23, 42, 0.05),
-    0 12px 24px rgba(15, 23, 42, 0.04);
   overflow: hidden;
 }
 
 .surface-header {
-  background: linear-gradient(180deg, #ffffff, var(--app-surface));
+  background: var(--app-surface);
   border-bottom: 1px solid var(--border);
   color: var(--text);
 }
@@ -103,10 +135,8 @@ textarea:focus-visible {
 }
 
 .sidebar-shell {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0)),
-    var(--sidebar-bg);
-  color: #f9fafb;
+  background: var(--sidebar-bg);
+  color: var(--text);
 }
 
 .sidebar-divider {
@@ -121,11 +151,10 @@ textarea:focus-visible {
 .subpanel {
   background: #ffffff;
   border: 1px solid var(--border);
-  box-shadow: 0 1px 1px rgba(15, 23, 42, 0.03);
 }
 
 .form-band {
-  background: linear-gradient(180deg, #f8fafc, #f3f6f9);
+  background: var(--panel-subtle);
 }
 
 .data-table thead {

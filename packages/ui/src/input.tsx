@@ -7,7 +7,7 @@ export const Input = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <input
     className={cn(
-      "h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-950 shadow-xs outline-none transition-colors duration-150 placeholder:text-slate-400 hover:border-slate-400 focus:border-teal-700 focus:ring-2 focus:ring-teal-700/15 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500",
+      "h-[var(--u-size-input)] w-full rounded-[var(--u-radius-sm)] border border-[var(--u-color-input)] bg-[var(--u-color-surface)] px-2 text-[13px] text-[var(--u-color-text)] outline-none transition-colors duration-150 placeholder:text-[var(--u-color-text-soft)] hover:border-[var(--u-color-border-strong)] focus:border-[var(--u-color-focus)] focus:ring-2 focus:ring-[color:color-mix(in_srgb,var(--u-color-focus)_16%,transparent)] disabled:cursor-not-allowed disabled:bg-[var(--u-color-surface-muted)] disabled:text-[var(--u-color-text-soft)]",
       className,
     )}
     ref={ref}

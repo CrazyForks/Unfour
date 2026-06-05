@@ -4,19 +4,23 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "./utils";
 
 const buttonVariants = cva(
-  "inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-md px-3 text-sm font-medium transition-colors duration-150 disabled:pointer-events-none disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-700/30 focus-visible:ring-offset-1",
+  "inline-flex h-[var(--u-size-button)] shrink-0 items-center justify-center gap-2 rounded-[var(--u-radius-sm)] px-3 text-[13px] font-medium transition-colors duration-150 disabled:pointer-events-none disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_srgb,var(--u-color-focus)_32%,transparent)]",
   {
     variants: {
       variant: {
-        default: "bg-teal-700 text-white shadow-sm hover:bg-teal-800",
-        secondary: "border border-slate-200 bg-slate-100 text-slate-900 hover:bg-slate-200",
-        ghost: "text-slate-700 hover:bg-slate-100 hover:text-slate-950",
-        outline: "border border-slate-300 bg-white text-slate-800 shadow-xs hover:border-slate-400 hover:bg-slate-50",
+        default:
+          "border border-[var(--u-color-primary)] bg-[var(--u-color-primary)] text-[var(--u-color-primary-foreground)] hover:bg-[var(--u-color-primary-hover)]",
+        secondary:
+          "border border-[var(--u-color-border)] bg-[var(--u-color-surface-muted)] text-[var(--u-color-text)] hover:bg-[var(--u-color-surface-hover)]",
+        ghost:
+          "border border-transparent text-[var(--u-color-text-muted)] hover:bg-[var(--u-color-surface-hover)] hover:text-[var(--u-color-text)]",
+        outline:
+          "border border-[var(--u-color-border-strong)] bg-[var(--u-color-surface)] text-[var(--u-color-text)] hover:border-[var(--u-color-border-strong)] hover:bg-[var(--u-color-surface-hover)]",
       },
       size: {
-        default: "h-9 px-3",
-        icon: "h-9 w-9 px-0",
-        sm: "h-8 px-2.5 text-xs",
+        default: "h-[var(--u-size-button)] px-3",
+        icon: "h-[var(--u-size-button)] w-[var(--u-size-button)] px-0",
+        sm: "h-[var(--u-size-button-compact)] px-2 text-[12px]",
       },
     },
     defaultVariants: {
