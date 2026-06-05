@@ -42,10 +42,18 @@ The same `CommandBus` shape is reserved for later AI, MCP, CLI, workflow runner,
 
 ## Frontend Shape
 
-- `src/App.tsx`: workspace shell and current MVP panels.
-- `src/lib/tauri.ts`: typed Tauri command adapter with browser-dev mocks.
-- `src/store/workspace-store.ts`: UI state for active workspace/tab/sidebar.
-- `src/components/ui/*`: shadcn-style local primitives.
+- `apps/desktop`: Tauri/Vite desktop application entry. It mounts the composed workspace shell.
+- `packages/app-shell`: workspace shell, title bar, sidebars, tabs, and current panel composition.
+- `packages/command-client`: typed Tauri command adapter, shared frontend command types, and browser-dev mocks.
+- `packages/workspace`: UI state for active workspace/tab/sidebar.
+- `packages/ui`: shared shadcn-style primitives and styling helpers.
+- `packages/api-debugger`, `packages/database`, and `packages/terminal`: feature-specific frontend logic that should not depend on each other directly.
+
+## Workspace Shape
+
+- Root `package.json` orchestrates workspace commands through pnpm filters.
+- `pnpm-workspace.yaml` includes `apps/*` and `packages/*`.
+- Rust currently remains inside `apps/desktop/src-tauri`; future engine crates can move into root `crates/*` after the frontend package boundaries settle.
 
 ## Design Constraint
 

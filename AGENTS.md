@@ -5,6 +5,9 @@ Unfour Workspace is a Tauri 2 desktop app for operations and development work. T
 ## Working Rules
 
 - Keep frontend interaction in React/TypeScript and execution/security boundaries in Rust.
+- Treat `apps/desktop` as the only desktop application entry. It should compose internal packages, not own feature logic directly.
+- Treat `packages/*` as internal module boundaries. Import through package names like `@unfour/api-debugger`, never through another package's `src` internals.
+- Keep `packages/ui` free of business logic, `packages/command-client` free of React screens, and feature packages free of direct dependencies on each other.
 - Route business actions through the Rust Command Bus. Tauri commands are adapters, not the place for domain logic.
 - Every persisted business record must carry `workspace_id` unless it is truly global app configuration.
 - Never store passwords, private-key passphrases, API tokens, or database passwords in SQLite plaintext. Persist only a credential reference.
@@ -14,6 +17,8 @@ Unfour Workspace is a Tauri 2 desktop app for operations and development work. T
 ## Current Implementation Slice
 
 - Tauri 2 + React + TypeScript project is initialized.
+- The repository uses a pnpm workspace with `apps/*` and `packages/*`. The Community desktop app lives in `apps/desktop`.
+- Frontend package boundaries exist for `@unfour/ui`, `@unfour/command-client`, `@unfour/workspace`, `@unfour/app-shell`, `@unfour/api-debugger`, `@unfour/database`, and `@unfour/terminal`.
 - Frontend workspace shell, API client panel, terminal preview, database editor preview, and shadcn-style UI primitives exist.
 - Rust has the Command Bus boundary, Workspace service, SQLite migrations, local activity log, API request execution/history/save support, and reserved SSH/database/secret/sync/AI modules.
 - Workspace environments are implemented and API requests can resolve `{{variable}}` placeholders from the active workspace.
@@ -48,7 +53,7 @@ Workspace-scoped API requests need environment variables.
 ## Verification
 
 - Run `pnpm run build` for frontend changes.
-- Run `cargo check` from `src-tauri` for Rust changes.
-- Run `cargo check --features ssh-native` from `src-tauri` when changing SSH dependency or session code.
-- Run `cargo test` from `src-tauri`; do not rely on `--manifest-path` from the repository root for Rust tests.
+- Run `cargo check` from `apps/desktop/src-tauri` for Rust changes.
+- Run `cargo check --features ssh-native` from `apps/desktop/src-tauri` when changing SSH dependency or session code.
+- Run `cargo test` from `apps/desktop/src-tauri`; do not rely on `--manifest-path` from the repository root for Rust tests.
 - For UI changes, run the local app and inspect the first viewport in the in-app browser.

@@ -80,11 +80,11 @@ This document records the current implementation state and the next work slices.
 - PASS: `pnpm run check:rust:ssh`.
 - PASS: `pnpm run build` after workspace resource-tree changes.
 - PASS: `node .\node_modules\typescript\bin\tsc --noEmit`.
-- PASS: `cd src-tauri && cargo fmt`.
+- PASS: `cd apps/desktop/src-tauri && cargo fmt`.
 - PASS: `pnpm run build` with local permission elevation for the Vite/esbuild helper process.
-- PASS: `cd src-tauri && cargo check` with local permission elevation for Rust target artifacts.
-- PASS: `cd src-tauri && cargo test workspace::tests` with local permission elevation for Rust target artifacts.
-- PASS: `cd src-tauri && cargo test database::tests`.
+- PASS: `cd apps/desktop/src-tauri && cargo check` with local permission elevation for Rust target artifacts.
+- PASS: `cd apps/desktop/src-tauri && cargo test workspace::tests` with local permission elevation for Rust target artifacts.
+- PASS: `cd apps/desktop/src-tauri && cargo test database::tests`.
 - PASS: In-app browser loaded `http://127.0.0.1:1420/` and reported no console errors.
 - BLOCKED CURRENT RUN: In-app browser automation tools were not exposed while checking the workspace resource-tree UI; the Vite dev server was already available at `http://127.0.0.1:1420/`.
 
@@ -149,7 +149,7 @@ Goal: move from functional request runner to Postman-like daily tool.
 
 Goal: make the app understandable and installable.
 
-- Re-run full `pnpm run build`, `cd src-tauri && cargo check`, `cd src-tauri && cargo check --features ssh-native`, and `pnpm run tauri build` in an unrestricted local shell.
+- Re-run full `pnpm run build`, `cd apps/desktop/src-tauri && cargo check`, `cd apps/desktop/src-tauri && cargo check --features ssh-native`, and `pnpm run tauri build` in an unrestricted local shell.
 - Add screenshots after the UI is stable.
 - Expand `docs/user/USER_GUIDE.md` with real workflows, troubleshooting, and screenshots.
 - Keep engineering details in `docs/engineering/*` and keep user instructions in `docs/user/*`.

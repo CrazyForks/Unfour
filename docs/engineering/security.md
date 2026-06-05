@@ -47,7 +47,7 @@ Activity details must be summaries only. Do not store request bodies, response b
 
 ## Tauri Capabilities
 
-Keep `src-tauri/capabilities/default.json` narrow. Add permissions only when a command or plugin requires them, and record why in this document.
+Keep `apps/desktop/src-tauri/capabilities/default.json` narrow. Add permissions only when a command or plugin requires them, and record why in this document.
 
 ## Dangerous Actions
 

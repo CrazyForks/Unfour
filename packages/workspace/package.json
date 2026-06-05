@@ -1,0 +1,13 @@
+{
+  "name": "@unfour/workspace",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@unfour/command-client": "workspace:*",
+    "zustand": "^5.0.14"
+  }
+}

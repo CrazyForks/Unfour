@@ -1,5 +1,5 @@
 import * as React from "react";
-import { cn } from "../../lib/utils";
+import { cn } from "./utils";
 
 type BadgeProps = React.HTMLAttributes<HTMLSpanElement> & {
   tone?: "neutral" | "green" | "amber" | "red" | "teal";

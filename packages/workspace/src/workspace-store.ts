@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { WorkspaceLayout, WorkspaceTab } from "../types";
+import type { WorkspaceLayout, WorkspaceTab } from "@unfour/command-client";
 
 type WorkspaceStore = {
   activeWorkspaceId?: string;

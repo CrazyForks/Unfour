@@ -37,6 +37,22 @@ import {
   X,
   XCircle,
 } from "lucide-react";
+import {
+  duplicateEnvironmentKeys,
+  formatByteSize,
+  groupSavedRequests,
+  historyDetailToInput,
+  isSensitiveKey,
+  parseCollectionImport,
+  parseKeyValues,
+  savedRequestToInput,
+} from "@unfour/api-debugger";
+import {
+  confirmationMessage,
+  isConfirmationRequired,
+  serializeDatabaseResult,
+} from "@unfour/database";
+import { defaultSshConnectionInput, defaultTerminalInput } from "@unfour/terminal";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
@@ -46,9 +62,7 @@ import {
   useReactTable,
 } from "@tanstack/react-table";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Badge } from "./components/ui/badge";
-import { Button } from "./components/ui/button";
-import { Input } from "./components/ui/input";
+import { Badge, Button, cn, Input } from "@unfour/ui";
 import {
   closeSshSession,
   connectSshSession,
@@ -87,9 +101,8 @@ import {
   testDatabaseConnection,
   updateWorkspaceEnvironment,
   updateWorkspaceLayout,
-} from "./lib/tauri";
-import { cn } from "./lib/utils";
-import { useWorkspaceStore } from "./store/workspace-store";
+} from "@unfour/command-client";
+import { useWorkspaceStore } from "@unfour/workspace";
 import type {
   ApiHistoryItem,
   ApiHistoryDetail,
@@ -110,7 +123,7 @@ import type {
   SshSessionSummary,
   Workspace,
   WorkspaceTab,
-} from "./types";
+} from "@unfour/command-client";
 
 const methods = ["GET", "POST", "PUT", "PATCH", "DELETE"];
 
@@ -2178,160 +2191,6 @@ function EnvironmentHints({ variables }: { variables: KeyValue[] }) {
   );
 }
 
-function parseKeyValues(value: string): KeyValue[] {
-  try {
-    const parsed = JSON.parse(value);
-    if (Array.isArray(parsed)) {
-      return parsed.filter(
-        (item): item is KeyValue =>
-          typeof item?.key === "string" &&
-          typeof item?.value === "string" &&
-          typeof item?.enabled === "boolean",
-      );
-    }
-  } catch {
-    return [];
-  }
-
-  return [];
-}
-
-function savedRequestToInput(saved: ApiSavedRequest, workspaceId: string): ApiRequestInput {
-  return {
-    workspaceId,
-    name: saved.name,
-    folderPath: saved.folderPath,
-    method: saved.method,
-    url: saved.url,
-    headers: parseKeyValues(saved.headersJson),
-    query: parseKeyValues(saved.queryJson),
-    body: saved.body ?? undefined,
-    bodyKind: saved.bodyKind,
-    timeoutMs: 60_000,
-  };
-}
-
-function historyDetailToInput(history: ApiHistoryDetail): ApiRequestInput {
-  return {
-    workspaceId: history.workspaceId,
-    name: history.name ?? `${history.method} ${history.url}`,
-    folderPath: null,
-    method: history.method,
-    url: history.url,
-    headers: parseKeyValues(history.requestHeadersJson),
-    query: parseKeyValues(history.requestQueryJson),
-    body: history.requestBody ?? undefined,
-    bodyKind: "json",
-    timeoutMs: 60_000,
-  };
-}
-
-function parseCollectionImport(value: unknown, workspaceId: string): ApiRequestInput[] {
-  const rawItems = Array.isArray(value)
-    ? value
-    : typeof value === "object" && value !== null && "savedRequests" in value
-      ? (value as { savedRequests?: unknown }).savedRequests
-      : [];
-  if (!Array.isArray(rawItems)) {
-    return [];
-  }
-
-  return rawItems
-    .map((item) => normalizeImportedRequest(item, workspaceId))
-    .filter((item): item is ApiRequestInput => item !== null);
-}
-
-function normalizeImportedRequest(item: unknown, workspaceId: string): ApiRequestInput | null {
-  if (typeof item !== "object" || item === null) {
-    return null;
-  }
-  const candidate = item as Partial<ApiRequestInput>;
-  if (typeof candidate.method !== "string" || typeof candidate.url !== "string") {
-    return null;
-  }
-
-  return {
-    workspaceId,
-    name: typeof candidate.name === "string" ? candidate.name : undefined,
-    folderPath: typeof candidate.folderPath === "string" ? candidate.folderPath : null,
-    method: candidate.method.toUpperCase(),
-    url: candidate.url,
-    headers: Array.isArray(candidate.headers) ? sanitizeKeyValues(candidate.headers) : [],
-    query: Array.isArray(candidate.query) ? sanitizeKeyValues(candidate.query) : [],
-    body: typeof candidate.body === "string" ? candidate.body : undefined,
-    bodyKind: typeof candidate.bodyKind === "string" ? candidate.bodyKind : "json",
-    timeoutMs: typeof candidate.timeoutMs === "number" ? candidate.timeoutMs : 60_000,
-  };
-}
-
-function sanitizeKeyValues(items: unknown[]): KeyValue[] {
-  return items
-    .filter(isKeyValueLike)
-    .map((item) => ({
-      key: item.key ?? "",
-      value: item.value ?? "",
-      enabled: typeof item.enabled === "boolean" ? item.enabled : true,
-    }));
-}
-
-function isKeyValueLike(item: unknown): item is Partial<KeyValue> {
-  if (typeof item !== "object" || item === null) {
-    return false;
-  }
-  const candidate = item as Record<string, unknown>;
-  return typeof candidate.key === "string" && typeof candidate.value === "string";
-}
-
-function groupSavedRequests(items: ApiSavedRequest[]) {
-  const groups = new Map<string, ApiSavedRequest[]>();
-  for (const item of items) {
-    const folder = item.folderPath?.trim() || "Unfiled";
-    groups.set(folder, [...(groups.get(folder) ?? []), item]);
-  }
-
-  return Array.from(groups.entries())
-    .sort(([left], [right]) => {
-      if (left === "Unfiled") return -1;
-      if (right === "Unfiled") return 1;
-      return left.localeCompare(right);
-    })
-    .map(([folder, groupItems]) => ({
-      folder,
-      items: groupItems.sort((left, right) => left.name.localeCompare(right.name)),
-    }));
-}
-
-function duplicateEnvironmentKeys(variables: KeyValue[]) {
-  const seen = new Set<string>();
-  const duplicates = new Set<string>();
-  for (const variable of variables) {
-    const key = variable.key.trim().toLowerCase();
-    if (!key || !variable.enabled) {
-      continue;
-    }
-    if (seen.has(key)) {
-      duplicates.add(variable.key.trim());
-    }
-    seen.add(key);
-  }
-  return Array.from(duplicates);
-}
-
-function isSensitiveKey(key: string) {
-  return /(token|secret|password|passwd|api[_-]?key|auth|credential)/i.test(key);
-}
-
-function formatByteSize(bytes: number) {
-  if (bytes < 1024) {
-    return `${bytes} B`;
-  }
-  const kb = bytes / 1024;
-  if (kb < 1024) {
-    return `${kb.toFixed(kb >= 10 ? 0 : 1)} KB`;
-  }
-  const mb = kb / 1024;
-  return `${mb.toFixed(mb >= 10 ? 0 : 1)} MB`;
-}
 
 const columnHelper = createColumnHelper<ApiHistoryItem>();
 
@@ -2512,18 +2371,12 @@ function SshPanel({ workspaceId }: { workspaceId: string }) {
   const { selectedSshConnectionId: selectedConnectionId, setSelectedSshConnection } =
     useWorkspaceStore();
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
-  const [terminalInput, setTerminalInput] = useState("whoami\n");
+  const [terminalInput, setTerminalInput] = useState(defaultTerminalInput);
   const [terminalEvents, setTerminalEvents] = useState<SshSessionEvent[]>([]);
   const [exportedLog, setExportedLog] = useState<string | null>(null);
-  const [form, setForm] = useState<SshConnectionInput>({
-    workspaceId,
-    name: "Deploy host",
-    host: "example.internal",
-    port: 22,
-    username: "deploy",
-    authKind: "password",
-    credentialRef: null,
-  });
+  const [form, setForm] = useState<SshConnectionInput>(() =>
+    defaultSshConnectionInput(workspaceId),
+  );
 
   const connectionsQuery = useQuery({
     enabled: Boolean(workspaceId),
@@ -3783,48 +3636,6 @@ function DatabaseResultView({
   );
 }
 
-function serializeDatabaseResult(result: DatabaseQueryResult, delimiter: "," | "\t") {
-  const header = result.columns
-    .map((column) => serializeCell(column.name, delimiter))
-    .join(delimiter);
-  const rows = result.rows.map((row) =>
-    result.columns
-      .map((_, index) => serializeCell(row[index] ?? "", delimiter))
-      .join(delimiter),
-  );
-  return [header, ...rows].join("\r\n");
-}
-
-function serializeCell(value: string, delimiter: "," | "\t") {
-  const needsQuotes =
-    value.includes(delimiter) ||
-    value.includes("\"") ||
-    value.includes("\n") ||
-    value.includes("\r");
-  if (!needsQuotes) {
-    return value;
-  }
-  return `"${value.replace(/"/g, "\"\"")}"`;
-}
-
-function isConfirmationRequired(error: unknown) {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    (error as { code: unknown }).code === "CONFIRMATION_REQUIRED"
-  );
-}
-
-function confirmationMessage(error: unknown) {
-  if (typeof error === "object" && error !== null && "details" in error) {
-    const details = (error as { details?: { classification?: unknown } }).details;
-    if (details?.classification) {
-      return `Confirmation required for ${String(details.classification)} SQL. Review the statement, then click Confirm run.`;
-    }
-  }
-  return "Confirmation required. Review the SQL statement, then click Confirm run.";
-}
 
 function formatError(error: unknown) {
   if (error instanceof Error) {

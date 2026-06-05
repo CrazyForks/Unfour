@@ -1,0 +1,16 @@
+{
+  "name": "@unfour/ui",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@radix-ui/react-slot": "^1.2.4",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "react": "^19.1.0",
+    "tailwind-merge": "^3.6.0"
+  }
+}

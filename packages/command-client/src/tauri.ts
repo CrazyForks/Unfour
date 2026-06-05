@@ -33,7 +33,7 @@ import type {
   WorkspaceEnvironment,
   WorkspaceLayout,
   WorkspaceState,
-} from "../types";
+} from "./types";
 
 declare global {
   interface Window {

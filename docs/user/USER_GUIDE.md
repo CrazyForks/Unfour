@@ -68,22 +68,24 @@ Unfour has two halves:
 
 The frontend is responsible for what you see and edit:
 
-- `src/App.tsx` builds the main workspace window, the left resource area, the tabs, and the API/SSH/Database panels.
-- `src/lib/tauri.ts` is the bridge used by React to call Rust commands. It also contains browser-only mocks so the interface can run during frontend development.
-- `src/store/workspace-store.ts` keeps temporary UI state such as the active workspace, active tab, and sidebar state.
-- `src/components/*` contains reusable interface pieces such as terminal preview and basic controls.
+- `apps/desktop/src/App.tsx` mounts the composed desktop shell.
+- `packages/app-shell` builds the main workspace window, left resource area, tabs, and current API/SSH/Database panels.
+- `packages/command-client` is the bridge used by React to call Rust commands. It also contains browser-only mocks so the interface can run during frontend development.
+- `packages/workspace` keeps temporary UI state such as the active workspace, active tab, and sidebar state.
+- `packages/ui` contains reusable interface primitives.
+- `packages/api-debugger`, `packages/database`, and `packages/terminal` contain feature-specific frontend logic.
 
 The Rust backend is responsible for actions that should not live only in the browser:
 
-- `src-tauri/src/lib.rs` starts the Tauri app and registers all commands.
-- `src-tauri/src/commands.rs` exposes thin Tauri commands.
-- `src-tauri/src/command_bus.rs` routes commands to the correct service. This is the same path future AI, CLI, or sync automation should use.
-- `src-tauri/src/local_db.rs` opens and migrates the local SQLite database.
-- `src-tauri/src/services/workspace.rs` handles workspace data.
-- `src-tauri/src/services/api_client.rs` sends HTTP requests and stores API history/templates.
-- `src-tauri/src/services/database.rs` stores database connections and currently runs SQLite test/schema/query actions.
-- `src-tauri/src/services/ssh.rs` is the reserved boundary for real SSH sessions.
-- `src-tauri/src/services/secret_store.rs` is the reserved boundary for OS keychain or Stronghold credentials.
+- `apps/desktop/src-tauri/src/lib.rs` starts the Tauri app and registers all commands.
+- `apps/desktop/src-tauri/src/commands.rs` exposes thin Tauri commands.
+- `apps/desktop/src-tauri/src/command_bus.rs` routes commands to the correct service. This is the same path future AI, CLI, or sync automation should use.
+- `apps/desktop/src-tauri/src/local_db.rs` opens and migrates the local SQLite database.
+- `apps/desktop/src-tauri/src/services/workspace.rs` handles workspace data.
+- `apps/desktop/src-tauri/src/services/api_client.rs` sends HTTP requests and stores API history/templates.
+- `apps/desktop/src-tauri/src/services/database.rs` stores database connections and currently runs SQLite test/schema/query actions.
+- `apps/desktop/src-tauri/src/services/ssh.rs` is the reserved boundary for real SSH sessions.
+- `apps/desktop/src-tauri/src/services/secret_store.rs` is the reserved boundary for OS keychain or Stronghold credentials.
 
 The important idea is that API, SSH, and Database are not separate apps. They share the same Workspace, tabs, local database, local activity trail, credential boundary, and future sync model.
 
