@@ -25,11 +25,22 @@ pnpm run test:rust
 pnpm run tauri dev
 ```
 
-Rust checks can be run from the repository root:
+Rust checks can be run from the repository root through package scripts. These scripts change into
+`src-tauri` before invoking Cargo:
 
 ```bash
 pnpm run check:rust
 pnpm run check:rust:ssh
+pnpm run test:rust
+```
+
+When invoking Cargo directly, run it from `src-tauri`:
+
+```bash
+cd src-tauri
+cargo check
+cargo check --features ssh-native
+cargo test
 ```
 
 On Windows, Rust and Vite build steps write generated artifacts under `src-tauri/target` and `dist`.

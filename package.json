@@ -10,9 +10,9 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "check": "pnpm run build && pnpm run check:rust",
-    "check:rust": "cargo check --manifest-path src-tauri/Cargo.toml",
-    "check:rust:ssh": "cargo check --manifest-path src-tauri/Cargo.toml --features ssh-native",
-    "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml"
+    "check:rust": "cd src-tauri && cargo check",
+    "check:rust:ssh": "cd src-tauri && cargo check --features ssh-native",
+    "test:rust": "cd src-tauri && cargo test"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
