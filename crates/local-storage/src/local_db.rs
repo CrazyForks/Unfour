@@ -168,3 +168,70 @@ const MIGRATIONS: &[&str] = &[
     "CREATE INDEX IF NOT EXISTS idx_api_history_workspace_created ON api_history(workspace_id, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_connections_workspace_kind ON connections(workspace_id, kind)",
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+
+    async fn test_db() -> LocalDb {
+        let options = SqliteConnectOptions::new()
+            .filename(":memory:")
+            .create_if_missing(true)
+            .foreign_keys(true);
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(options)
+            .await
+            .expect("connect in-memory sqlite");
+        LocalDb::from_pool(pool)
+    }
+
+    #[tokio::test]
+    async fn migrate_creates_all_tables() {
+        let db = test_db().await;
+        db.migrate().await.expect("first migration");
+
+        let tables: Vec<(String,)> =
+            sqlx::query_as("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+                .fetch_all(db.pool())
+                .await
+                .expect("list tables");
+        let names: Vec<&str> = tables.iter().map(|(n,)| n.as_str()).collect();
+        assert!(names.contains(&"workspaces"));
+        assert!(names.contains(&"api_requests"));
+        assert!(names.contains(&"api_history"));
+        assert!(names.contains(&"connections"));
+        assert!(names.contains(&"activity_events"));
+        assert!(names.contains(&"app_settings"));
+        assert!(names.contains(&"workspace_settings"));
+    }
+
+    #[tokio::test]
+    async fn migrate_is_idempotent() {
+        let db = test_db().await;
+        db.migrate().await.expect("first migration");
+        db.migrate()
+            .await
+            .expect("second migration should succeed without error");
+        db.migrate()
+            .await
+            .expect("third migration should succeed without error");
+    }
+
+    #[tokio::test]
+    async fn migrate_ensures_folder_path_column() {
+        let db = test_db().await;
+        db.migrate().await.expect("migration");
+
+        let columns: Vec<(String,)> =
+            sqlx::query_as("SELECT name FROM pragma_table_info('api_requests')")
+                .fetch_all(db.pool())
+                .await
+                .expect("list columns");
+        assert!(
+            columns.iter().any(|(name,)| name == "folder_path"),
+            "api_requests should have folder_path column"
+        );
+    }
+}

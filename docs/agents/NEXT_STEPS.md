@@ -22,31 +22,21 @@
 
 ---
 
-## TASK-03: Configure ESLint or Biome for frontend linting
+## TASK-03: Configure ESLint for frontend linting [COMPLETED]
 
 | Field | Value |
 |---|---|
-| Goal | Add a frontend linter (ESLint flat config or Biome) with a `lint` script in `package.json`. Configure rules for: unused imports, consistent style, no `any`, React hook rules, and TypeScript strict checks. |
-| Scope | Root `package.json` (add script + devDependency). New config file at root (`.eslintrc.cjs` or `biome.json`). May require fixes across all `packages/*/src/` and `apps/desktop/src/` for existing violations. |
-| Forbidden | Do not modify `crates/*` or Rust code. Do not change component behavior. |
-| Risk | Low. Linter setup is additive. Initial run may surface many warnings that need triage (warn vs. error). |
-| Prerequisites | None. |
-| Acceptance criteria | `pnpm run lint` succeeds with zero errors. Warnings are documented or tracked. Config file is committed. CI can run the lint step. |
-| Independent commit | Yes |
+| Status | Completed in `test: establish quality gate foundation` |
+| Result | ESLint 10 flat config (`eslint.config.mjs`) added with typescript-eslint, eslint-plugin-react-hooks v7, eslint-plugin-react-refresh. Rules: no-explicit-any (error), no-unused-vars (warn with ignore patterns), react-hooks rules (warn for v7 advisory rules). `pnpm run lint` passes with 0 errors, 62 warnings. 3 `prefer-const` violations fixed in `command-client/src/tauri.ts`. |
 
 ---
 
-## TASK-04: Add vitest for frontend unit testing
+## TASK-04: Add vitest for frontend unit testing [COMPLETED]
 
 | Field | Value |
 |---|---|
-| Goal | Set up vitest as the frontend test runner. Write initial tests for `useWorkspaceStore` (Zustand store), `request-utils.ts` (API debugger utilities), and `result-utils.ts` (database result utilities). |
-| Scope | Root `package.json` (add vitest devDependency + test script). New `vitest.config.ts` in `apps/desktop` or root. Initial test files in targeted packages. |
-| Forbidden | Do not modify production code to accommodate tests. Do not modify `crates/*`. |
-| Risk | Low. Test infrastructure is additive. |
-| Prerequisites | TASK-03 (linter) is recommended first but not required. |
-| Acceptance criteria | `pnpm run test` runs vitest and all initial tests pass. At least 3 test files covering pure utility functions and Zustand store logic. |
-| Independent commit | Yes |
+| Status | Completed in `test: establish quality gate foundation` |
+| Result | Vitest 4 configured with root `vitest.config.ts` including path aliases for workspace packages. 3 test files: `workspace-store.test.ts` (12 tests: initial state, tab management, sidebar, selection, layout hydration, snapshot), `request-utils.test.ts` (20 tests: key-value parsing, saved request grouping, environment key duplication, sensitivity detection, byte formatting, collection import), `result-utils.test.ts` (16 tests: CSV/TSV serialization, confirmation policy, error formatting). Total: 48 tests passing. |
 
 ---
 
@@ -87,17 +77,12 @@
 
 ---
 
-## TASK-08: Add Rust tests for local-storage and CommandBus
+## TASK-08: Add Rust tests for local-storage and CommandBus [COMPLETED]
 
 | Field | Value |
 |---|---|
-| Goal | Add unit tests for `LocalDb::migrate()` (migration idempotency), `ActivityLogService::record()` (event recording and retrieval), and `CommandBus` orchestration (at least 2-3 end-to-end command flows using in-memory SQLite). |
-| Scope | `crates/local-storage/src/` (add test module). `apps/desktop/src-tauri/src/` (add test module or integration test). |
-| Forbidden | Do not modify production code unless needed for testability (e.g., making `LocalDb::from_pool` public, which it already is). |
-| Risk | Low. Tests are additive. `LocalDb::from_pool` already exists for in-memory SQLite testing. |
-| Prerequisites | None. |
-| Acceptance criteria | `cargo test --workspace` passes with new tests. `unfour-local-storage` has at least 2 tests. `unfour-workspace` has at least 2 integration tests. |
-| Independent commit | Yes |
+| Status | Completed in `test: establish quality gate foundation` |
+| Result | Local-storage: 6 tests added (3 in `local_db.rs`: migration creates all 7 tables, migration is idempotent, folder_path column migration; 3 in `activity_log.rs`: single event insert, multiple events, JSON details serialization). CommandBus: 3 integration tests added (`from_db` testability seam with in-memory SQLite + in-memory SecretStore): workspace create/list, API request save/list, workspace rename. `SecretStore::in_memory` made available outside `#[cfg(test)]` for cross-crate testing. Total Rust workspace: 39 tests passing. |
 
 ---
 
@@ -127,8 +112,5 @@
 ## Recommended Priority Order
 
 1. **TASK-05** (real SSH) -- highest-value feature gap, core roadmap item
-2. **TASK-03** (linter) -- establishes quality gate for all subsequent work
-3. **TASK-04** (vitest) -- testing infrastructure for frontend packages
-4. **TASK-08** (Rust tests) -- backend test coverage for untested services
-5. **TASK-06** (PostgreSQL/MySQL) -- second-highest feature gap
-6. **TASK-10** (terminal search) -- small feature completion
+2. **TASK-06** (PostgreSQL/MySQL) -- second-highest feature gap
+3. **TASK-10** (terminal search) -- small feature completion

@@ -65,8 +65,8 @@ let mockSavedRequests: ApiSavedRequest[] = [];
 let mockDatabaseConnections: DatabaseConnection[] = [];
 let mockSshConnections: SshConnection[] = [];
 let mockSshSessions: SshSessionSummary[] = [];
-let mockSshEvents: SshSessionEvent[] = [];
-let mockCredentials: Record<string, string> = {};
+const mockSshEvents: SshSessionEvent[] = [];
+const mockCredentials: Record<string, string> = {};
 let mockEnvironment: WorkspaceEnvironment = {
   workspaceId: mockWorkspace.id,
   variables: [
@@ -75,7 +75,7 @@ let mockEnvironment: WorkspaceEnvironment = {
   ],
   updatedAt: new Date().toISOString(),
 };
-let mockLayouts: Record<string, WorkspaceLayout> = {};
+const mockLayouts: Record<string, WorkspaceLayout> = {};
 
 function isTauriRuntime() {
   return typeof window !== "undefined" && Boolean(window.__TAURI_INTERNALS__);

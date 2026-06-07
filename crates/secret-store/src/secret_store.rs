@@ -25,7 +25,7 @@ impl SecretStore {
         }
     }
 
-    #[cfg(test)]
+    /// Create an in-memory secret store for testing. Avoids OS keychain access.
     pub fn in_memory(service_name: impl Into<String>) -> Self {
         Self {
             service_name: service_name.into(),

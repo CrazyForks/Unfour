@@ -8,7 +8,7 @@
 |---|---|
 | Scan date | 2026-06-07 |
 | Branch | `main` |
-| Last commit | `chore(frontend): complete hardening cleanup batch` |
+| Last commit | `test: establish quality gate foundation` |
 | Working tree | Clean (no staged or unstaged changes) |
 | Package manager | pnpm 10.23.0 |
 | Rust toolchain | Verified with `rustc 1.96.0` |
@@ -19,6 +19,8 @@
 
 **Backend:** Rust with Tauri 2, sqlx 0.8 (SQLite + PostgreSQL + MySQL drivers), reqwest 0.12 (HTTP client), russh 0.61 (SSH, behind `ssh-native` feature, not yet wired), keyring 3 (OS keychain), tokio (async runtime), tracing + tracing-subscriber (structured logging).
 
+**Quality gates:** ESLint 10 flat config with typescript-eslint, eslint-plugin-react-hooks v7, eslint-plugin-react-refresh. Vitest 4 for frontend unit testing. Cargo test workspace for Rust.
+
 **Build and packaging:** Tauri 2 CLI, Vite bundler, Cargo workspace (resolver 2), pnpm workspace.
 
 **Architecture patterns:** Command Bus (single backend contract), local-first SQLite persistence, workspace-scoped records, credential references (never plaintext secrets), header redaction in logs/history.
@@ -27,7 +29,7 @@
 
 The project is between **v0.4 (Database)** and **v0.5 (Hardening)** on its roadmap. The API Client (v0.2) and core workspace features are complete. SQLite database support is fully functional. SSH has a complete metadata CRUD boundary and session lifecycle simulation, but real SSH transport via russh is not yet connected. PostgreSQL and MySQL have metadata-only support; live connections are reserved for a future phase.
 
-Frontend hardening is in progress: the composition root has been extracted into focused components, hardcoded colors have been migrated to semantic tokens, and the production bundle is split into five chunks via Vite `manualChunks`.
+Frontend hardening is in progress: the composition root has been extracted into focused components, hardcoded colors have been migrated to semantic tokens, and the production bundle is split into five chunks via Vite `manualChunks`. A quality gate foundation has been established with ESLint flat config, Vitest frontend tests, and Rust integration tests for the CommandBus.
 
 ## Verified Capabilities (Fully Implemented)
 
@@ -52,11 +54,14 @@ Frontend hardening is in progress: the composition root has been extracted into 
 - Command Palette with module navigation actions
 - Module sidebar with context-aware trees (API collections, SSH connections, DB connections/schema)
 - Full mock backend in `command-client` for browser-only development
+- ESLint flat config with TypeScript, React Hooks, and no-explicit-any enforcement
+- Vitest frontend test suite covering Zustand store, API utilities, and database result utilities
+- Rust integration tests for CommandBus orchestration (workspace CRUD, API request save/list)
 
 ## Partially Implemented
 
 - **PostgreSQL/MySQL connections:** Metadata CRUD works; live `test_connection`, schema browsing, and SQL execution return "reserved for next phase" for non-SQLite drivers.
-- **SSH live sessions:** Backend service boundary and session lifecycle exist, but the `russh` transport (behind `ssh-native` feature flag) is not connected to the session I/O path. Sessions are currently simulated in-memory.
+- **SSH live sessions:** Backend service boundary and session lifecycle exist, but the `russh` transport (behind `ssh-native` feature flag) is not connected to the I/O path. Sessions are currently simulated in-memory.
 - **Bottom Panel / Right Inspector:** Shell slots exist and render placeholder content. Feature-specific diagnostics and property inspectors are not yet implemented.
 - **Terminal search:** `TerminalSearchBar` renders a placeholder input with text "Search integration pending"; not wired to xterm search addon.
 
@@ -72,26 +77,23 @@ Frontend hardening is in progress: the composition root has been extracted into 
 - Database query cancellation
 - Workspace environment value encryption at rest
 - Cross-platform packaging and distribution
-- ESLint or Biome linter configuration (no frontend linter currently configured)
-- Frontend unit tests (no test runner configured)
 
 ## Verification Commands and Results
 
 | Command | Result | Details |
 |---|---|---|
+| `pnpm run lint` | PASS | 0 errors, 62 warnings (react-hooks v7 advisories + react-refresh export warnings). |
+| `pnpm run test` | PASS | 48 tests passed across 3 test files (workspace-store: 12, request-utils: 20, result-utils: 16). |
 | `pnpm run build` | PASS | tsc + vite build succeeded. 1990 modules. Output: 5 JS chunks (monaco 15 KB, vendor-radix 88 KB, vendor-tanstack 101 KB, xterm 334 KB, index 378 KB), 2 CSS chunks (xterm 5 KB, index 35 KB). All chunks under 500 KB. |
-| `pnpm run check:rust` | PASS | `cargo check --workspace` finished cleanly. |
-| `pnpm run check:rust:ssh` | PASS | `cargo check -p unfour-workspace --features ssh-native` finished cleanly. |
-| `pnpm run test:rust` | PASS | 30 tests passed, 0 failed across 7 crates. |
 | `cargo fmt --check` | PASS | No formatting issues. |
-| ESLint / Biome | N/A | No frontend linter configured. |
-| Frontend tests | N/A | No frontend test runner configured. |
+| `cargo test --workspace` | PASS | 39 tests passed, 0 failed across 7 crates (including 6 new local-storage tests + 3 new CommandBus integration tests). |
+| `cargo check --workspace` | PASS | All 7 crates compile cleanly. |
+| `cargo check -p unfour-workspace --features ssh-native` | PASS | ssh-native feature compiles cleanly. |
 
 ## Known Limitations
 
-1. **No frontend linter:** `package.json` has no lint script. No `.eslintrc` or `biome.json` found.
-2. **No frontend tests:** No test framework (vitest, jest) configured for TypeScript packages.
-3. **Mock fallback size:** `packages/command-client/src/tauri.ts` contains ~900 lines of mock implementation for browser-only development. This is intentional but adds maintenance cost.
-4. **CSP disabled:** `tauri.conf.json` sets `security.csp: null`, meaning no Content Security Policy is enforced.
-5. **No package-level README:** None of the 7 frontend packages or 7 Rust crates have README files.
-6. **CSS overlay values:** `.workspace-card` in `styles.css` still uses raw `rgba(255, 255, 255, ...)` values; these are intentional light-overlay effects with no semantic token equivalent.
+1. **Mock fallback size:** `packages/command-client/src/tauri.ts` contains ~900 lines of mock implementation for browser-only development. This is intentional but adds maintenance cost.
+2. **CSP disabled:** `tauri.conf.json` sets `security.csp: null`, meaning no Content Security Policy is enforced.
+3. **No package-level README:** None of the 7 frontend packages or 7 Rust crates have README files.
+4. **CSS overlay values:** `.workspace-card` in `styles.css` still uses raw `rgba(255, 255, 255, ...)` values; these are intentional light-overlay effects with no semantic token equivalent.
+5. **ESLint warnings:** 62 warnings from react-hooks v7 advisory rules (`refs`, `set-state-in-effect`, `immutability`) and react-refresh export checks. These are documented as non-blocking.

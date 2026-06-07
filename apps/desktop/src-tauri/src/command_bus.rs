@@ -49,6 +49,25 @@ impl CommandBus {
         })
     }
 
+    /// Construct a `CommandBus` from a pre-built `LocalDb` without requiring a
+    /// Tauri `AppHandle`. This is the primary testability seam for integration
+    /// tests that use in-memory SQLite.
+    pub async fn from_db(db: LocalDb) -> AppResult<Self> {
+        let activity_log = ActivityLogService::new(db.clone());
+        let secret_store = SecretStore::in_memory("unfour-test");
+        let workspace = WorkspaceService::new(db.clone());
+        workspace.ensure_default_workspace().await?;
+
+        Ok(Self {
+            api_client: ApiClientService::new(db.clone()),
+            activity_log,
+            database: DatabaseService::new(db.clone()),
+            secret_store,
+            ssh: SshService::new(db.clone()),
+            workspace,
+        })
+    }
+
     pub async fn system_health(&self) -> AppResult<SystemHealth> {
         Ok(SystemHealth {
             app_name: "Unfour Workspace".to_string(),
@@ -536,5 +555,155 @@ impl CommandBus {
             "database": self.database.capability_summary(),
             "secrets": self.secret_store.capability_summary()
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+    use unfour_core::models::ApiRequestInput;
+    use unfour_local_storage::LocalDb;
+
+    async fn test_bus() -> CommandBus {
+        let options = SqliteConnectOptions::new()
+            .filename(":memory:")
+            .create_if_missing(true)
+            .foreign_keys(true);
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(options)
+            .await
+            .expect("connect in-memory sqlite");
+        let db = LocalDb::from_pool(pool);
+        db.migrate().await.expect("run migrations");
+        CommandBus::from_db(db).await.expect("build command bus")
+    }
+
+    #[tokio::test]
+    async fn workspace_create_and_list() {
+        let bus = test_bus().await;
+
+        // from_db seeds a default workspace, so list should have at least one
+        let initial_state = bus.list_workspaces().await.expect("list workspaces");
+        let initial_count = initial_state.workspaces.len();
+        assert!(
+            initial_count >= 1,
+            "should have the default workspace seeded"
+        );
+
+        // Create a new workspace
+        let created = bus
+            .create_workspace("Integration Test WS".to_string())
+            .await
+            .expect("create workspace");
+        assert_eq!(created.name, "Integration Test WS");
+        assert!(!created.id.is_empty());
+
+        // List should now include the new workspace
+        let state = bus.list_workspaces().await.expect("list workspaces");
+        assert_eq!(state.workspaces.len(), initial_count + 1);
+        assert!(
+            state.workspaces.iter().any(|w| w.id == created.id),
+            "newly created workspace should appear in the list"
+        );
+
+        // The new workspace should be active (create sets it active)
+        assert_eq!(state.active_workspace_id, created.id);
+    }
+
+    #[tokio::test]
+    async fn save_and_list_api_requests() {
+        let bus = test_bus().await;
+
+        // Get the default workspace
+        let state = bus.list_workspaces().await.expect("list workspaces");
+        let workspace_id = state.active_workspace_id.clone();
+
+        // Initially no saved requests
+        let initial = bus
+            .list_saved_api_requests(workspace_id.clone())
+            .await
+            .expect("list saved requests");
+        assert!(initial.is_empty(), "no saved requests initially");
+
+        // Save a request
+        let input = ApiRequestInput {
+            workspace_id: workspace_id.clone(),
+            name: Some("Test GET request".to_string()),
+            folder_path: None,
+            method: "GET".to_string(),
+            url: "https://httpbin.org/get".to_string(),
+            headers: vec![],
+            query: vec![],
+            body: None,
+            body_kind: "none".to_string(),
+            timeout_ms: None,
+        };
+
+        let saved = bus.save_api_request(input).await.expect("save api request");
+        assert_eq!(saved.name, "Test GET request");
+        assert_eq!(saved.method, "GET");
+        assert_eq!(saved.workspace_id, workspace_id);
+
+        // List should now have one request
+        let listed = bus
+            .list_saved_api_requests(workspace_id.clone())
+            .await
+            .expect("list saved requests");
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].id, saved.id);
+        assert_eq!(listed[0].name, "Test GET request");
+
+        // Save a second request
+        let input2 = ApiRequestInput {
+            workspace_id: workspace_id.clone(),
+            name: Some("Test POST request".to_string()),
+            folder_path: Some("auth".to_string()),
+            method: "POST".to_string(),
+            url: "https://httpbin.org/post".to_string(),
+            headers: vec![],
+            query: vec![],
+            body: Some(r#"{"key":"value"}"#.to_string()),
+            body_kind: "json".to_string(),
+            timeout_ms: None,
+        };
+
+        let saved2 = bus
+            .save_api_request(input2)
+            .await
+            .expect("save second api request");
+        assert_eq!(saved2.folder_path.as_deref(), Some("auth"));
+
+        let listed2 = bus
+            .list_saved_api_requests(workspace_id)
+            .await
+            .expect("list saved requests after second save");
+        assert_eq!(listed2.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn workspace_rename_updates_state() {
+        let bus = test_bus().await;
+
+        let created = bus
+            .create_workspace("Rename Me".to_string())
+            .await
+            .expect("create workspace");
+
+        let renamed = bus
+            .rename_workspace(created.id.clone(), "Renamed Workspace".to_string())
+            .await
+            .expect("rename workspace");
+        assert_eq!(renamed.name, "Renamed Workspace");
+        assert_eq!(renamed.id, created.id);
+
+        let state = bus.list_workspaces().await.expect("list workspaces");
+        let ws = state
+            .workspaces
+            .iter()
+            .find(|w| w.id == created.id)
+            .expect("workspace should still exist");
+        assert_eq!(ws.name, "Renamed Workspace");
     }
 }

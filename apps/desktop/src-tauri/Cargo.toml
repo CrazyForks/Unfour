@@ -32,6 +32,10 @@ unfour-secret-store = { path = "../../../crates/secret-store" }
 unfour-ssh-engine = { path = "../../../crates/ssh-engine" }
 unfour-workspace-engine = { path = "../../../crates/workspace-engine" }
 
+[dev-dependencies]
+sqlx = { version = "0.8", default-features = false, features = ["chrono", "json", "macros", "runtime-tokio-rustls", "sqlite"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
 [features]
 default = []
 ssh-native = ["unfour-ssh-engine/ssh-native"]

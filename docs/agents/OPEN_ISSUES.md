@@ -16,30 +16,6 @@
 
 ---
 
-## ISSUE-05: No frontend linter configured
-
-| Field | Value |
-|---|---|
-| Description | `package.json` has no lint script. No `.eslintrc`, `biome.json`, or equivalent configuration file exists. The project relies solely on TypeScript's `strict` mode and `tsc` for static analysis. This leaves style inconsistencies, potential unused imports, and code quality issues undetected. |
-| File | `package.json` (root) |
-| Type | Observed |
-| Priority | P1 |
-| Blocks development | No, but degrades code quality over time |
-
----
-
-## ISSUE-06: No frontend test framework
-
-| Field | Value |
-|---|---|
-| Description | No test runner (vitest, jest) is configured for the TypeScript packages. The Rust backend has 30 passing tests, but the frontend has zero test coverage. Feature packages (`api-debugger`, `database`, `terminal`) contain hooks and state management logic that would benefit from unit tests. |
-| File | `package.json` (root), all `packages/*/` |
-| Type | Observed |
-| Priority | P2 |
-| Blocks development | No |
-
----
-
 ## ISSUE-07: SSH sessions are simulated, not real
 
 | Field | Value |
@@ -160,18 +136,6 @@
 
 ---
 
-## ISSUE-20: Rust tests missing for local-storage and desktop app
-
-| Field | Value |
-|---|---|
-| Description | `unfour-local-storage` (0 tests) and `unfour-workspace` desktop app (0 tests) have no Rust tests. The `LocalDb` migration logic and `ActivityLogService` are untested at the unit level. The desktop app's `CommandBus` orchestration is also untested. |
-| Files | `crates/local-storage/src/`, `apps/desktop/src-tauri/src/` |
-| Type | Observed |
-| Priority | P2 |
-| Blocks development | No |
-
----
-
 ## ISSUE-22: Bottom panel and right inspector contain only placeholders
 
 | Field | Value |
@@ -200,13 +164,19 @@
 
 The following issues were resolved during frontend hardening:
 
-- **ISSUE-01** (P1): App.tsx oversized composition root — extracted into `AppTitleBar`, `ModuleSidebar`, `WindowControls`, `WorkspaceMenu`, `WorkspaceDialogs`, `BottomPanelPlaceholder`, `StatusBarPlaceholder`, `RightInspectorPlaceholder`, and utility modules. App.tsx reduced from 954 to 199 lines.
-- **ISSUE-02** (P1): Hardcoded Tailwind colors in App.tsx — all 23 instances migrated to `--u-color-*` semantic tokens.
-- **ISSUE-03** (P2): Hardcoded Tailwind colors in feature packages — all 7 instances migrated to `--u-color-*` / `--u-badge-*` tokens.
-- **ISSUE-10** (P2): Workspace CRUD UI inline in App.tsx — extracted into `WorkspaceMenu` and `WorkspaceDialogs` components.
-- **ISSUE-11** (P3): Window controls inline in App.tsx — extracted into `WindowControls` component.
-- **ISSUE-18** (P3): Deprecated `module-boundaries.md` — deleted; all references point to `package-boundaries.md`.
-- **ISSUE-21** (P2): Vite chunk size warning — configured `manualChunks` to split monaco, xterm, tanstack, and radix into separate chunks. All chunks under 500 KB.
+- **ISSUE-01** (P1): App.tsx oversized composition root -- extracted into `AppTitleBar`, `ModuleSidebar`, `WindowControls`, `WorkspaceMenu`, `WorkspaceDialogs`, `BottomPanelPlaceholder`, `StatusBarPlaceholder`, `RightInspectorPlaceholder`, and utility modules. App.tsx reduced from 954 to 199 lines.
+- **ISSUE-02** (P1): Hardcoded Tailwind colors in App.tsx -- all 23 instances migrated to `--u-color-*` semantic tokens.
+- **ISSUE-03** (P2): Hardcoded Tailwind colors in feature packages -- all 7 instances migrated to `--u-color-*` / `--u-badge-*` tokens.
+- **ISSUE-10** (P2): Workspace CRUD UI inline in App.tsx -- extracted into `WorkspaceMenu` and `WorkspaceDialogs` components.
+- **ISSUE-11** (P3): Window controls inline in App.tsx -- extracted into `WindowControls` component.
+- **ISSUE-18** (P3): Deprecated `module-boundaries.md` -- deleted; all references point to `package-boundaries.md`.
+- **ISSUE-21** (P2): Vite chunk size warning -- configured `manualChunks` to split monaco, xterm, tanstack, and radix into separate chunks. All chunks under 500 KB.
+
+The following issues were resolved during the quality gate foundation batch:
+
+- **ISSUE-05** (P1): No frontend linter configured -- ESLint 10 flat config added with typescript-eslint, react-hooks v7, react-refresh, no-explicit-any enforcement, and unused-vars checking. `pnpm run lint` passes with 0 errors.
+- **ISSUE-06** (P2): No frontend test framework -- Vitest 4 configured with 3 test files: workspace store (12 tests), API request utilities (20 tests), database result utilities (16 tests). `pnpm run test` passes with 48 tests.
+- **ISSUE-20** (P2): Rust tests missing for local-storage and desktop app -- Added 6 tests for local-storage (migration idempotency, table creation, column migration, activity log event recording, multiple events, JSON details) and 3 CommandBus integration tests (workspace create/list, API request save/list, workspace rename). `cargo test --workspace` passes with 39 tests total.
 
 ---
 
@@ -215,8 +185,8 @@ The following issues were resolved during frontend hardening:
 | Priority | Count | Types |
 |---|---|---|
 | P0 | 0 | -- |
-| P1 | 2 | ISSUE-05, ISSUE-07 |
-| P2 | 5 | ISSUE-04, ISSUE-06, ISSUE-08, ISSUE-09, ISSUE-20 |
+| P1 | 1 | ISSUE-07 |
+| P2 | 3 | ISSUE-04, ISSUE-08, ISSUE-09 |
 | P3 | 9 | ISSUE-12, ISSUE-13, ISSUE-14, ISSUE-15, ISSUE-16, ISSUE-17, ISSUE-19, ISSUE-22, ISSUE-23 |
 
-No issues are currently blocking continued development. The P1 items (frontend linter, real SSH transport) represent the highest-leverage improvements for code quality and feature completeness.
+No issues are currently blocking continued development. The P1 item (real SSH transport) represents the highest-leverage improvement for feature completeness.
