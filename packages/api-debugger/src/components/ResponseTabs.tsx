@@ -300,7 +300,7 @@ function HistoryTable({
           {table.getHeaderGroups().map((headerGroup) => (
             <tr key={headerGroup.id}>
               {headerGroup.headers.map((header) => (
-                <th className="border-b border-slate-200 px-3 py-2 font-medium" key={header.id}>
+                <th className="border-b border-[var(--u-color-border)] px-3 py-2 font-medium" key={header.id}>
                   {flexRender(header.column.columnDef.header, header.getContext())}
                 </th>
               ))}

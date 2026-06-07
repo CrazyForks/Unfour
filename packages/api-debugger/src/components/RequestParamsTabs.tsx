@@ -164,7 +164,7 @@ function KeyValueEditor({
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+        <span className="text-xs font-semibold uppercase tracking-wide text-[var(--u-color-text-muted)]">
           {title}
         </span>
         <Button
@@ -217,12 +217,12 @@ function EnvironmentHints({ variables }: { variables: KeyValue[] }) {
   return (
     <div className="mt-2 space-y-1 text-xs">
       {duplicateKeys.length > 0 && (
-        <div className="rounded-md bg-amber-50 px-2 py-1 text-amber-800 ring-1 ring-inset ring-amber-200">
+        <div className="rounded-md bg-[var(--u-color-warning-soft)] px-2 py-1 text-[var(--u-color-warning-text)] ring-1 ring-inset ring-[var(--u-badge-warning-ring)]">
           Duplicate variables: {duplicateKeys.join(", ")}
         </div>
       )}
       {sensitiveKeys.length > 0 && (
-        <div className="rounded-md bg-slate-50 px-2 py-1 text-slate-600 ring-1 ring-inset ring-slate-200">
+        <div className="rounded-md bg-[var(--u-badge-neutral-bg)] px-2 py-1 text-[var(--u-color-text-muted)] ring-1 ring-inset ring-[var(--u-badge-neutral-ring)]">
           Sensitive-looking values are masked locally: {sensitiveKeys.join(", ")}
         </div>
       )}

@@ -29,7 +29,7 @@ export function WorkspaceMenu({
       <DropdownMenu.Root>
         <DropdownMenu.Trigger asChild>
           <Button
-            className="ml-2 max-w-[240px] justify-start gap-1 border-transparent bg-white px-2 font-semibold shadow-none hover:bg-slate-100"
+            className="ml-2 max-w-[240px] justify-start gap-1 border-transparent bg-[var(--u-color-surface)] px-2 font-semibold shadow-none hover:bg-[var(--u-color-surface-hover)]"
             size="sm"
             type="button"
             variant="outline"
@@ -37,23 +37,23 @@ export function WorkspaceMenu({
             <span className="min-w-0 truncate">
               {activeWorkspace?.name ?? "No workspace"}
             </span>
-            <ChevronDown className="shrink-0 text-slate-500" size={14} />
+            <ChevronDown className="shrink-0 text-[var(--u-color-text-muted)]" size={14} />
           </Button>
         </DropdownMenu.Trigger>
         <DropdownMenu.Portal>
           <DropdownMenu.Content
             align="start"
-            className="z-50 w-72 rounded-md border border-slate-200 bg-white p-1 text-sm text-slate-800 shadow-xl"
+            className="z-50 w-72 rounded-md border border-[var(--u-color-border)] bg-[var(--u-color-surface)] p-1 text-sm text-[var(--u-color-text)] shadow-xl"
             sideOffset={6}
           >
-            <DropdownMenu.Label className="px-2 py-1.5 text-xs font-semibold uppercase text-slate-500">
+            <DropdownMenu.Label className="px-2 py-1.5 text-xs font-semibold uppercase text-[var(--u-color-text-muted)]">
               Workspaces
             </DropdownMenu.Label>
             {workspaces.map((workspace) => (
               <DropdownMenu.Item
                 className={cn(
-                  "flex min-h-8 cursor-pointer items-center gap-2 rounded px-2 py-1.5 outline-none hover:bg-slate-100 focus:bg-slate-100",
-                  activeWorkspace?.id === workspace.id && "bg-teal-50 text-teal-900",
+                  "flex min-h-8 cursor-pointer items-center gap-2 rounded px-2 py-1.5 outline-none hover:bg-[var(--u-color-surface-hover)] focus:bg-[var(--u-color-surface-hover)]",
+                  activeWorkspace?.id === workspace.id && "bg-[var(--u-color-primary-soft)] text-[var(--u-color-primary)]",
                 )}
                 key={workspace.id}
                 onSelect={() => onActivateWorkspace(workspace.id)}
@@ -64,20 +64,20 @@ export function WorkspaceMenu({
               </DropdownMenu.Item>
             ))}
             {workspaces.length === 0 && (
-              <div className="px-2 py-4 text-center text-xs text-slate-500">
+              <div className="px-2 py-4 text-center text-xs text-[var(--u-color-text-muted)]">
                 No workspaces
               </div>
             )}
-            <DropdownMenu.Separator className="my-1 h-px bg-slate-200" />
+            <DropdownMenu.Separator className="my-1 h-px bg-[var(--u-color-border)]" />
             <DropdownMenu.Item
-              className="flex h-8 cursor-pointer items-center gap-2 rounded px-2 outline-none hover:bg-slate-100 focus:bg-slate-100"
+              className="flex h-8 cursor-pointer items-center gap-2 rounded px-2 outline-none hover:bg-[var(--u-color-surface-hover)] focus:bg-[var(--u-color-surface-hover)]"
               onSelect={() => setCreateOpen(true)}
             >
               <Plus size={14} />
               New workspace
             </DropdownMenu.Item>
             <DropdownMenu.Item
-              className="flex h-8 cursor-pointer items-center gap-2 rounded px-2 outline-none hover:bg-slate-100 focus:bg-slate-100 disabled:pointer-events-none disabled:opacity-50"
+              className="flex h-8 cursor-pointer items-center gap-2 rounded px-2 outline-none hover:bg-[var(--u-color-surface-hover)] focus:bg-[var(--u-color-surface-hover)] disabled:pointer-events-none disabled:opacity-50"
               disabled={!activeWorkspace}
               onSelect={() => setRenameOpen(true)}
             >
@@ -85,7 +85,7 @@ export function WorkspaceMenu({
               Rename current
             </DropdownMenu.Item>
             <DropdownMenu.Item
-              className="flex h-8 cursor-pointer items-center gap-2 rounded px-2 text-rose-700 outline-none hover:bg-rose-50 focus:bg-rose-50 disabled:pointer-events-none disabled:opacity-50"
+              className="flex h-8 cursor-pointer items-center gap-2 rounded px-2 text-[var(--u-color-danger-text)] outline-none hover:bg-[var(--u-color-danger-soft)] focus:bg-[var(--u-color-danger-soft)] disabled:pointer-events-none disabled:opacity-50"
               disabled={!activeWorkspace || activeWorkspace.isDefault || workspaces.length <= 1}
               onSelect={() => setDeleteOpen(true)}
             >

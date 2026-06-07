@@ -6,7 +6,7 @@ import { isTauriRuntime } from "./utils";
 export function WindowControls() {
   if (!isTauriRuntime()) {
     return (
-      <div className="ml-1 flex items-center gap-1 text-slate-300">
+      <div className="ml-1 flex items-center gap-1 text-[var(--u-color-text-soft)]">
         <Minus size={15} />
         <Square size={13} />
         <X size={15} />
@@ -30,7 +30,7 @@ export function WindowControls() {
       />
       <TitlebarWindowButton
         ariaLabel="Close"
-        className="hover:bg-rose-600 hover:text-white"
+        className="hover:bg-[var(--u-color-danger)] hover:text-[var(--u-color-text-on-color)]"
         icon={<X size={16} />}
         onClick={() => void appWindow.close()}
       />
@@ -53,7 +53,7 @@ function TitlebarWindowButton({
     <button
       aria-label={ariaLabel}
       className={cn(
-        "flex h-8 w-10 items-center justify-center rounded-sm text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-950",
+        "flex h-8 w-10 items-center justify-center rounded-sm text-[var(--u-color-text-muted)] transition-colors hover:bg-[var(--u-color-surface-hover)] hover:text-[var(--u-color-text)]",
         className,
       )}
       onClick={onClick}

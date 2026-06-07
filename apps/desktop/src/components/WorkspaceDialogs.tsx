@@ -96,12 +96,12 @@ export function WorkspaceDialogs({
     <>
       <Dialog.Root onOpenChange={(open) => { if (!open) onCreateClose(); }} open={createOpen}>
         <Dialog.Portal>
-          <Dialog.Overlay className="fixed inset-0 z-50 bg-slate-950/30" />
-          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[360px] -translate-x-1/2 -translate-y-1/2 rounded-md border border-slate-200 bg-white p-4 shadow-xl">
-            <Dialog.Title className="text-base font-semibold text-slate-950">
+          <Dialog.Overlay className="fixed inset-0 z-50 bg-[var(--u-color-overlay)]" />
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[360px] -translate-x-1/2 -translate-y-1/2 rounded-md border border-[var(--u-color-border)] bg-[var(--u-color-surface)] p-4 shadow-xl">
+            <Dialog.Title className="text-base font-semibold text-[var(--u-color-text)]">
               New workspace
             </Dialog.Title>
-            <Dialog.Description className="mt-2 text-sm text-slate-600">
+            <Dialog.Description className="mt-2 text-sm text-[var(--u-color-text-muted)]">
               Create a workspace for a separate set of API requests, SSH connections, and database resources.
             </Dialog.Description>
             <form className="mt-4 space-y-4" onSubmit={createWorkspaceFromDialog}>
@@ -128,12 +128,12 @@ export function WorkspaceDialogs({
 
       <Dialog.Root onOpenChange={(open) => { if (!open) onRenameClose(); }} open={renameOpen}>
         <Dialog.Portal>
-          <Dialog.Overlay className="fixed inset-0 z-50 bg-slate-950/30" />
-          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[360px] -translate-x-1/2 -translate-y-1/2 rounded-md border border-slate-200 bg-white p-4 shadow-xl">
-            <Dialog.Title className="text-base font-semibold text-slate-950">
+          <Dialog.Overlay className="fixed inset-0 z-50 bg-[var(--u-color-overlay)]" />
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[360px] -translate-x-1/2 -translate-y-1/2 rounded-md border border-[var(--u-color-border)] bg-[var(--u-color-surface)] p-4 shadow-xl">
+            <Dialog.Title className="text-base font-semibold text-[var(--u-color-text)]">
               Rename workspace
             </Dialog.Title>
-            <Dialog.Description className="mt-2 text-sm text-slate-600">
+            <Dialog.Description className="mt-2 text-sm text-[var(--u-color-text-muted)]">
               Rename the active workspace. Existing workspace-scoped records stay attached to it.
             </Dialog.Description>
             <form className="mt-4 space-y-4" onSubmit={renameWorkspaceFromDialog}>
@@ -167,12 +167,12 @@ export function WorkspaceDialogs({
 
       <Dialog.Root onOpenChange={(open) => { if (!open) onDeleteClose(); }} open={deleteOpen}>
         <Dialog.Portal>
-          <Dialog.Overlay className="fixed inset-0 z-50 bg-slate-950/30" />
-          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[360px] -translate-x-1/2 -translate-y-1/2 rounded-md border border-slate-200 bg-white p-4 shadow-xl">
-            <Dialog.Title className="text-base font-semibold text-slate-950">
+          <Dialog.Overlay className="fixed inset-0 z-50 bg-[var(--u-color-overlay)]" />
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[360px] -translate-x-1/2 -translate-y-1/2 rounded-md border border-[var(--u-color-border)] bg-[var(--u-color-surface)] p-4 shadow-xl">
+            <Dialog.Title className="text-base font-semibold text-[var(--u-color-text)]">
               Delete workspace
             </Dialog.Title>
-            <Dialog.Description className="mt-2 text-sm text-slate-600">
+            <Dialog.Description className="mt-2 text-sm text-[var(--u-color-text-muted)]">
               Delete {activeWorkspace?.name ?? "this workspace"} locally. The app will switch
               to another available workspace.
             </Dialog.Description>
@@ -183,7 +183,7 @@ export function WorkspaceDialogs({
                 </Button>
               </Dialog.Close>
               <Button
-                className="bg-rose-700 hover:bg-rose-800"
+                className="bg-[var(--u-color-danger-text)] hover:bg-[var(--u-color-danger-hover)]"
                 disabled={deleteWorkspaceMutation.isPending || !canDelete}
                 onClick={deleteWorkspaceFromDialog}
                 type="button"

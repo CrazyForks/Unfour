@@ -102,7 +102,7 @@ export function ApiRequestEditor({
 function FieldGroup({ children, title }: { children: React.ReactNode; title: string }) {
   return (
     <label className="block space-y-2">
-      <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</span>
+      <span className="text-xs font-semibold uppercase tracking-wide text-[var(--u-color-text-muted)]">{title}</span>
       {children}
     </label>
   );
