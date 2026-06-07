@@ -25,6 +25,13 @@
   --u-color-success-soft: #dcfce7;
   --u-color-warning: #b45309;
   --u-color-warning-soft: #fef3c7;
+  --u-color-terminal-bg: #0d1117;
+  --u-color-terminal-text: #d6dee7;
+  --u-color-terminal-muted: #6b7685;
+  --u-color-terminal-border: #253041;
+  --u-color-terminal-input-bg: #111827;
+  --u-color-terminal-input-border: #334155;
+  --u-color-terminal-cursor: #2dd4bf;
   --u-size-global-toolbar: 38px;
   --u-size-section-toolbar: 34px;
   --u-size-tabbar: 34px;
@@ -78,7 +85,7 @@
 
 body {
   margin: 0;
-  min-width: 1040px;
+  min-width: 0;
   min-height: 680px;
   overflow: hidden;
 }
@@ -125,13 +132,7 @@ textarea:focus-visible {
 
 .empty-state {
   color: var(--text-muted);
-  background: repeating-linear-gradient(
-    -45deg,
-    rgba(148, 163, 184, 0.08),
-    rgba(148, 163, 184, 0.08) 8px,
-    transparent 8px,
-    transparent 16px
-  );
+  background: var(--u-color-surface-subtle);
 }
 
 .sidebar-shell {

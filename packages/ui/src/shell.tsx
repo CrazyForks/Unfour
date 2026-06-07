@@ -96,7 +96,7 @@ export function Sidebar({
     <aside
       className={cn(
         "flex min-h-0 shrink-0 flex-col border-r border-[var(--u-color-border)] bg-[var(--u-color-surface-subtle)] transition-[width] duration-150",
-        collapsed ? "w-[52px]" : "w-[280px]",
+        collapsed ? "w-[52px]" : "w-[280px] max-[900px]:w-[220px]",
         className,
       )}
     >
@@ -266,24 +266,68 @@ export function BottomPanel({
   className,
   collapsed,
   height = 220,
+  maxHeight = 480,
+  minHeight = 120,
+  onHeightChange,
+  resizable = false,
 }: {
   children?: React.ReactNode;
   className?: string;
   collapsed?: boolean;
   height?: number;
+  maxHeight?: number;
+  minHeight?: number;
+  onHeightChange?: (height: number) => void;
+  resizable?: boolean;
 }) {
+  const hostRef = React.useRef<HTMLElement | null>(null);
+
   if (collapsed) {
     return null;
+  }
+
+  function startResize(event: React.PointerEvent<HTMLDivElement>) {
+    const initialBottom = hostRef.current?.getBoundingClientRect().bottom;
+    if (initialBottom === undefined || !onHeightChange) {
+      return;
+    }
+    const panelBottom: number = initialBottom;
+
+    event.preventDefault();
+
+    function move(moveEvent: PointerEvent) {
+      onHeightChange?.(
+        Math.min(Math.max(panelBottom - moveEvent.clientY, minHeight), maxHeight),
+      );
+    }
+
+    function stop() {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+    }
+
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", stop, { once: true });
   }
 
   return (
     <section
       className={cn(
-        "shrink-0 border-t border-[var(--u-color-border)] bg-[var(--u-color-surface-subtle)]",
+        "relative shrink-0 border-t border-[var(--u-color-border)] bg-[var(--u-color-surface-subtle)]",
         className,
       )}
+      ref={hostRef}
       style={{ height }}
     >
+      {resizable && onHeightChange && (
+        <div
+          aria-label="Resize bottom panel"
+          aria-orientation="vertical"
+          className="absolute inset-x-0 top-0 z-10 h-1 cursor-row-resize hover:bg-[var(--u-color-focus)]"
+          onPointerDown={startResize}
+          role="separator"
+        />
+      )}
       {children}
     </section>
   );
@@ -311,11 +355,91 @@ export function StatusBar({
 export function SplitPane({
   children,
   className,
+  defaultRatio = 50,
+  minPaneSize = 160,
+  orientation = "horizontal",
+  resizable = false,
 }: {
   children: React.ReactNode;
   className?: string;
+  defaultRatio?: number;
+  minPaneSize?: number;
+  orientation?: "horizontal" | "vertical";
+  resizable?: boolean;
 }) {
-  return <div className={cn("flex min-h-0 min-w-0 flex-1", className)}>{children}</div>;
+  const hostRef = React.useRef<HTMLDivElement | null>(null);
+  const [ratio, setRatio] = React.useState(defaultRatio);
+  const panes = React.Children.toArray(children);
+
+  if (!resizable || panes.length !== 2) {
+    return <div className={cn("flex min-h-0 min-w-0 flex-1", className)}>{children}</div>;
+  }
+
+  function resize(clientX: number, clientY: number) {
+    const bounds = hostRef.current?.getBoundingClientRect();
+    if (!bounds) {
+      return;
+    }
+
+    const total = orientation === "horizontal" ? bounds.width : bounds.height;
+    const offset =
+      orientation === "horizontal" ? clientX - bounds.left : clientY - bounds.top;
+    const minimumRatio = (minPaneSize / Math.max(total, 1)) * 100;
+    const nextRatio = Math.min(
+      Math.max((offset / Math.max(total, 1)) * 100, minimumRatio),
+      100 - minimumRatio,
+    );
+    setRatio(nextRatio);
+  }
+
+  function startResize(event: React.PointerEvent<HTMLDivElement>) {
+    event.preventDefault();
+
+    function move(moveEvent: PointerEvent) {
+      resize(moveEvent.clientX, moveEvent.clientY);
+    }
+
+    function stop() {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+    }
+
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", stop, { once: true });
+  }
+
+  return (
+    <div
+      className={cn(
+        "flex min-h-0 min-w-0 flex-1",
+        orientation === "vertical" && "flex-col",
+        className,
+      )}
+      ref={hostRef}
+    >
+      <div
+        className="flex min-h-0 min-w-0 shrink-0"
+        style={{
+          flexBasis: `${ratio}%`,
+        }}
+      >
+        {panes[0]}
+      </div>
+      <div
+        aria-label={`Resize ${orientation === "horizontal" ? "horizontal" : "vertical"} split`}
+        aria-orientation={orientation}
+        className={cn(
+          "shrink-0 bg-[var(--u-color-terminal-border)] hover:bg-[var(--u-color-focus)]",
+          orientation === "horizontal"
+            ? "w-px cursor-col-resize"
+            : "h-px cursor-row-resize",
+        )}
+        onPointerDown={startResize}
+        role="separator"
+      />
+      <div className="flex min-h-0 min-w-0 flex-1">{panes[1]}</div>
+    </div>
+  );
 }
 
 export function CommandPalette({

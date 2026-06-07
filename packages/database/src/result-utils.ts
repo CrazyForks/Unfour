@@ -45,3 +45,15 @@ export function confirmationMessage(error: unknown) {
   }
   return "Confirmation required. Review the SQL statement, then click Confirm run.";
 }
+
+export function formatDatabaseError(error: unknown) {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  if (typeof error === "string") {
+    return error;
+  }
+
+  return "Unknown database error";
+}

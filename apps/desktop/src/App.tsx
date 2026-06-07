@@ -1,38 +1,26 @@
-import Editor from "@monaco-editor/react";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
   Activity,
-  CheckCircle2,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  Clock,
-  Clipboard,
   Database,
-  Download,
   Folder,
   Globe2,
   Home,
-  KeyRound,
   Maximize2,
   Minus,
   MoreHorizontal,
   Pencil,
   PanelLeftClose,
   PanelLeftOpen,
-  Play,
   Plus,
-  RefreshCw,
-  Save,
   Search,
-  Send,
   Square,
-  Table2,
   TerminalSquare,
   Trash2,
   X,
-  XCircle,
 } from "lucide-react";
 import {
   ApiCollectionTree,
@@ -40,12 +28,16 @@ import {
 } from "@unfour/api-debugger";
 import { AppShell } from "@unfour/app-shell";
 import {
-  confirmationMessage,
-  isConfirmationRequired,
-  serializeDatabaseResult,
+  DatabaseConnectionTree,
+  DatabasePage,
 } from "@unfour/database";
-import { defaultSshConnectionInput, defaultTerminalInput } from "@unfour/terminal";
-import { FormEvent, useEffect, useRef, useState } from "react";
+import {
+  SshConnectionTree,
+  TerminalLogPanel,
+  TerminalPage,
+  TerminalStatusBar,
+} from "@unfour/terminal";
+import { FormEvent, useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -67,48 +59,19 @@ import {
   cn,
 } from "@unfour/ui";
 import {
-  closeSshSession,
-  connectSshSession,
-  browseDatabaseTable,
-  createCredential,
   createWorkspace,
-  deleteCredential,
-  deleteDatabaseConnection,
-  deleteSshConnection,
-  executeDatabaseQuery,
-  getDatabaseSchema,
+  deleteWorkspace,
   getSystemHealth,
   getWorkspaceLayout,
   getWorkspaceState,
-  deleteWorkspace,
   listDatabaseConnections,
-  listSshConnections,
-  listSshSessions,
   renameWorkspace,
-  exportSshLog,
-  inspectCredential,
-  resizeSshSession,
-  rotateCredential,
-  saveDatabaseConnection,
-  saveSshConnection,
-  sendSshInput,
   setActiveWorkspace as setActiveWorkspaceCommand,
-  testDatabaseConnection,
   updateWorkspaceLayout,
 } from "@unfour/command-client";
 import { useWorkspaceStore } from "@unfour/workspace";
 import type {
-  CredentialMetadata,
   DatabaseConnection,
-  DatabaseConnectionInput,
-  DatabaseQueryResult,
-  DatabaseSchema,
-  DatabaseTable,
-  DatabaseTestResult,
-  SshConnection,
-  SshConnectionInput,
-  SshSessionEvent,
-  SshSessionSummary,
   Workspace,
   WorkspaceTab,
 } from "@unfour/command-client";
@@ -116,7 +79,7 @@ import type {
 function App() {
   const queryClient = useQueryClient();
   const [bottomPanelCollapsed, setBottomPanelCollapsed] = useState(true);
-  const [bottomPanelHeight] = useState(220);
+  const [bottomPanelHeight, setBottomPanelHeight] = useState(220);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [rightInspectorCollapsed, setRightInspectorCollapsed] = useState(true);
   const [rightInspectorWidth] = useState(300);
@@ -132,7 +95,6 @@ function App() {
     setActiveWorkspace,
     setSelectedApiRequest,
     setSelectedDatabaseConnection,
-    setSelectedSshConnection,
     sidebarCollapsed,
     snapshotLayout,
     toggleSidebar,
@@ -162,11 +124,6 @@ function App() {
     queryKey: ["database-connections", activeWorkspace?.id],
     queryFn: () => listDatabaseConnections(activeWorkspace?.id ?? ""),
   });
-  const sidebarSshConnectionsQuery = useQuery({
-    enabled: Boolean(activeWorkspace?.id),
-    queryKey: ["ssh-connections", activeWorkspace?.id],
-    queryFn: () => listSshConnections(activeWorkspace?.id ?? ""),
-  });
 
   useEffect(() => {
     if (workspaceQuery.data?.activeWorkspaceId && !activeWorkspaceId) {
@@ -194,17 +151,6 @@ function App() {
     setSelectedDatabaseConnection,
     sidebarDatabaseConnectionsQuery.data,
   ]);
-
-  useEffect(() => {
-    const items = sidebarSshConnectionsQuery.data;
-    if (
-      selectedSshConnectionId &&
-      items &&
-      !items.some((item) => item.id === selectedSshConnectionId)
-    ) {
-      setSelectedSshConnection(null);
-    }
-  }, [selectedSshConnectionId, setSelectedSshConnection, sidebarSshConnectionsQuery.data]);
 
   const layoutMutation = useMutation({
     mutationFn: (workspaceId: string) =>
@@ -268,7 +214,21 @@ function App() {
     <>
       <AppShell
         bottomPanel={
-          <BottomPanel collapsed={bottomPanelCollapsed} height={bottomPanelHeight}>
+          activeTab.kind === "ssh" && activeWorkspace ? (
+            <TerminalLogPanel
+              collapsed={bottomPanelCollapsed}
+              height={bottomPanelHeight}
+              onCollapse={() => setBottomPanelCollapsed(true)}
+              onHeightChange={setBottomPanelHeight}
+              workspaceId={activeWorkspace.id}
+            />
+          ) : (
+          <BottomPanel
+            collapsed={bottomPanelCollapsed}
+            height={bottomPanelHeight}
+            onHeightChange={setBottomPanelHeight}
+            resizable
+          >
             <div className="flex h-[var(--u-size-section-toolbar)] items-center justify-between border-b border-[var(--u-color-border)] px-2">
               <div className="flex items-center gap-2 text-[12px] font-semibold text-[var(--u-color-text)]">
                 <Activity size={14} />
@@ -282,6 +242,7 @@ function App() {
               Local activity and module diagnostics will appear here.
             </div>
           </BottomPanel>
+          )
         }
         globalToolbar={
           <AppTitleBar
@@ -328,20 +289,20 @@ function App() {
               setSelectedDatabaseConnection(connection.id);
               setActiveTab("database-main");
             }}
-            onSelectSshConnection={(connection) => {
-              setSelectedSshConnection(connection.id);
-              setActiveTab("ssh-main");
-            }}
             onToggle={toggleSidebar}
             selectedApiRequestId={selectedApiRequestId}
             selectedDatabaseConnectionId={selectedDatabaseConnectionId}
-            selectedSshConnectionId={selectedSshConnectionId}
-            sshConnections={sidebarSshConnectionsQuery.data ?? []}
             setActiveTab={setActiveTab}
             setSelectedApiRequest={setSelectedApiRequest}
           />
         }
         statusBar={
+          activeTab.kind === "ssh" && activeWorkspace ? (
+            <TerminalStatusBar
+              workspaceId={activeWorkspace.id}
+              workspaceName={activeWorkspace.name}
+            />
+          ) : (
           <StatusBar>
             <div className="flex min-w-0 items-center gap-3">
               <span className="truncate">{activeWorkspace?.name ?? "No workspace"}</span>
@@ -352,6 +313,7 @@ function App() {
               <span>{healthQuery.data?.syncStrategy ?? "local-first"}</span>
             </div>
           </StatusBar>
+          )
         }
         main={
         <MainWorkspace
@@ -375,10 +337,10 @@ function App() {
             />
           )}
           {activeTab.kind === "ssh" && activeWorkspace && (
-            <SshPanel workspaceId={activeWorkspace.id} />
+            <TerminalPage workspaceId={activeWorkspace.id} />
           )}
           {activeTab.kind === "database" && activeWorkspace && (
-            <DatabasePanel workspaceId={activeWorkspace.id} />
+            <DatabasePage workspaceId={activeWorkspace.id} />
           )}
         </MainWorkspace>
         }
@@ -775,14 +737,11 @@ function ModuleSidebar({
   databaseConnections,
   onSelectApiRequest,
   onSelectDatabaseConnection,
-  onSelectSshConnection,
   onToggle,
   selectedApiRequestId,
   selectedDatabaseConnectionId,
-  selectedSshConnectionId,
   setActiveTab,
   setSelectedApiRequest,
-  sshConnections,
 }: {
   activeTab: WorkspaceTab;
   activeTabId: string;
@@ -790,15 +749,12 @@ function ModuleSidebar({
   collapsed: boolean;
   databaseConnections: DatabaseConnection[];
   onSelectApiRequest: (requestId: string) => void;
-  onSelectDatabaseConnection: (connection: DatabaseConnection | SshConnection) => void;
-  onSelectSshConnection: (connection: DatabaseConnection | SshConnection) => void;
+  onSelectDatabaseConnection: (connection: DatabaseConnection) => void;
   onToggle: () => void;
   selectedApiRequestId: string | null;
   selectedDatabaseConnectionId: string | null;
-  selectedSshConnectionId: string | null;
   setActiveTab: (tabId: string) => void;
   setSelectedApiRequest: (requestId: string | null) => void;
-  sshConnections: SshConnection[];
 }) {
   return (
     <Sidebar
@@ -841,120 +797,35 @@ function ModuleSidebar({
         />
       )}
       {activeTab.kind === "ssh" && (
-        <SshModuleSidebar
-          activeTabId={activeTabId}
+        <SshConnectionTree
+          active={activeTabId === "ssh-main"}
           collapsed={collapsed}
-          items={sshConnections}
-          onOpenClient={() => setActiveTab("ssh-main")}
-          onSelect={onSelectSshConnection}
-          selectedId={selectedSshConnectionId}
+          onOpenTerminal={() => setActiveTab("ssh-main")}
+          workspaceId={activeWorkspaceId}
         />
       )}
       {activeTab.kind === "database" && (
-        <DatabaseModuleSidebar
-          activeTabId={activeTabId}
-          collapsed={collapsed}
-          items={databaseConnections}
-          onOpenClient={() => setActiveTab("database-main")}
-          onSelect={onSelectDatabaseConnection}
-          selectedId={selectedDatabaseConnectionId}
-        />
+        <div className="space-y-3">
+          <ResourceGroup collapsed={collapsed} title="Database">
+            <SidebarAction
+              collapsed={collapsed}
+              icon={<Database size={14} />}
+              label="SQL Workspace"
+              onClick={() => setActiveTab("database-main")}
+              selected={activeTabId === "database-main" && (collapsed || !selectedDatabaseConnectionId)}
+            />
+            {!collapsed && (
+              <DatabaseConnectionTree
+                connections={databaseConnections}
+                onNewQuery={() => setActiveTab("database-main")}
+                onSelectConnection={onSelectDatabaseConnection}
+                selectedConnectionId={selectedDatabaseConnectionId}
+              />
+            )}
+          </ResourceGroup>
+        </div>
       )}
     </Sidebar>
-  );
-}
-
-function SshModuleSidebar({
-  activeTabId,
-  collapsed,
-  items,
-  onOpenClient,
-  onSelect,
-  selectedId,
-}: {
-  activeTabId: string;
-  collapsed: boolean;
-  items: SshConnection[];
-  onOpenClient: () => void;
-  onSelect: (connection: DatabaseConnection | SshConnection) => void;
-  selectedId: string | null;
-}) {
-  return (
-    <div className="space-y-3">
-      <ResourceGroup collapsed={collapsed} title="SSH">
-        <SidebarAction
-          collapsed={collapsed}
-          icon={<TerminalSquare size={14} />}
-          label="SSH Sessions"
-          onClick={onOpenClient}
-          selected={activeTabId === "ssh-main" && (collapsed || !selectedId)}
-        />
-        <SidebarConnectionResources
-          collapsed={collapsed}
-          items={items}
-          kind="ssh"
-          onSelect={onSelect}
-          selectedId={selectedId}
-        />
-        {!collapsed && items.length === 0 && (
-          <SidebarEmptyState>No SSH connections</SidebarEmptyState>
-        )}
-      </ResourceGroup>
-      <ResourceGroup collapsed={collapsed} title="Sessions">
-        {!collapsed && <SidebarEmptyState>No active session selected</SidebarEmptyState>}
-      </ResourceGroup>
-    </div>
-  );
-}
-
-function DatabaseModuleSidebar({
-  activeTabId,
-  collapsed,
-  items,
-  onOpenClient,
-  onSelect,
-  selectedId,
-}: {
-  activeTabId: string;
-  collapsed: boolean;
-  items: DatabaseConnection[];
-  onOpenClient: () => void;
-  onSelect: (connection: DatabaseConnection | SshConnection) => void;
-  selectedId: string | null;
-}) {
-  return (
-    <div className="space-y-3">
-      <ResourceGroup collapsed={collapsed} title="Database">
-        <SidebarAction
-          collapsed={collapsed}
-          icon={<Database size={14} />}
-          label="SQL Workspace"
-          onClick={onOpenClient}
-          selected={activeTabId === "database-main" && (collapsed || !selectedId)}
-        />
-        <SidebarConnectionResources
-          collapsed={collapsed}
-          items={items}
-          kind="database"
-          onSelect={onSelect}
-          selectedId={selectedId}
-        />
-        {!collapsed && items.length === 0 && (
-          <SidebarEmptyState>No database connections</SidebarEmptyState>
-        )}
-      </ResourceGroup>
-      <ResourceGroup collapsed={collapsed} title="Schema">
-        {!collapsed && <SidebarEmptyState>Select a connection</SidebarEmptyState>}
-      </ResourceGroup>
-    </div>
-  );
-}
-
-function SidebarEmptyState({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="rounded-[var(--u-radius-sm)] border border-dashed border-[var(--u-color-border)] bg-[var(--u-color-surface)] px-2 py-2 text-[12px] text-[var(--u-color-text-muted)]">
-      {children}
-    </div>
   );
 }
 
@@ -1078,1650 +949,6 @@ function SidebarAction({
       {!collapsed && <span className="truncate">{label}</span>}
     </SidebarRow>
   );
-}
-
-function SidebarConnectionResources({
-  collapsed,
-  items,
-  kind,
-  onSelect,
-  selectedId,
-}: {
-  collapsed: boolean;
-  items: Array<DatabaseConnection | SshConnection>;
-  kind: "database" | "ssh";
-  onSelect: (connection: DatabaseConnection | SshConnection) => void;
-  selectedId: string | null;
-}) {
-  if (collapsed || items.length === 0) {
-    return null;
-  }
-
-  return (
-    <div className="mb-2 mt-1 space-y-1 border-l border-[var(--u-color-border)] pl-2">
-      {items.map((connection) => (
-        <SidebarResourceItem
-          icon={kind === "ssh" ? <TerminalSquare size={13} /> : <Database size={13} />}
-          key={connection.id}
-          label={connection.name}
-          meta={sidebarConnectionMeta(connection, kind)}
-          onClick={() => onSelect(connection)}
-          selected={selectedId === connection.id}
-        />
-      ))}
-    </div>
-  );
-}
-
-function SidebarResourceItem({
-  icon,
-  label,
-  meta,
-  onClick,
-  selected,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  meta?: string;
-  onClick: () => void;
-  selected: boolean;
-}) {
-  return (
-    <SidebarRow active={selected} onClick={onClick}>
-      <span className="flex h-4 w-4 shrink-0 items-center justify-center">{icon}</span>
-      <span className="min-w-0 flex-1 truncate">{label}</span>
-      {meta && (
-        <span className="shrink-0 rounded-[var(--u-radius-sm)] bg-[var(--u-color-surface-muted)] px-1.5 text-[10px] font-medium uppercase leading-5 text-[var(--u-color-text-soft)]">
-          {meta}
-        </span>
-      )}
-    </SidebarRow>
-  );
-}
-
-function sidebarConnectionMeta(
-  connection: DatabaseConnection | SshConnection,
-  kind: "database" | "ssh",
-) {
-  if (kind === "ssh") {
-    const ssh = connection as SshConnection;
-    return `${ssh.username}@${ssh.host}`;
-  }
-
-  return (connection as DatabaseConnection).driver;
-}
-
-function Panel({
-  children,
-  className,
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <section className={cn("surface-panel flex min-h-0 flex-col rounded-md", className)}>
-      {children}
-    </section>
-  );
-}
-
-function PanelHeader({
-  actions,
-  icon,
-  subtitle,
-  title,
-}: {
-  actions?: React.ReactNode;
-  icon?: React.ReactNode;
-  subtitle?: React.ReactNode;
-  title: React.ReactNode;
-}) {
-  return (
-    <div className="surface-header flex min-h-10 items-center justify-between gap-3 px-3 py-2">
-      <div className="flex min-w-0 items-center gap-2 text-sm font-semibold">
-        {icon}
-        <div className="min-w-0">
-          <div className="truncate">{title}</div>
-          {subtitle && <div className="truncate text-xs font-normal text-slate-500">{subtitle}</div>}
-        </div>
-      </div>
-      {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
-    </div>
-  );
-}
-
-function ResourceListItem({
-  actions,
-  children,
-  disabled,
-  onClick,
-  selected,
-}: {
-  actions?: React.ReactNode;
-  children: React.ReactNode;
-  disabled?: boolean;
-  onClick: () => void;
-  selected: boolean;
-}) {
-  return (
-    <div
-      className={cn(
-        "group flex min-h-9 w-full items-center gap-2 rounded-md px-2 text-left text-sm transition-colors duration-150",
-        selected
-          ? "bg-teal-50 text-teal-900 ring-1 ring-inset ring-teal-200"
-          : "text-slate-700 hover:bg-slate-100 hover:text-slate-950",
-      )}
-    >
-      <button
-        className="flex min-w-0 flex-1 items-center gap-2 text-left disabled:cursor-not-allowed"
-        disabled={disabled}
-        onClick={onClick}
-        type="button"
-      >
-        {children}
-      </button>
-      {actions && <div className="flex shrink-0 items-center gap-1">{actions}</div>}
-    </div>
-  );
-}
-
-function InlineStatus({
-  children,
-  className,
-  icon,
-  tone = "neutral",
-}: {
-  children: React.ReactNode;
-  className?: string;
-  icon?: React.ReactNode;
-  tone?: "neutral" | "success" | "warning" | "danger";
-}) {
-  const toneClass = {
-    danger: "bg-rose-50 text-rose-800 ring-rose-200",
-    neutral: "bg-slate-50 text-slate-700 ring-slate-200",
-    success: "bg-emerald-50 text-emerald-800 ring-emerald-200",
-    warning: "bg-amber-50 text-amber-800 ring-amber-200",
-  }[tone];
-
-  return (
-    <div
-      className={cn(
-        "flex items-center gap-2 rounded-md px-2 py-2 text-xs ring-1 ring-inset",
-        toneClass,
-        className,
-      )}
-    >
-      {icon}
-      <span className="min-w-0 flex-1">{children}</span>
-    </div>
-  );
-}
-
-function EmptyState({
-  children,
-  className,
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <div
-      className={cn(
-        "empty-state flex items-center justify-center rounded-md px-3 py-4 text-center text-sm",
-        className,
-      )}
-    >
-      {children}
-    </div>
-  );
-}
-
-function FieldGroup({ children, title }: { children: React.ReactNode; title: string }) {
-  return (
-    <label className="block space-y-2">
-      <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</span>
-      {children}
-    </label>
-  );
-}
-
-function CredentialReferenceControl({
-  kind,
-  label,
-  onChange,
-  value,
-  workspaceId,
-}: {
-  kind: string;
-  label: string;
-  onChange: (credentialRef: string | null) => void;
-  value?: string | null;
-  workspaceId: string;
-}) {
-  const [credentialLabel, setCredentialLabel] = useState(label);
-  const [secret, setSecret] = useState("");
-  const [metadata, setMetadata] = useState<CredentialMetadata | null>(null);
-  const [status, setStatus] = useState("");
-  const credentialRef = value?.trim() ?? "";
-
-  useEffect(() => {
-    setMetadata(null);
-    setStatus("");
-  }, [credentialRef]);
-
-  const createMutation = useMutation({
-    mutationFn: () =>
-      createCredential({
-        workspaceId,
-        kind,
-        label: credentialLabel.trim() || label,
-        secret,
-      }),
-    onSuccess: (created) => {
-      setMetadata(created);
-      setSecret("");
-      setStatus("Credential reference created");
-      onChange(created.credentialRef);
-    },
-  });
-  const inspectMutation = useMutation({
-    mutationFn: () => inspectCredential({ workspaceId, credentialRef }),
-    onSuccess: (inspected) => {
-      setMetadata(inspected);
-      setStatus("Credential reference verified");
-    },
-  });
-  const rotateMutation = useMutation({
-    mutationFn: () => rotateCredential({ workspaceId, credentialRef, secret }),
-    onSuccess: (rotated) => {
-      setMetadata(rotated);
-      setSecret("");
-      setStatus("Credential rotated");
-    },
-  });
-  const deleteMutation = useMutation({
-    mutationFn: () => deleteCredential({ workspaceId, credentialRef }),
-    onSuccess: () => {
-      setMetadata(null);
-      setSecret("");
-      setStatus("Credential deleted");
-      onChange(null);
-    },
-  });
-  const error =
-    createMutation.error ??
-    inspectMutation.error ??
-    rotateMutation.error ??
-    deleteMutation.error;
-  const isPending =
-    createMutation.isPending ||
-    inspectMutation.isPending ||
-    rotateMutation.isPending ||
-    deleteMutation.isPending;
-
-  return (
-    <div className="space-y-2 rounded-md border border-slate-200 bg-slate-50 p-2">
-      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-        <KeyRound size={13} />
-        Credential
-      </div>
-      <Input
-        onChange={(event) => onChange(event.target.value.trim() || null)}
-        placeholder="Create or paste a credential reference"
-        value={credentialRef}
-      />
-      <div className="grid grid-cols-2 gap-2">
-        <Input
-          onChange={(event) => setCredentialLabel(event.target.value)}
-          placeholder={label}
-          value={credentialLabel}
-        />
-        <Input
-          onChange={(event) => setSecret(event.target.value)}
-          placeholder="Secret value"
-          type="password"
-          value={secret}
-        />
-      </div>
-      <div className="grid grid-cols-4 gap-1.5">
-        <Button
-          aria-label="Create credential"
-          disabled={!secret || isPending}
-          onClick={() => createMutation.mutate()}
-          size="icon"
-          title="Create credential"
-          type="button"
-          variant="outline"
-        >
-          <Plus size={13} />
-        </Button>
-        <Button
-          aria-label="Check credential"
-          disabled={!credentialRef || isPending}
-          onClick={() => inspectMutation.mutate()}
-          size="icon"
-          title="Check credential"
-          type="button"
-          variant="outline"
-        >
-          <CheckCircle2 size={13} />
-        </Button>
-        <Button
-          aria-label="Rotate credential"
-          disabled={!credentialRef || !secret || isPending}
-          onClick={() => rotateMutation.mutate()}
-          size="icon"
-          title="Rotate credential"
-          type="button"
-          variant="outline"
-        >
-          <RefreshCw size={13} />
-        </Button>
-        <Button
-          aria-label="Delete credential"
-          disabled={!credentialRef || isPending}
-          onClick={() => deleteMutation.mutate()}
-          size="icon"
-          title="Delete credential"
-          type="button"
-          variant="ghost"
-        >
-          <Trash2 size={13} />
-        </Button>
-      </div>
-      {metadata && (
-        <InlineStatus className="py-1" tone="success">
-          {metadata.kind}
-        </InlineStatus>
-      )}
-      {(status || error) && (
-        <InlineStatus className="py-1" tone={error ? "danger" : "neutral"}>
-          {error ? formatError(error) : status}
-        </InlineStatus>
-      )}
-    </div>
-  );
-}
-
-function SshPanel({ workspaceId }: { workspaceId: string }) {
-  const queryClient = useQueryClient();
-  const { selectedSshConnectionId: selectedConnectionId, setSelectedSshConnection } =
-    useWorkspaceStore();
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
-  const [terminalInput, setTerminalInput] = useState(defaultTerminalInput);
-  const [terminalEvents, setTerminalEvents] = useState<SshSessionEvent[]>([]);
-  const [exportedLog, setExportedLog] = useState<string | null>(null);
-  const [form, setForm] = useState<SshConnectionInput>(() =>
-    defaultSshConnectionInput(workspaceId),
-  );
-
-  const connectionsQuery = useQuery({
-    enabled: Boolean(workspaceId),
-    queryKey: ["ssh-connections", workspaceId],
-    queryFn: () => listSshConnections(workspaceId),
-  });
-  const sessionsQuery = useQuery({
-    enabled: Boolean(workspaceId),
-    queryKey: ["ssh-sessions", workspaceId],
-    queryFn: () => listSshSessions(workspaceId),
-  });
-
-  const selectedConnection: SshConnection | null =
-    connectionsQuery.data?.find((item) => item.id === selectedConnectionId) ?? null;
-  const activeSession: SshSessionSummary | null =
-    sessionsQuery.data?.find((item) => item.sessionId === activeSessionId) ?? null;
-
-  useEffect(() => {
-    setForm((current) => ({ ...current, workspaceId }));
-  }, [workspaceId]);
-
-  useEffect(() => {
-    if (!connectionsQuery.data?.length) {
-      setSelectedSshConnection(null);
-      return;
-    }
-    if (
-      !selectedConnectionId ||
-      !connectionsQuery.data.some((connection) => connection.id === selectedConnectionId)
-    ) {
-      setSelectedSshConnection(connectionsQuery.data[0].id);
-    }
-  }, [connectionsQuery.data, selectedConnectionId, setSelectedSshConnection]);
-
-  useEffect(() => {
-    if (!selectedConnection) {
-      return;
-    }
-    setForm({
-      id: selectedConnection.id,
-      workspaceId,
-      name: selectedConnection.name,
-      host: selectedConnection.host,
-      port: selectedConnection.port,
-      username: selectedConnection.username,
-      authKind: selectedConnection.authKind,
-      keyPath: selectedConnection.keyPath,
-      credentialRef: selectedConnection.credentialRef,
-    });
-  }, [selectedConnection, workspaceId]);
-
-  const saveMutation = useMutation({
-    mutationFn: saveSshConnection,
-    onSuccess: (connection) => {
-      setSelectedSshConnection(connection.id);
-      queryClient.invalidateQueries({ queryKey: ["ssh-connections", workspaceId] });
-    },
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: (connectionId: string) => deleteSshConnection(workspaceId, connectionId),
-    onSuccess: () => {
-      setSelectedSshConnection(null);
-      setActiveSessionId(null);
-      setTerminalEvents([]);
-      queryClient.invalidateQueries({ queryKey: ["ssh-connections", workspaceId] });
-      queryClient.invalidateQueries({ queryKey: ["ssh-sessions", workspaceId] });
-    },
-  });
-  const connectMutation = useMutation({
-    mutationFn: (connectionId: string) =>
-      connectSshSession({ workspaceId, connectionId, cols: 120, rows: 32 }),
-    onSuccess: (session) => {
-      setActiveSessionId(session.sessionId);
-      setTerminalEvents([
-        {
-          sessionId: session.sessionId,
-          kind: "output",
-          data: `Connected to ${session.username}@${session.host}. PTY ${session.cols}x${session.rows} allocated.\r\n`,
-          createdAt: session.createdAt,
-        },
-      ]);
-      setExportedLog(null);
-      queryClient.invalidateQueries({ queryKey: ["ssh-sessions", workspaceId] });
-    },
-  });
-  const inputMutation = useMutation({
-    mutationFn: () =>
-      sendSshInput({
-        workspaceId,
-        sessionId: activeSessionId ?? "",
-        data: terminalInput,
-      }),
-    onSuccess: (event) => {
-      setTerminalEvents((current) => [
-        ...current,
-        {
-          sessionId: event.sessionId,
-          kind: "input",
-          data: terminalInput,
-          createdAt: new Date().toISOString(),
-        },
-        event,
-      ]);
-      setTerminalInput("");
-      queryClient.invalidateQueries({ queryKey: ["ssh-sessions", workspaceId] });
-    },
-  });
-  const resizeMutation = useMutation({
-    mutationFn: () =>
-      resizeSshSession({
-        workspaceId,
-        sessionId: activeSessionId ?? "",
-        cols: activeSession?.cols === 120 ? 140 : 120,
-        rows: activeSession?.rows === 32 ? 40 : 32,
-      }),
-    onSuccess: (event) => {
-      setTerminalEvents((current) => [...current, event]);
-      queryClient.invalidateQueries({ queryKey: ["ssh-sessions", workspaceId] });
-    },
-  });
-  const closeMutation = useMutation({
-    mutationFn: () => closeSshSession({ workspaceId, sessionId: activeSessionId ?? "" }),
-    onSuccess: (session) => {
-      setTerminalEvents((current) => [
-        ...current,
-        {
-          sessionId: session.sessionId,
-          kind: "close",
-          data: "SSH session closed.\r\n",
-          createdAt: session.updatedAt,
-        },
-      ]);
-      queryClient.invalidateQueries({ queryKey: ["ssh-sessions", workspaceId] });
-    },
-  });
-  const exportMutation = useMutation({
-    mutationFn: () => exportSshLog({ workspaceId, sessionId: activeSessionId ?? "" }),
-    onSuccess: (log) => setExportedLog(log.content),
-  });
-
-  function updateForm(patch: Partial<SshConnectionInput>) {
-    setForm((current) => ({ ...current, ...patch, workspaceId }));
-  }
-
-  function newConnection() {
-    setSelectedSshConnection(null);
-    setForm({
-      workspaceId,
-      name: "Deploy host",
-      host: "example.internal",
-      port: 22,
-      username: "deploy",
-      authKind: "password",
-      credentialRef: null,
-    });
-  }
-
-  function submitConnection(event: FormEvent) {
-    event.preventDefault();
-    saveMutation.mutate({
-      ...form,
-      credentialRef: form.credentialRef?.trim() || null,
-      keyPath: form.keyPath?.trim() || null,
-    });
-  }
-
-  function connectSelectedConnection() {
-    if (selectedConnectionId) {
-      connectMutation.mutate(selectedConnectionId);
-    }
-  }
-
-  return (
-    <div className="grid h-full min-h-0 grid-cols-[280px_minmax(0,1fr)] gap-3">
-      <Panel>
-        <PanelHeader
-          actions={
-            <>
-              <Badge tone="green">session mvp</Badge>
-              <Button aria-label="New SSH connection" onClick={newConnection} size="icon" type="button" variant="ghost">
-                <Plus size={15} />
-              </Button>
-            </>
-          }
-          icon={<TerminalSquare size={16} />}
-          title="SSH Connections"
-        />
-
-        <form className="form-band space-y-3 border-b border-slate-200 p-3" onSubmit={submitConnection}>
-          <FieldGroup title="Name">
-            <Input onChange={(event) => updateForm({ name: event.target.value })} value={form.name} />
-          </FieldGroup>
-          <div className="grid grid-cols-[1fr_84px] gap-2">
-            <FieldGroup title="Host">
-              <Input onChange={(event) => updateForm({ host: event.target.value })} value={form.host} />
-            </FieldGroup>
-            <FieldGroup title="Port">
-              <Input
-                onChange={(event) =>
-                  updateForm({ port: event.target.value ? Number(event.target.value) : null })
-                }
-                type="number"
-                value={form.port ?? ""}
-              />
-            </FieldGroup>
-          </div>
-          <FieldGroup title="Username">
-            <Input onChange={(event) => updateForm({ username: event.target.value })} value={form.username} />
-          </FieldGroup>
-          <FieldGroup title="Auth">
-            <select
-              className="h-9 w-full rounded-md border border-slate-300 bg-white px-2 text-sm text-slate-950 shadow-xs outline-none transition-colors hover:border-slate-400 focus:border-teal-700 focus:ring-2 focus:ring-teal-700/15"
-              onChange={(event) =>
-                updateForm({
-                  authKind: event.target.value as SshConnectionInput["authKind"],
-                  keyPath: event.target.value === "private-key" ? form.keyPath : null,
-                })
-              }
-              value={form.authKind}
-            >
-              <option value="password">Password</option>
-              <option value="private-key">Private key</option>
-            </select>
-          </FieldGroup>
-          {form.authKind === "private-key" && (
-            <FieldGroup title="Key Path">
-              <Input
-                onChange={(event) => updateForm({ keyPath: event.target.value })}
-                placeholder="C:\\Users\\me\\.ssh\\id_ed25519"
-                value={form.keyPath ?? ""}
-              />
-            </FieldGroup>
-          )}
-          <CredentialReferenceControl
-            kind={form.authKind === "private-key" ? "ssh-key-passphrase" : "ssh-password"}
-            label={`${form.name || "SSH"} credential`}
-            onChange={(credentialRef) => updateForm({ credentialRef })}
-            value={form.credentialRef}
-            workspaceId={workspaceId}
-          />
-
-          <div className="flex items-center gap-2">
-            <Button disabled={saveMutation.isPending} type="submit">
-              <Save size={15} />
-              Save
-            </Button>
-            <Button
-              aria-label="Delete SSH connection"
-              disabled={!selectedConnectionId || deleteMutation.isPending}
-              onClick={() => selectedConnectionId && deleteMutation.mutate(selectedConnectionId)}
-              size="icon"
-              type="button"
-              variant="ghost"
-            >
-              <Trash2 size={15} />
-            </Button>
-          </div>
-          {(saveMutation.error || deleteMutation.error) && (
-            <InlineStatus icon={<XCircle size={14} />} tone="danger">
-              {formatError(saveMutation.error ?? deleteMutation.error)}
-            </InlineStatus>
-          )}
-        </form>
-
-        <div className="min-h-0 flex-1 overflow-y-auto p-3">
-          <div className="mb-2 flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Saved Connections
-            </span>
-            <Badge tone="neutral">{connectionsQuery.data?.length ?? 0}</Badge>
-          </div>
-          <div className="space-y-1">
-            {connectionsQuery.data?.map((connection) => (
-              <ResourceListItem
-                key={connection.id}
-                onClick={() => setSelectedSshConnection(connection.id)}
-                selected={selectedConnectionId === connection.id}
-              >
-                <span className="min-w-0 flex-1 truncate">{connection.name}</span>
-                <Badge tone={connection.authKind === "password" ? "amber" : "teal"}>
-                  {connection.authKind}
-                </Badge>
-              </ResourceListItem>
-            ))}
-            {connectionsQuery.data?.length === 0 && (
-              <EmptyState>No SSH connections</EmptyState>
-            )}
-          </div>
-        </div>
-      </Panel>
-      <Panel>
-        <PanelHeader
-          actions={
-            <>
-              {activeSession && (
-                <Badge tone={activeSession.status === "active" ? "green" : "neutral"}>
-                  {activeSession.status}
-                </Badge>
-              )}
-              <Button
-                disabled={!selectedConnectionId || connectMutation.isPending}
-                onClick={connectSelectedConnection}
-                size="sm"
-                type="button"
-              >
-                <Play size={14} />
-                Connect
-              </Button>
-              <Button
-                aria-label="Resize SSH session"
-                disabled={!activeSessionId || activeSession?.status !== "active" || resizeMutation.isPending}
-                onClick={() => resizeMutation.mutate()}
-                size="icon"
-                type="button"
-                variant="ghost"
-              >
-                <RefreshCw size={15} />
-              </Button>
-              <Button
-                aria-label="Export SSH log"
-                disabled={!activeSessionId || exportMutation.isPending}
-                onClick={() => exportMutation.mutate()}
-                size="icon"
-                type="button"
-                variant="ghost"
-              >
-                <Download size={15} />
-              </Button>
-              <Button
-                aria-label="Close SSH session"
-                disabled={!activeSessionId || activeSession?.status !== "active" || closeMutation.isPending}
-                onClick={() => closeMutation.mutate()}
-                size="icon"
-                type="button"
-                variant="ghost"
-              >
-                <XCircle size={15} />
-              </Button>
-            </>
-          }
-          icon={<TerminalSquare size={16} />}
-          subtitle={
-            activeSession
-              ? `${activeSession.username}@${activeSession.host} ${activeSession.cols}x${activeSession.rows}`
-              : selectedConnection
-                ? `${selectedConnection.username}@${selectedConnection.host}`
-                : undefined
-          }
-          title="SSH Session"
-        />
-        <div className="flex min-h-0 flex-1 flex-col bg-slate-950">
-          <div className="min-h-0 flex-1 overflow-auto p-4 font-mono text-xs leading-6 text-emerald-100">
-            {terminalEvents.length === 0 ? (
-              <div className="text-slate-500">Select a connection and start a session.</div>
-            ) : (
-              terminalEvents.map((event, index) => (
-                <div
-                  className={cn(
-                    "whitespace-pre-wrap break-words",
-                    event.kind === "input" && "text-sky-200",
-                    event.kind === "resize" && "text-amber-200",
-                    event.kind === "close" && "text-slate-300",
-                  )}
-                  key={`${event.sessionId}-${event.kind}-${index}`}
-                >
-                  {event.kind === "input" ? `$ ${event.data}` : event.data}
-                </div>
-              ))
-            )}
-          </div>
-          <div className="border-t border-slate-800 p-3">
-            <div className="flex gap-2">
-              <Input
-                className="border-slate-700 bg-slate-900 font-mono text-emerald-100 placeholder:text-slate-500"
-                disabled={!activeSessionId || activeSession?.status !== "active"}
-                onChange={(event) => setTerminalInput(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
-                    inputMutation.mutate();
-                  }
-                }}
-                placeholder="Command input"
-                value={terminalInput}
-              />
-              <Button
-                disabled={
-                  !activeSessionId ||
-                  activeSession?.status !== "active" ||
-                  !terminalInput ||
-                  inputMutation.isPending
-                }
-                onClick={() => inputMutation.mutate()}
-                type="button"
-              >
-                <Send size={14} />
-                Send
-              </Button>
-            </div>
-            {(connectMutation.error ||
-              inputMutation.error ||
-              resizeMutation.error ||
-              closeMutation.error ||
-              exportMutation.error) && (
-              <InlineStatus className="mt-2" icon={<XCircle size={14} />} tone="danger">
-                {formatError(
-                  connectMutation.error ??
-                    inputMutation.error ??
-                    resizeMutation.error ??
-                    closeMutation.error ??
-                    exportMutation.error,
-                )}
-              </InlineStatus>
-            )}
-            {exportedLog && (
-              <pre className="mt-3 max-h-32 overflow-auto rounded-md bg-slate-900 p-3 text-xs text-slate-300 ring-1 ring-inset ring-slate-800">
-                {exportedLog}
-              </pre>
-            )}
-          </div>
-        </div>
-      </Panel>
-    </div>
-  );
-}
-
-function DatabasePanel({ workspaceId }: { workspaceId: string }) {
-  const queryClient = useQueryClient();
-  const {
-    selectedDatabaseConnectionId: selectedConnectionId,
-    setSelectedDatabaseConnection,
-  } = useWorkspaceStore();
-  const [testResult, setTestResult] = useState<DatabaseTestResult | null>(null);
-  const [queryResult, setQueryResult] = useState<DatabaseQueryResult | null>(null);
-  const [pendingSqlConfirmation, setPendingSqlConfirmation] = useState(false);
-  const [sql, setSql] = useState(
-    "select name, type\nfrom sqlite_master\nwhere type in ('table', 'view')\nlimit 100;",
-  );
-  const [tableView, setTableView] = useState<DatabaseTableViewState | null>(null);
-  const [resultMode, setResultMode] = useState<"sql" | "table">("sql");
-  const [form, setForm] = useState<DatabaseConnectionInput>({
-    workspaceId,
-    name: "Local SQLite",
-    driver: "sqlite",
-    sqlitePath: "",
-  });
-
-  const connectionsQuery = useQuery({
-    enabled: Boolean(workspaceId),
-    queryKey: ["database-connections", workspaceId],
-    queryFn: () => listDatabaseConnections(workspaceId),
-  });
-
-  const selectedConnection: DatabaseConnection | null =
-    connectionsQuery.data?.find((item) => item.id === selectedConnectionId) ?? null;
-
-  const schemaQuery = useQuery({
-    enabled: Boolean(workspaceId && selectedConnectionId && selectedConnection?.driver === "sqlite"),
-    queryKey: ["database-schema", workspaceId, selectedConnectionId],
-    queryFn: () => getDatabaseSchema(workspaceId, selectedConnectionId ?? ""),
-  });
-
-  useEffect(() => {
-    if (!connectionsQuery.data?.length) {
-      setSelectedDatabaseConnection(null);
-      return;
-    }
-
-    if (
-      !selectedConnectionId ||
-      !connectionsQuery.data.some((connection) => connection.id === selectedConnectionId)
-    ) {
-      setSelectedDatabaseConnection(connectionsQuery.data[0].id);
-    }
-  }, [connectionsQuery.data, selectedConnectionId, setSelectedDatabaseConnection]);
-
-  useEffect(() => {
-    setForm((current) => ({ ...current, workspaceId }));
-  }, [workspaceId]);
-
-  useEffect(() => {
-    if (!selectedConnection) {
-      return;
-    }
-
-    setForm({
-      id: selectedConnection.id,
-      workspaceId,
-      name: selectedConnection.name,
-      driver: selectedConnection.driver,
-      host: selectedConnection.host,
-      port: selectedConnection.port,
-      database: selectedConnection.database,
-      username: selectedConnection.username,
-      sqlitePath: selectedConnection.sqlitePath,
-      credentialRef: selectedConnection.credentialRef,
-    });
-    setTestResult(null);
-    setQueryResult(null);
-    setTableView(null);
-    setResultMode("sql");
-    setPendingSqlConfirmation(false);
-  }, [selectedConnection, workspaceId]);
-
-  const saveMutation = useMutation({
-    mutationFn: saveDatabaseConnection,
-    onSuccess: (connection) => {
-      setSelectedDatabaseConnection(connection.id);
-      queryClient.invalidateQueries({ queryKey: ["database-connections", workspaceId] });
-    },
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: (connectionId: string) => deleteDatabaseConnection(workspaceId, connectionId),
-    onSuccess: () => {
-      setSelectedDatabaseConnection(null);
-      setTestResult(null);
-      setQueryResult(null);
-      setTableView(null);
-      setResultMode("sql");
-      setPendingSqlConfirmation(false);
-      queryClient.invalidateQueries({ queryKey: ["database-connections", workspaceId] });
-    },
-  });
-
-  const testMutation = useMutation({
-    mutationFn: (connectionId: string) => testDatabaseConnection(workspaceId, connectionId),
-    onSuccess: (result) => {
-      setTestResult(result);
-      queryClient.invalidateQueries({
-        queryKey: ["database-schema", workspaceId, selectedConnectionId],
-      });
-    },
-  });
-
-  const executeMutation = useMutation({
-    onMutate: () => {
-      setTableView(null);
-      setResultMode("sql");
-    },
-    mutationFn: (confirmMutation: boolean) =>
-      executeDatabaseQuery({
-        workspaceId,
-        connectionId: selectedConnectionId ?? "",
-        sql,
-        limit: 100,
-        confirmMutation,
-      }),
-    onError: (error) => {
-      setPendingSqlConfirmation(isConfirmationRequired(error));
-    },
-    onSuccess: (result) => {
-      setPendingSqlConfirmation(false);
-      setTableView(null);
-      setQueryResult(result);
-    },
-  });
-
-  const browseMutation = useMutation({
-    onMutate: () => {
-      setPendingSqlConfirmation(false);
-      setResultMode("table");
-    },
-    mutationFn: ({
-      pageIndex,
-      pageSize,
-      tableName,
-    }: {
-      pageIndex: number;
-      pageSize: number;
-      tableName: string;
-    }) =>
-      browseDatabaseTable({
-        workspaceId,
-        connectionId: selectedConnectionId ?? "",
-        tableName,
-        limit: pageSize,
-        offset: pageIndex * pageSize,
-    }),
-    onSuccess: (browse) => {
-      setPendingSqlConfirmation(false);
-      setSql(browse.sql);
-      setQueryResult(browse.result);
-      setResultMode("table");
-      setTableView({
-        pageIndex: Math.floor(browse.offset / Math.max(1, browse.limit)),
-        pageSize: browse.limit,
-        readOnly: browse.readOnly,
-        tableName: browse.tableName,
-        totalRows: browse.totalRows,
-      });
-    },
-  });
-
-  function updateForm(patch: Partial<DatabaseConnectionInput>) {
-    setForm((current) => ({ ...current, ...patch, workspaceId }));
-  }
-
-  function submitConnection(event: FormEvent) {
-    event.preventDefault();
-    saveMutation.mutate({
-      ...form,
-      credentialRef: form.credentialRef?.trim() || null,
-      sqlitePath: form.sqlitePath?.trim() || null,
-      host: form.host?.trim() || null,
-      database: form.database?.trim() || null,
-      username: form.username?.trim() || null,
-    });
-  }
-
-  function newConnection() {
-    setSelectedDatabaseConnection(null);
-    setTestResult(null);
-    setQueryResult(null);
-    setTableView(null);
-    setResultMode("sql");
-    setPendingSqlConfirmation(false);
-    setForm({
-      workspaceId,
-      name: "Local SQLite",
-      driver: "sqlite",
-      sqlitePath: "",
-    });
-  }
-
-  function browseTablePage(tableName: string, pageIndex: number, pageSize: number) {
-    browseMutation.mutate({
-      pageIndex: Math.max(0, pageIndex),
-      pageSize,
-      tableName,
-    });
-  }
-
-  function refreshTableView() {
-    if (!tableView) {
-      return;
-    }
-    browseTablePage(tableView.tableName, tableView.pageIndex, tableView.pageSize);
-  }
-
-  function changeTablePageSize(pageSize: number) {
-    if (!tableView) {
-      return;
-    }
-    browseTablePage(tableView.tableName, 0, pageSize);
-  }
-
-  const tableViewPageCount = tableView
-    ? Math.max(1, Math.ceil(tableView.totalRows / tableView.pageSize))
-    : 1;
-  const tableViewStart = tableView?.totalRows
-    ? tableView.pageIndex * tableView.pageSize + 1
-    : 0;
-  const tableViewEnd = tableView
-    ? Math.min((tableView.pageIndex + 1) * tableView.pageSize, tableView.totalRows)
-    : 0;
-
-  return (
-    <div className="grid h-full min-h-0 grid-cols-[280px_minmax(0,1fr)] gap-3">
-      <Panel>
-        <PanelHeader
-          actions={
-            <Button aria-label="New database connection" onClick={newConnection} size="icon" type="button" variant="ghost">
-              <Plus size={15} />
-            </Button>
-          }
-          icon={<Database size={16} />}
-          title="Connections"
-        />
-
-        <form className="form-band space-y-3 border-b border-slate-200 p-3" onSubmit={submitConnection}>
-          <FieldGroup title="Name">
-            <Input
-              onChange={(event) => updateForm({ name: event.target.value })}
-              value={form.name}
-            />
-          </FieldGroup>
-          <FieldGroup title="Driver">
-            <select
-              className="h-9 w-full rounded-md border border-slate-300 bg-white px-2 text-sm text-slate-950 shadow-xs outline-none transition-colors hover:border-slate-400 focus:border-teal-700 focus:ring-2 focus:ring-teal-700/15"
-              onChange={(event) =>
-                updateForm({
-                  driver: event.target.value as DatabaseConnectionInput["driver"],
-                  sqlitePath: event.target.value === "sqlite" ? form.sqlitePath : null,
-                  credentialRef: event.target.value === "sqlite" ? null : form.credentialRef,
-                })
-              }
-              value={form.driver}
-            >
-              <option value="sqlite">SQLite</option>
-              <option value="postgres">PostgreSQL</option>
-              <option value="mysql">MySQL / MariaDB</option>
-            </select>
-          </FieldGroup>
-
-          {form.driver === "sqlite" ? (
-            <FieldGroup title="SQLite Path">
-              <Input
-                onChange={(event) => updateForm({ sqlitePath: event.target.value })}
-                placeholder="E:\\data\\app.sqlite"
-                value={form.sqlitePath ?? ""}
-              />
-            </FieldGroup>
-          ) : (
-            <div className="space-y-3">
-              <div className="grid grid-cols-[1fr_84px] gap-2">
-                <FieldGroup title="Host">
-                  <Input
-                    onChange={(event) => updateForm({ host: event.target.value })}
-                    placeholder="127.0.0.1"
-                    value={form.host ?? ""}
-                  />
-                </FieldGroup>
-                <FieldGroup title="Port">
-                  <Input
-                    onChange={(event) =>
-                      updateForm({
-                        port: event.target.value ? Number(event.target.value) : null,
-                      })
-                    }
-                    placeholder={form.driver === "postgres" ? "5432" : "3306"}
-                    type="number"
-                    value={form.port ?? ""}
-                  />
-                </FieldGroup>
-              </div>
-              <FieldGroup title="Database">
-                <Input
-                  onChange={(event) => updateForm({ database: event.target.value })}
-                  value={form.database ?? ""}
-                />
-              </FieldGroup>
-              <FieldGroup title="Username">
-                <Input
-                  onChange={(event) => updateForm({ username: event.target.value })}
-                  value={form.username ?? ""}
-                />
-              </FieldGroup>
-              <CredentialReferenceControl
-                kind="database-password"
-                label={`${form.name || "Database"} password`}
-                onChange={(credentialRef) => updateForm({ credentialRef })}
-                value={form.credentialRef}
-                workspaceId={workspaceId}
-              />
-            </div>
-          )}
-
-          <div className="flex items-center gap-2">
-            <Button disabled={saveMutation.isPending} type="submit">
-              <Save size={15} />
-              Save
-            </Button>
-            <Button
-              disabled={!selectedConnectionId || testMutation.isPending}
-              onClick={() => selectedConnectionId && testMutation.mutate(selectedConnectionId)}
-              type="button"
-              variant="outline"
-            >
-              <CheckCircle2 size={15} />
-              Test
-            </Button>
-            <Button
-              disabled={!selectedConnectionId || deleteMutation.isPending}
-              onClick={() => selectedConnectionId && deleteMutation.mutate(selectedConnectionId)}
-              size="icon"
-              type="button"
-              variant="ghost"
-            >
-              <Trash2 size={15} />
-            </Button>
-          </div>
-
-          {(testResult || testMutation.error || saveMutation.error) && (
-            <StatusLine
-              error={testMutation.error ?? saveMutation.error}
-              result={testResult}
-            />
-          )}
-        </form>
-
-        <div className="min-h-0 flex-1 overflow-y-auto p-3">
-          <div className="mb-2 flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Saved Connections
-            </span>
-            <Badge tone="neutral">{connectionsQuery.data?.length ?? 0}</Badge>
-          </div>
-          <div className="space-y-1">
-            {connectionsQuery.data?.map((connection) => (
-              <ResourceListItem
-                key={connection.id}
-                onClick={() => setSelectedDatabaseConnection(connection.id)}
-                selected={selectedConnectionId === connection.id}
-              >
-                <span className="min-w-0 flex-1 truncate">{connection.name}</span>
-                <Badge tone={connection.driver === "sqlite" ? "green" : "amber"}>
-                  {connection.driver}
-                </Badge>
-              </ResourceListItem>
-            ))}
-            {connectionsQuery.data?.length === 0 && (
-              <EmptyState>No database connections</EmptyState>
-            )}
-          </div>
-
-          <div className="mt-4 border-t border-slate-200 pt-3">
-            <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-              <Table2 size={14} />
-              Schema
-            </div>
-            <SchemaTree
-              disabled={!selectedConnectionId || browseMutation.isPending}
-              error={schemaQuery.error}
-              loading={schemaQuery.isFetching}
-              onBrowse={(table) => browseTablePage(table.name, 0, tableView?.pageSize ?? 100)}
-              schema={schemaQuery.data}
-            />
-          </div>
-        </div>
-      </Panel>
-      <Panel>
-        <PanelHeader
-          actions={
-            <>
-              {selectedConnection && <Badge tone="neutral">{selectedConnection.name}</Badge>}
-              {tableView && (
-                <>
-                  <Badge tone={tableView.readOnly ? "green" : "amber"}>read only</Badge>
-                  <span className="text-xs text-slate-500">
-                    {tableViewStart}-{tableViewEnd} of {tableView.totalRows}
-                  </span>
-                  <select
-                    aria-label="Rows per page"
-                    className="h-8 rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-700 shadow-xs outline-none transition-colors hover:border-slate-400 focus:border-teal-700 focus:ring-2 focus:ring-teal-700/15"
-                    onChange={(event) => changeTablePageSize(Number(event.target.value))}
-                    value={tableView.pageSize}
-                  >
-                    {[50, 100, 250, 500].map((pageSize) => (
-                      <option key={pageSize} value={pageSize}>
-                        {pageSize}
-                      </option>
-                    ))}
-                  </select>
-                  <Button
-                    aria-label="Previous table page"
-                    disabled={browseMutation.isPending || tableView.pageIndex <= 0}
-                    onClick={() =>
-                      browseTablePage(
-                        tableView.tableName,
-                        tableView.pageIndex - 1,
-                        tableView.pageSize,
-                      )
-                    }
-                    size="icon"
-                    type="button"
-                    variant="ghost"
-                  >
-                    <ChevronLeft size={15} />
-                  </Button>
-                  <Button
-                    aria-label="Next table page"
-                    disabled={
-                      browseMutation.isPending ||
-                      tableView.pageIndex >= tableViewPageCount - 1
-                    }
-                    onClick={() =>
-                      browseTablePage(
-                        tableView.tableName,
-                        tableView.pageIndex + 1,
-                        tableView.pageSize,
-                      )
-                    }
-                    size="icon"
-                    type="button"
-                    variant="ghost"
-                  >
-                    <ChevronRight size={15} />
-                  </Button>
-                  <Button
-                    aria-label="Refresh table data"
-                    disabled={browseMutation.isPending}
-                    onClick={refreshTableView}
-                    size="icon"
-                    type="button"
-                    variant="ghost"
-                  >
-                    <RefreshCw size={15} />
-                  </Button>
-                </>
-              )}
-              <Button
-                disabled={!selectedConnectionId || executeMutation.isPending}
-                className={pendingSqlConfirmation ? "bg-rose-700 hover:bg-rose-800" : undefined}
-                onClick={() => executeMutation.mutate(pendingSqlConfirmation)}
-                size="sm"
-                type="button"
-              >
-                <Play size={14} />
-                {pendingSqlConfirmation ? "Confirm run" : "Run"}
-              </Button>
-            </>
-          }
-          icon={tableView ? <Table2 size={15} /> : <Clock size={15} />}
-          subtitle={tableView ? tableView.tableName : undefined}
-          title={tableView ? "Table Data" : "SQL Editor"}
-        />
-        <div className="min-h-0 flex-[0.55] border-b border-slate-200">
-          <Editor
-            defaultLanguage="sql"
-            onChange={(value) => setSql(value ?? "")}
-            options={{
-              fontSize: 13,
-              minimap: { enabled: false },
-              scrollBeyondLastLine: false,
-              wordWrap: "on",
-            }}
-            value={sql}
-          />
-        </div>
-        <DatabaseResultView
-          error={resultMode === "table" ? browseMutation.error : executeMutation.error}
-          isPending={executeMutation.isPending || browseMutation.isPending}
-          pendingConfirmation={pendingSqlConfirmation}
-          result={queryResult}
-        />
-      </Panel>
-    </div>
-  );
-}
-
-function StatusLine({
-  error,
-  result,
-}: {
-  error: unknown;
-  result: DatabaseTestResult | null;
-}) {
-  if (error) {
-    return (
-      <InlineStatus icon={<XCircle size={14} />} tone="danger">
-        {formatError(error)}
-      </InlineStatus>
-    );
-  }
-
-  if (!result) {
-    return null;
-  }
-
-  return (
-    <InlineStatus
-      icon={result.ok ? <CheckCircle2 size={14} /> : <XCircle size={14} />}
-      tone={result.ok ? "success" : "warning"}
-    >
-      {result.message}
-      {result.serverVersion ? ` (${result.serverVersion})` : ""}
-    </InlineStatus>
-  );
-}
-
-function SchemaTree({
-  disabled,
-  error,
-  loading,
-  onBrowse,
-  schema,
-}: {
-  disabled: boolean;
-  error: unknown;
-  loading: boolean;
-  onBrowse: (table: DatabaseTable) => void;
-  schema?: DatabaseSchema;
-}) {
-  if (error) {
-    return (
-      <InlineStatus tone="warning">
-        {formatError(error)}
-      </InlineStatus>
-    );
-  }
-
-  if (loading) {
-    return <EmptyState className="p-3 text-xs">Loading schema...</EmptyState>;
-  }
-
-  if (!schema?.tables.length) {
-    return (
-      <EmptyState className="p-3 text-xs">
-        Select a SQLite connection to inspect tables.
-      </EmptyState>
-    );
-  }
-
-  return (
-    <div className="space-y-3">
-      {schema.tables.map((table) => (
-        <div key={table.name}>
-          <div className="flex items-center justify-between gap-2 rounded-md bg-slate-50 px-2 py-1 text-xs font-semibold ring-1 ring-inset ring-slate-200">
-            <span className="truncate">{table.name}</span>
-            <div className="flex items-center gap-1">
-              <Badge tone="neutral">{table.kind}</Badge>
-              <Button
-                disabled={disabled}
-                onClick={() => onBrowse(table)}
-                size="icon"
-                type="button"
-                variant="ghost"
-              >
-                <Table2 size={13} />
-              </Button>
-            </div>
-          </div>
-          <div className="mt-1 space-y-1 pl-2">
-            {table.columns.map((column) => (
-              <div className="flex items-center gap-2 text-xs text-slate-600" key={column.name}>
-                <span className="min-w-0 flex-1 truncate">{column.name}</span>
-                <span className="text-slate-400">{column.dataType || "ANY"}</span>
-                {column.primaryKey && <Badge tone="teal">pk</Badge>}
-              </div>
-            ))}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-type DatabaseTableViewState = {
-  pageIndex: number;
-  pageSize: number;
-  readOnly: boolean;
-  tableName: string;
-  totalRows: number;
-};
-
-function DatabaseResultView({
-  error,
-  isPending,
-  pendingConfirmation,
-  result,
-}: {
-  error: unknown;
-  isPending: boolean;
-  pendingConfirmation: boolean;
-  result: DatabaseQueryResult | null;
-}) {
-  const pageSize = 250;
-  const [pageIndex, setPageIndex] = useState(0);
-  const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">("idle");
-  const [scrollTop, setScrollTop] = useState(0);
-  const scrollRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    setPageIndex(0);
-    setCopyStatus("idle");
-    setScrollTop(0);
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = 0;
-    }
-  }, [result]);
-
-  if (error) {
-    return (
-      <EmptyState
-        className={cn(
-          "min-h-0 flex-1 p-4",
-          pendingConfirmation ? "text-amber-800" : "text-rose-800",
-        )}
-      >
-        {pendingConfirmation ? confirmationMessage(error) : formatError(error)}
-      </EmptyState>
-    );
-  }
-
-  if (isPending) {
-    return <EmptyState className="min-h-0 flex-1">Running query...</EmptyState>;
-  }
-
-  if (!result) {
-    return <EmptyState className="min-h-0 flex-1">Query results will appear here.</EmptyState>;
-  }
-
-  if (result.columns.length === 0) {
-    return (
-      <EmptyState className="min-h-0 flex-1 text-slate-600">
-        {result.affectedRows} rows affected in {result.durationMs}ms.
-      </EmptyState>
-    );
-  }
-
-  const queryResult = result;
-  const pageCount = Math.max(1, Math.ceil(queryResult.rows.length / pageSize));
-  const safePageIndex = Math.min(pageIndex, pageCount - 1);
-  const startIndex = safePageIndex * pageSize;
-  const pageRows = queryResult.rows.slice(startIndex, startIndex + pageSize);
-  const displayStart = queryResult.rows.length ? startIndex + 1 : 0;
-  const displayEnd = Math.min(startIndex + pageRows.length, queryResult.rows.length);
-  const rowHeight = 33;
-  const viewportHeight = scrollRef.current?.clientHeight ?? 420;
-  const virtualized = pageRows.length > 80;
-  const virtualStart = virtualized
-    ? Math.max(0, Math.floor(scrollTop / rowHeight) - 8)
-    : 0;
-  const virtualEnd = virtualized
-    ? Math.min(
-        pageRows.length,
-        virtualStart + Math.ceil(viewportHeight / rowHeight) + 16,
-      )
-    : pageRows.length;
-  const visibleRows = pageRows.slice(virtualStart, virtualEnd);
-  const topSpacerHeight = virtualized ? virtualStart * rowHeight : 0;
-  const bottomSpacerHeight = virtualized
-    ? Math.max(0, (pageRows.length - virtualEnd) * rowHeight)
-    : 0;
-  const columnWidths = queryResult.columns.map((column, columnIndex) =>
-    queryResult.rows.reduce((width, row) => {
-      const value = row[columnIndex] ?? "";
-      return Math.min(Math.max(width, String(value).length * 8 + 48), 360);
-    }, Math.min(Math.max(column.name.length * 9 + 72, 140), 260)),
-  );
-
-  async function copyTsv() {
-    const text = serializeDatabaseResult(queryResult, "\t");
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopyStatus("copied");
-      window.setTimeout(() => setCopyStatus("idle"), 1600);
-    } catch {
-      setCopyStatus("failed");
-    }
-  }
-
-  function exportCsv() {
-    const text = serializeDatabaseResult(queryResult, ",");
-    const blob = new Blob([text], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `unfour-query-results-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
-  }
-
-  return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div
-        className="min-h-0 flex-1 overflow-auto"
-        onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
-        ref={scrollRef}
-      >
-        <table className="data-table w-max min-w-full table-fixed text-left text-xs">
-          <colgroup>
-            {columnWidths.map((width, index) => (
-              <col key={`db-col-${index}`} style={{ width }} />
-            ))}
-          </colgroup>
-          <thead className="sticky top-0">
-            <tr>
-              {queryResult.columns.map((column) => (
-                <th className="border-b border-slate-200 px-3 py-2 font-medium" key={column.name}>
-                  <div className="flex min-w-0 items-center gap-2">
-                    <span className="truncate">{column.name}</span>
-                    <span className="shrink-0 text-[10px] uppercase text-slate-400">
-                      {column.dataType}
-                    </span>
-                  </div>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {topSpacerHeight > 0 && (
-              <tr aria-hidden="true">
-                <td colSpan={queryResult.columns.length} style={{ height: topSpacerHeight }} />
-              </tr>
-            )}
-            {visibleRows.map((row, rowIndex) => (
-              <tr
-                className="border-b"
-                key={`db-row-${startIndex + virtualStart + rowIndex}`}
-              >
-                {row.map((value, cellIndex) => (
-                  <td className="truncate px-3 py-2" key={`db-cell-${cellIndex}`}>
-                    {value ?? <span className="text-slate-400">NULL</span>}
-                  </td>
-                ))}
-              </tr>
-            ))}
-            {bottomSpacerHeight > 0 && (
-              <tr aria-hidden="true">
-                <td
-                  colSpan={queryResult.columns.length}
-                  style={{ height: bottomSpacerHeight }}
-                />
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-      <div className="flex h-10 items-center justify-between gap-3 border-t border-slate-200 bg-slate-50 px-3 text-xs text-slate-500">
-        <span>
-          {displayStart}-{displayEnd} of {queryResult.rows.length} rows in{" "}
-          {queryResult.durationMs}ms
-        </span>
-        <div className="flex shrink-0 items-center gap-2">
-          <Button onClick={copyTsv} size="sm" type="button" variant="outline">
-            <Clipboard size={13} />
-            {copyStatus === "copied"
-              ? "Copied"
-              : copyStatus === "failed"
-                ? "Copy failed"
-                : "Copy TSV"}
-          </Button>
-          <Button onClick={exportCsv} size="sm" type="button" variant="outline">
-            <Download size={13} />
-            Export CSV
-          </Button>
-          <Button
-            disabled={safePageIndex === 0}
-            onClick={() => {
-              setPageIndex((current) => Math.max(0, current - 1));
-              setScrollTop(0);
-              if (scrollRef.current) {
-                scrollRef.current.scrollTop = 0;
-              }
-            }}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            Prev
-          </Button>
-          <span>
-            Page {safePageIndex + 1} / {pageCount}
-          </span>
-          <Button
-            disabled={safePageIndex >= pageCount - 1}
-            onClick={() => {
-              setPageIndex((current) => Math.min(pageCount - 1, current + 1));
-              setScrollTop(0);
-              if (scrollRef.current) {
-                scrollRef.current.scrollTop = 0;
-              }
-            }}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            Next
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-
-function formatError(error: unknown) {
-  if (error instanceof Error) {
-    return error.message;
-  }
-  if (typeof error === "object" && error && "message" in error) {
-    return String((error as { message: unknown }).message);
-  }
-  return String(error);
 }
 
 export default App;
