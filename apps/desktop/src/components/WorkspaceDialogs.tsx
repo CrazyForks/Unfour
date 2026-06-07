@@ -1,0 +1,200 @@
+import * as Dialog from "@radix-ui/react-dialog";
+import { Trash2 } from "lucide-react";
+import { FormEvent, useEffect, useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  createWorkspace,
+  deleteWorkspace,
+  renameWorkspace,
+} from "@unfour/command-client";
+import type { Workspace } from "@unfour/command-client";
+import { Button, Input } from "@unfour/ui";
+import { useWorkspaceStore } from "@unfour/workspace";
+
+export function WorkspaceDialogs({
+  activeWorkspace,
+  createOpen,
+  deleteOpen,
+  onCreateClose,
+  onDeleteClose,
+  onRenameClose,
+  renameOpen,
+  workspaces,
+}: {
+  activeWorkspace?: Workspace;
+  createOpen: boolean;
+  deleteOpen: boolean;
+  onCreateClose: () => void;
+  onDeleteClose: () => void;
+  onRenameClose: () => void;
+  renameOpen: boolean;
+  workspaces: Workspace[];
+}) {
+  const queryClient = useQueryClient();
+  const { setActiveWorkspace } = useWorkspaceStore();
+  const [workspaceName, setWorkspaceName] = useState("");
+  const [renameDraft, setRenameDraft] = useState(activeWorkspace?.name ?? "");
+  const canDelete =
+    Boolean(activeWorkspace) && !activeWorkspace?.isDefault && workspaces.length > 1;
+
+  useEffect(() => {
+    setRenameDraft(activeWorkspace?.name ?? "");
+  }, [activeWorkspace?.id, activeWorkspace?.name]);
+
+  const createWorkspaceMutation = useMutation({
+    mutationFn: createWorkspace,
+    onSuccess: (workspace) => {
+      setActiveWorkspace(workspace.id);
+      queryClient.invalidateQueries({ queryKey: ["workspaces"] });
+    },
+  });
+
+  const renameWorkspaceMutation = useMutation({
+    mutationFn: ({ name, workspaceId }: { name: string; workspaceId: string }) =>
+      renameWorkspace(workspaceId, name),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["workspaces"] }),
+  });
+
+  const deleteWorkspaceMutation = useMutation({
+    mutationFn: deleteWorkspace,
+    onSuccess: (state) => {
+      setActiveWorkspace(state.activeWorkspaceId);
+      queryClient.invalidateQueries({ queryKey: ["workspaces"] });
+    },
+  });
+
+  function createWorkspaceFromDialog(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const name = workspaceName.trim();
+    if (!name) {
+      return;
+    }
+    createWorkspaceMutation.mutate(name);
+    setWorkspaceName("");
+    onCreateClose();
+  }
+
+  function renameWorkspaceFromDialog(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const name = renameDraft.trim();
+    if (!activeWorkspace || !name || name === activeWorkspace.name) {
+      return;
+    }
+    renameWorkspaceMutation.mutate({ workspaceId: activeWorkspace.id, name });
+    onRenameClose();
+  }
+
+  function deleteWorkspaceFromDialog() {
+    if (!activeWorkspace || !canDelete) {
+      return;
+    }
+    deleteWorkspaceMutation.mutate(activeWorkspace.id);
+    onDeleteClose();
+  }
+
+  return (
+    <>
+      <Dialog.Root onOpenChange={(open) => { if (!open) onCreateClose(); }} open={createOpen}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-50 bg-slate-950/30" />
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[360px] -translate-x-1/2 -translate-y-1/2 rounded-md border border-slate-200 bg-white p-4 shadow-xl">
+            <Dialog.Title className="text-base font-semibold text-slate-950">
+              New workspace
+            </Dialog.Title>
+            <Dialog.Description className="mt-2 text-sm text-slate-600">
+              Create a workspace for a separate set of API requests, SSH connections, and database resources.
+            </Dialog.Description>
+            <form className="mt-4 space-y-4" onSubmit={createWorkspaceFromDialog}>
+              <Input
+                autoFocus
+                onChange={(event) => setWorkspaceName(event.target.value)}
+                placeholder="Workspace name"
+                value={workspaceName}
+              />
+              <div className="flex justify-end gap-2">
+                <Dialog.Close asChild>
+                  <Button type="button" variant="outline">
+                    Cancel
+                  </Button>
+                </Dialog.Close>
+                <Button disabled={createWorkspaceMutation.isPending || !workspaceName.trim()} type="submit">
+                  Create
+                </Button>
+              </div>
+            </form>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+
+      <Dialog.Root onOpenChange={(open) => { if (!open) onRenameClose(); }} open={renameOpen}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-50 bg-slate-950/30" />
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[360px] -translate-x-1/2 -translate-y-1/2 rounded-md border border-slate-200 bg-white p-4 shadow-xl">
+            <Dialog.Title className="text-base font-semibold text-slate-950">
+              Rename workspace
+            </Dialog.Title>
+            <Dialog.Description className="mt-2 text-sm text-slate-600">
+              Rename the active workspace. Existing workspace-scoped records stay attached to it.
+            </Dialog.Description>
+            <form className="mt-4 space-y-4" onSubmit={renameWorkspaceFromDialog}>
+              <Input
+                autoFocus
+                onChange={(event) => setRenameDraft(event.target.value)}
+                placeholder="Workspace name"
+                value={renameDraft}
+              />
+              <div className="flex justify-end gap-2">
+                <Dialog.Close asChild>
+                  <Button type="button" variant="outline">
+                    Cancel
+                  </Button>
+                </Dialog.Close>
+                <Button
+                  disabled={
+                    renameWorkspaceMutation.isPending ||
+                    !renameDraft.trim() ||
+                    renameDraft.trim() === activeWorkspace?.name
+                  }
+                  type="submit"
+                >
+                  Rename
+                </Button>
+              </div>
+            </form>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+
+      <Dialog.Root onOpenChange={(open) => { if (!open) onDeleteClose(); }} open={deleteOpen}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-50 bg-slate-950/30" />
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[360px] -translate-x-1/2 -translate-y-1/2 rounded-md border border-slate-200 bg-white p-4 shadow-xl">
+            <Dialog.Title className="text-base font-semibold text-slate-950">
+              Delete workspace
+            </Dialog.Title>
+            <Dialog.Description className="mt-2 text-sm text-slate-600">
+              Delete {activeWorkspace?.name ?? "this workspace"} locally. The app will switch
+              to another available workspace.
+            </Dialog.Description>
+            <div className="mt-4 flex justify-end gap-2">
+              <Dialog.Close asChild>
+                <Button type="button" variant="outline">
+                  Cancel
+                </Button>
+              </Dialog.Close>
+              <Button
+                className="bg-rose-700 hover:bg-rose-800"
+                disabled={deleteWorkspaceMutation.isPending || !canDelete}
+                onClick={deleteWorkspaceFromDialog}
+                type="button"
+              >
+                <Trash2 size={15} />
+                Delete
+              </Button>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+    </>
+  );
+}
