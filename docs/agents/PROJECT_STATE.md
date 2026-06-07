@@ -8,7 +8,7 @@
 |---|---|
 | Scan date | 2026-06-07 |
 | Branch | `main` |
-| Commit | `8feecdebbc9cdc67583314c689da9c7493bb4f05` |
+| Last commit | `chore(frontend): complete hardening cleanup batch` |
 | Working tree | Clean (no staged or unstaged changes) |
 | Package manager | pnpm 10.23.0 |
 | Rust toolchain | Verified with `rustc 1.96.0` |
@@ -26,6 +26,8 @@
 ## Current Phase
 
 The project is between **v0.4 (Database)** and **v0.5 (Hardening)** on its roadmap. The API Client (v0.2) and core workspace features are complete. SQLite database support is fully functional. SSH has a complete metadata CRUD boundary and session lifecycle simulation, but real SSH transport via russh is not yet connected. PostgreSQL and MySQL have metadata-only support; live connections are reserved for a future phase.
+
+Frontend hardening is in progress: the composition root has been extracted into focused components, hardcoded colors have been migrated to semantic tokens, and the production bundle is split into five chunks via Vite `manualChunks`.
 
 ## Verified Capabilities (Fully Implemented)
 
@@ -77,7 +79,7 @@ The project is between **v0.4 (Database)** and **v0.5 (Hardening)** on its roadm
 
 | Command | Result | Details |
 |---|---|---|
-| `pnpm run build` | PASS | tsc + vite build succeeded. 1979 modules. Output: 914 KB JS (255 KB gzip), 40 KB CSS (9 KB gzip). Warning: chunk > 500 KB. |
+| `pnpm run build` | PASS | tsc + vite build succeeded. 1990 modules. Output: 5 JS chunks (monaco 15 KB, vendor-radix 88 KB, vendor-tanstack 101 KB, xterm 334 KB, index 378 KB), 2 CSS chunks (xterm 5 KB, index 35 KB). All chunks under 500 KB. |
 | `pnpm run check:rust` | PASS | `cargo check --workspace` finished cleanly. |
 | `pnpm run check:rust:ssh` | PASS | `cargo check -p unfour-workspace --features ssh-native` finished cleanly. |
 | `pnpm run test:rust` | PASS | 30 tests passed, 0 failed across 7 crates. |
@@ -87,12 +89,9 @@ The project is between **v0.4 (Database)** and **v0.5 (Hardening)** on its roadm
 
 ## Known Limitations
 
-1. **Single JS bundle:** Vite produces one 914 KB chunk. No code splitting or dynamic imports configured. Monaco Editor and xterm are bundled into the main chunk.
-2. **No frontend linter:** `package.json` has no lint script. No `.eslintrc` or `biome.json` found.
-3. **No frontend tests:** No test framework (vitest, jest) configured for TypeScript packages.
-4. **Hardcoded Tailwind colors:** `apps/desktop/src/App.tsx` contains 23 instances of hardcoded `slate-*`, `white`, `rose-*`, `teal-*` color classes instead of semantic `--u-color-*` tokens. 7 additional instances exist across `packages/ui` and `packages/api-debugger`.
-5. **Mock fallback size:** `packages/command-client/src/tauri.ts` contains ~900 lines of mock implementation for browser-only development. This is intentional but adds maintenance cost.
-6. **App.tsx size:** At 954 lines, `apps/desktop/src/App.tsx` mixes shell composition, workspace CRUD dialogs, sidebar routing, window controls, and module switching in a single file.
-7. **CSP disabled:** `tauri.conf.json` sets `security.csp: null`, meaning no Content Security Policy is enforced.
-8. **Deprecated doc:** `docs/architecture/module-boundaries.md` is marked as deprecated but still present.
-9. **No package-level README:** None of the 7 frontend packages or 7 Rust crates have README files.
+1. **No frontend linter:** `package.json` has no lint script. No `.eslintrc` or `biome.json` found.
+2. **No frontend tests:** No test framework (vitest, jest) configured for TypeScript packages.
+3. **Mock fallback size:** `packages/command-client/src/tauri.ts` contains ~900 lines of mock implementation for browser-only development. This is intentional but adds maintenance cost.
+4. **CSP disabled:** `tauri.conf.json` sets `security.csp: null`, meaning no Content Security Policy is enforced.
+5. **No package-level README:** None of the 7 frontend packages or 7 Rust crates have README files.
+6. **CSS overlay values:** `.workspace-card` in `styles.css` still uses raw `rgba(255, 255, 255, ...)` values; these are intentional light-overlay effects with no semantic token equivalent.

@@ -1,34 +1,24 @@
 # NEXT_STEPS.md
 
-> Read-only checkpoint scan. These are candidate tasks only. None have been executed.
+> Read-only checkpoint scan. These are candidate tasks only. None have been executed unless marked completed.
 
 ---
 
-## TASK-01: Extract App.tsx into focused components
+## TASK-01: Extract App.tsx into focused components [COMPLETED]
 
 | Field | Value |
 |---|---|
-| Goal | Break `apps/desktop/src/App.tsx` (954 lines) into smaller, focused modules: `AppTitleBar`, `WorkspaceMenu`/`WorkspaceDialogs`, `ModuleSidebar`, `WindowControls`, and a slim `App` composition root. |
-| Scope | `apps/desktop/src/` only. Create new files under `apps/desktop/src/components/` (currently empty). |
-| Forbidden | Do not modify any `packages/*` or `crates/*` files. Do not change backend call chains. Do not add new dependencies. |
-| Risk | Medium. Large refactor touching the composition root. Risk of temporarily breaking module wiring. Requires careful extraction of prop drilling and shared state. |
-| Prerequisites | None. |
-| Acceptance criteria | `App.tsx` is under 200 lines. Each extracted component is in its own file. `pnpm run build` passes. Visual behavior is identical. No new `any` types introduced. |
-| Independent commit | Yes |
+| Status | Completed in `refactor(desktop): extract app shell components` |
+| Result | App.tsx reduced from 954 to 199 lines. Extracted: `AppTitleBar`, `ModuleSidebar`, `WindowControls`, `WorkspaceMenu`, `WorkspaceDialogs`, `BottomPanelPlaceholder`, `StatusBarPlaceholder`, `RightInspectorPlaceholder`, utilities, and hooks into `apps/desktop/src/components/`. |
 
 ---
 
-## TASK-02: Replace hardcoded Tailwind colors with semantic tokens
+## TASK-02: Replace hardcoded Tailwind colors with semantic tokens [COMPLETED]
 
 | Field | Value |
 |---|---|
-| Goal | Replace all 23 hardcoded Tailwind color classes in `App.tsx` (and 7 in feature packages) with semantic `--u-color-*` CSS custom properties. |
-| Scope | `apps/desktop/src/App.tsx`, `packages/ui/src/badge.tsx`, `packages/api-debugger/src/components/ApiRequestEditor.tsx`, `packages/api-debugger/src/components/ResponseTabs.tsx`, `packages/api-debugger/src/components/RequestParamsTabs.tsx`. May need to add new tokens to `packages/ui/src/styles.css` if semantic equivalents don't exist. |
-| Forbidden | Do not change component behavior, layout, or backend logic. Do not modify `crates/*`. |
-| Risk | Low-Medium. Some semantic tokens may not yet exist (e.g., `--u-color-danger`, `--u-color-overlay`). May need to define 2-3 new tokens. Visual regression risk is low since colors should map closely to existing tokens. |
-| Prerequisites | TASK-01 is helpful (reduces App.tsx size) but not required. |
-| Acceptance criteria | Zero instances of `slate-*`, `rose-*`, `teal-*`, or `bg-white` in `apps/desktop/src/App.tsx`. All colors use `var(--u-color-*)`. `pnpm run build` passes. Visual appearance is consistent with current design. |
-| Independent commit | Yes |
+| Status | Completed in `chore(frontend): complete hardening cleanup batch` |
+| Result | All 23 hardcoded Tailwind color classes in App.tsx and 7 in feature packages migrated to `--u-color-*` / `--u-badge-*` tokens. CSS-level hex values in `styles.css` migrated (`.subpanel`, `.data-table`, scrollbar). 2 new tokens added (`--u-color-scrollbar`, `--u-color-scrollbar-hover`). |
 
 ---
 
@@ -88,17 +78,12 @@
 
 ---
 
-## TASK-07: Implement Vite code splitting
+## TASK-07: Implement Vite code splitting [COMPLETED]
 
 | Field | Value |
 |---|---|
-| Goal | Configure Vite `build.rollupOptions.output.manualChunks` to split the 914 KB bundle into smaller chunks. Target: separate Monaco Editor, xterm, and application code into independent chunks for better caching and initial load. |
-| Scope | `apps/desktop/vite.config.ts` only. |
-| Forbidden | Do not modify any source code. Do not change build targets or Tauri configuration. |
-| Risk | Low. Configuration-only change. Risk is that chunk boundaries may affect runtime module loading order. |
-| Prerequisites | None. |
-| Acceptance criteria | Production build produces multiple chunks, each under 500 KB. Vite chunk size warning is eliminated. `pnpm run build` passes. App loads correctly in both Tauri and browser mock mode. |
-| Independent commit | Yes |
+| Status | Completed in `chore(frontend): complete hardening cleanup batch` |
+| Result | Configured `manualChunks` in `vite.config.ts`. Production build produces 5 JS chunks: monaco (15 KB), vendor-radix (88 KB), vendor-tanstack (101 KB), xterm (334 KB), index (378 KB). All under 500 KB. Vite chunk size warning eliminated. |
 
 ---
 
@@ -116,17 +101,12 @@
 
 ---
 
-## TASK-09: Remove deprecated module-boundaries.md
+## TASK-09: Remove deprecated module-boundaries.md [COMPLETED]
 
 | Field | Value |
 |---|---|
-| Goal | Delete `docs/architecture/module-boundaries.md` since it is marked as DEPRECATED and superseded by `package-boundaries.md`. |
-| Scope | `docs/architecture/module-boundaries.md` only. |
-| Forbidden | Do not modify any other files. |
-| Risk | None. |
-| Prerequisites | Verify no other files reference `module-boundaries.md`. |
-| Acceptance criteria | File is removed. No broken links in other docs. |
-| Independent commit | Yes |
+| Status | Completed in `chore(frontend): complete hardening cleanup batch` |
+| Result | `docs/architecture/module-boundaries.md` deleted. No remaining references in source code; checkpoint docs updated. |
 
 ---
 
@@ -146,13 +126,9 @@
 
 ## Recommended Priority Order
 
-1. **TASK-03** (linter) -- establishes quality gate for all subsequent work
-2. **TASK-01** (extract App.tsx) -- highest-leverage structural improvement
-3. **TASK-02** (semantic tokens) -- visual consistency, follows naturally from TASK-01
-4. **TASK-07** (code splitting) -- quick win, config-only
-5. **TASK-05** (real SSH) -- highest-value feature gap
-6. **TASK-04** (vitest) -- testing infrastructure
-7. **TASK-08** (Rust tests) -- backend coverage
-8. **TASK-06** (PostgreSQL/MySQL) -- second-highest feature gap
-9. **TASK-10** (terminal search) -- small feature completion
-10. **TASK-09** (remove deprecated doc) -- trivial cleanup
+1. **TASK-05** (real SSH) -- highest-value feature gap, core roadmap item
+2. **TASK-03** (linter) -- establishes quality gate for all subsequent work
+3. **TASK-04** (vitest) -- testing infrastructure for frontend packages
+4. **TASK-08** (Rust tests) -- backend test coverage for untested services
+5. **TASK-06** (PostgreSQL/MySQL) -- second-highest feature gap
+6. **TASK-10** (terminal search) -- small feature completion

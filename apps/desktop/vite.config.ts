@@ -30,4 +30,24 @@ export default defineConfig(async () => ({
       ignored: ["**/src-tauri/**"],
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id: string) {
+          if (id.includes("monaco-editor") || id.includes("@monaco-editor")) {
+            return "monaco";
+          }
+          if (id.includes("@xterm")) {
+            return "xterm";
+          }
+          if (id.includes("@tanstack")) {
+            return "vendor-tanstack";
+          }
+          if (id.includes("@radix-ui")) {
+            return "vendor-radix";
+          }
+        },
+      },
+    },
+  },
 }));
