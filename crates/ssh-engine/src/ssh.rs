@@ -15,12 +15,19 @@ use uuid::Uuid;
 #[cfg(feature = "ssh-native")]
 use crate::host_key::HostKeyStore;
 
+/// Callback invoked when terminal output data arrives from a native SSH channel.
+/// The payload is a JSON string with `sessionId` and `data` fields.
+#[cfg(feature = "ssh-native")]
+pub type TerminalOutputCallback = Arc<dyn Fn(String) + Send + Sync + 'static>;
+
 #[derive(Clone)]
 pub struct SshService {
     db: LocalDb,
     #[cfg_attr(not(feature = "ssh-native"), allow(dead_code))]
     secret_store: SecretStore,
     sessions: Arc<Mutex<HashMap<String, SshSessionState>>>,
+    #[cfg(feature = "ssh-native")]
+    on_terminal_output: Arc<Mutex<Option<TerminalOutputCallback>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -34,6 +41,7 @@ struct SshSessionState {
 #[cfg(feature = "ssh-native")]
 struct NativeSshHandle {
     handle: std::sync::Arc<tokio::sync::Mutex<russh::client::Handle<SshClientHandler>>>,
+    channel: std::sync::Arc<tokio::sync::Mutex<russh::Channel<russh::client::Msg>>>,
 }
 
 #[cfg(feature = "ssh-native")]
@@ -41,6 +49,7 @@ impl Clone for NativeSshHandle {
     fn clone(&self) -> Self {
         Self {
             handle: self.handle.clone(),
+            channel: self.channel.clone(),
         }
     }
 }
@@ -99,6 +108,18 @@ impl SshService {
             db,
             secret_store,
             sessions: Arc::new(Mutex::new(HashMap::new())),
+            #[cfg(feature = "ssh-native")]
+            on_terminal_output: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    /// Register a callback invoked for every chunk of terminal output data
+    /// received from a native SSH channel.  The payload is a JSON string
+    /// suitable for forwarding as a Tauri event body.
+    #[cfg(feature = "ssh-native")]
+    pub fn set_terminal_output_callback(&self, callback: TerminalOutputCallback) {
+        if let Ok(mut slot) = self.on_terminal_output.lock() {
+            *slot = Some(callback);
         }
     }
 
@@ -247,7 +268,7 @@ impl SshService {
         Ok(sessions)
     }
 
-    pub fn send_input(&self, input: SshSessionInput) -> AppResult<SshSessionEvent> {
+    pub async fn send_input(&self, input: SshSessionInput) -> AppResult<SshSessionEvent> {
         validate_workspace_id(&input.workspace_id)?;
         validate_session_id(&input.session_id)?;
         if input.data.is_empty() {
@@ -255,6 +276,31 @@ impl SshService {
                 "ssh input cannot be empty".to_string(),
             ));
         }
+
+        // Write to native channel if available.
+        #[cfg(feature = "ssh-native")]
+        {
+            let native_handle: Option<NativeSshHandle> = {
+                let sessions = self
+                    .sessions
+                    .lock()
+                    .map_err(|_| AppError::Config("ssh session lock poisoned".to_string()))?;
+                let state =
+                    session_for_workspace(&sessions, &input.workspace_id, &input.session_id)?;
+                ensure_session_active(state)?;
+                state.native_handle.clone()
+            };
+            if let Some(native) = native_handle {
+                let channel = native.channel.lock().await;
+                channel
+                    .data_bytes(input.data.clone().into_bytes())
+                    .await
+                    .map_err(|e| {
+                        AppError::Config(format!("failed to write to ssh channel: {}", e))
+                    })?;
+            }
+        }
+
         let mut sessions = self
             .sessions
             .lock()
@@ -277,15 +323,38 @@ impl SshService {
             data: "Input accepted by SSH PTY stream.\r\n".to_string(),
             created_at: now.clone(),
         };
+        #[cfg(not(feature = "ssh-native"))]
         state.events.push(event.clone());
         state.summary.updated_at = now;
         Ok(event)
     }
 
-    pub fn resize(&self, input: SshResizeInput) -> AppResult<SshSessionEvent> {
+    pub async fn resize(&self, input: SshResizeInput) -> AppResult<SshSessionEvent> {
         validate_workspace_id(&input.workspace_id)?;
         validate_session_id(&input.session_id)?;
         validate_pty_size(input.cols, input.rows)?;
+
+        // Propagate resize to native channel.
+        #[cfg(feature = "ssh-native")]
+        {
+            let native_handle: Option<NativeSshHandle> = {
+                let sessions = self
+                    .sessions
+                    .lock()
+                    .map_err(|_| AppError::Config("ssh session lock poisoned".to_string()))?;
+                let state =
+                    session_for_workspace(&sessions, &input.workspace_id, &input.session_id)?;
+                ensure_session_active(state)?;
+                state.native_handle.clone()
+            };
+            if let Some(native) = native_handle {
+                let channel = native.channel.lock().await;
+                let _ = channel
+                    .window_change(input.cols as u32, input.rows as u32, 0, 0)
+                    .await;
+            }
+        }
+
         let mut sessions = self
             .sessions
             .lock()
@@ -327,9 +396,14 @@ impl SshService {
             state.native_handle.take()
         };
 
-        // Disconnect native transport outside the mutex lock.
+        // Close channel and disconnect native transport outside the mutex lock.
         #[cfg(feature = "ssh-native")]
         if let Some(native) = native_handle {
+            // Close the channel first so the reader task terminates.
+            {
+                let channel = native.channel.lock().await;
+                let _ = channel.close().await;
+            }
             let handle = native.handle.lock().await;
             let _ = handle
                 .disconnect(russh::Disconnect::ByApplication, "session closed", "en")
@@ -399,7 +473,7 @@ impl SshService {
             "simulated"
         };
         serde_json::json!({
-            "status": "transport-phase-1",
+            "status": "terminal-streaming",
             "transport": transport,
             "features": [
                 "connection-metadata-crud",
@@ -408,7 +482,10 @@ impl SshService {
                 "host-key-tofu",
                 "graceful-close",
                 "session-close",
-                "redacted-log-export"
+                "redacted-log-export",
+                "pty-channel",
+                "terminal-streaming",
+                "resize-propagation"
             ]
         })
     }
@@ -492,6 +569,11 @@ impl SshService {
         // Disconnect native handles outside the mutex lock.
         #[cfg(feature = "ssh-native")]
         for native in native_handles {
+            // Close the channel first.
+            {
+                let channel = native.channel.lock().await;
+                let _ = channel.close().await;
+            }
             let handle = native.handle.lock().await;
             let _ = handle
                 .disconnect(russh::Disconnect::ByApplication, "connection deleted", "en")
@@ -622,11 +704,79 @@ impl SshService {
             ));
         }
 
-        // Build session summary.
+        // Build session summary (needed for cols/rows).
         let now = Utc::now().to_rfc3339();
         let session_id = Uuid::new_v4().to_string();
         let cols = input.cols.unwrap_or(120).clamp(20, 300);
         let rows = input.rows.unwrap_or(32).clamp(8, 100);
+
+        // Open an interactive session channel with PTY.
+        let channel = handle
+            .channel_open_session()
+            .await
+            .map_err(|e| AppError::Config(format!("failed to open ssh channel: {}", e)))?;
+
+        // Request PTY allocation.
+        channel
+            .request_pty(true, "xterm-256color", cols as u32, rows as u32, 0, 0, &[])
+            .await
+            .map_err(|e| AppError::Config(format!("failed to request ssh pty: {}", e)))?;
+
+        // Start the user's shell.
+        channel
+            .request_shell(true)
+            .await
+            .map_err(|e| AppError::Config(format!("failed to start ssh shell: {}", e)))?;
+
+        // Wrap channel in Arc<Mutex> for shared access.
+        let channel_arc = std::sync::Arc::new(tokio::sync::Mutex::new(channel));
+
+        // Spawn a background reader task for terminal output.
+        let reader_channel = channel_arc.clone();
+        let reader_session_id = session_id.clone();
+        let reader_callback = {
+            let cb = self
+                .on_terminal_output
+                .lock()
+                .ok()
+                .and_then(|slot| slot.clone());
+            cb
+        };
+        tokio::spawn(async move {
+            loop {
+                let msg = {
+                    let mut ch = reader_channel.lock().await;
+                    ch.wait().await
+                };
+                match msg {
+                    Some(russh::ChannelMsg::Data { data }) => {
+                        let text = String::from_utf8_lossy(&data).to_string();
+                        if let Some(ref callback) = reader_callback {
+                            let payload = serde_json::json!({
+                                "sessionId": reader_session_id,
+                                "data": text,
+                            })
+                            .to_string();
+                            callback(payload);
+                        }
+                    }
+                    Some(russh::ChannelMsg::Close) | Some(russh::ChannelMsg::Eof) => break,
+                    None => break,
+                    _ => {}
+                }
+            }
+            // Emit close event so the frontend updates.
+            if let Some(ref callback) = reader_callback {
+                let payload = serde_json::json!({
+                    "sessionId": reader_session_id,
+                    "data": "",
+                    "closed": true,
+                })
+                .to_string();
+                callback(payload);
+            }
+        });
+
         let summary = SshSessionSummary {
             session_id: session_id.clone(),
             workspace_id: connection.workspace_id.clone(),
@@ -646,13 +796,14 @@ impl SshService {
                 session_id: session_id.clone(),
                 kind: "output".to_string(),
                 data: format!(
-                    "Connected to {}@{} via native transport with {} auth.\r\n",
-                    summary.username, summary.host, summary.auth_kind
+                    "Connected to {}@{} via native transport with {} auth. PTY {}x{} allocated.\r\n",
+                    summary.username, summary.host, summary.auth_kind, cols, rows
                 ),
                 created_at: now,
             }],
             native_handle: Some(NativeSshHandle {
                 handle: std::sync::Arc::new(tokio::sync::Mutex::new(handle)),
+                channel: channel_arc,
             }),
         };
 
@@ -843,6 +994,18 @@ fn session_for_workspace_mut<'a>(
         .ok_or_else(|| AppError::NotFound("ssh session".to_string()))
 }
 
+#[cfg(feature = "ssh-native")]
+fn session_for_workspace<'a>(
+    sessions: &'a HashMap<String, SshSessionState>,
+    workspace_id: &str,
+    session_id: &str,
+) -> AppResult<&'a SshSessionState> {
+    sessions
+        .get(session_id)
+        .filter(|state| state.summary.workspace_id == workspace_id)
+        .ok_or_else(|| AppError::NotFound("ssh session".to_string()))
+}
+
 fn ensure_session_active(state: &SshSessionState) -> AppResult<()> {
     if state.summary.status != "active" {
         return Err(AppError::Validation("ssh session is closed".to_string()));
@@ -997,6 +1160,7 @@ mod tests {
         assert!(!stored_config.0.contains("ssh-key-passphrase-1"));
     }
 
+    #[cfg(not(feature = "ssh-native"))]
     #[tokio::test]
     async fn ssh_session_lifecycle_supports_connect_input_resize_close_and_export() {
         let (service, workspace_id, _) = service_with_workspaces().await;
@@ -1024,6 +1188,7 @@ mod tests {
                 session_id: session.session_id.clone(),
                 data: "echo ok\npassword=secret\n".to_string(),
             })
+            .await
             .expect("send ssh input");
         assert_eq!(output.kind, "output");
 
@@ -1034,6 +1199,7 @@ mod tests {
                 cols: 120,
                 rows: 40,
             })
+            .await
             .expect("resize ssh pty");
         assert_eq!(resize.kind, "resize");
 
@@ -1052,11 +1218,13 @@ mod tests {
             .expect("close session");
         assert_eq!(closed.status, "closed");
 
-        let rejected = service.send_input(SshSessionInput {
-            workspace_id: workspace_id.clone(),
-            session_id: session.session_id.clone(),
-            data: "whoami\n".to_string(),
-        });
+        let rejected = service
+            .send_input(SshSessionInput {
+                workspace_id: workspace_id.clone(),
+                session_id: session.session_id.clone(),
+                data: "whoami\n".to_string(),
+            })
+            .await;
         assert!(matches!(rejected, Err(AppError::Validation(_))));
 
         let export = service
@@ -1070,6 +1238,7 @@ mod tests {
         assert!(export.redacted);
     }
 
+    #[cfg(not(feature = "ssh-native"))]
     #[tokio::test]
     async fn deleting_ssh_connection_closes_active_sessions() {
         let (service, workspace_id, _) = service_with_workspaces().await;
@@ -1098,6 +1267,7 @@ mod tests {
         assert_eq!(sessions[0].status, "closed");
     }
 
+    #[cfg(not(feature = "ssh-native"))]
     #[tokio::test]
     async fn repeated_close_does_not_panic_and_returns_stable_result() {
         let (service, workspace_id, _) = service_with_workspaces().await;
@@ -1171,5 +1341,162 @@ mod tests {
             let msg = err.to_string();
             assert!(!msg.contains("super-secret-password"));
         }
+    }
+
+    #[cfg(not(feature = "ssh-native"))]
+    #[tokio::test]
+    async fn async_send_input_and_resize_work_in_simulated_path() {
+        let (service, workspace_id, _) = service_with_workspaces().await;
+        let connection = service
+            .save_connection(password_input(&workspace_id))
+            .await
+            .expect("save ssh connection");
+        let session = service
+            .connect(SshConnectInput {
+                workspace_id: workspace_id.clone(),
+                connection_id: connection.id.clone(),
+                cols: Some(80),
+                rows: Some(24),
+            })
+            .await
+            .expect("connect ssh session");
+
+        // send_input is now async.
+        let event = service
+            .send_input(SshSessionInput {
+                workspace_id: workspace_id.clone(),
+                session_id: session.session_id.clone(),
+                data: "ls -la\n".to_string(),
+            })
+            .await
+            .expect("async send input");
+        assert_eq!(event.kind, "output");
+
+        // resize is now async.
+        let resize_event = service
+            .resize(SshResizeInput {
+                workspace_id: workspace_id.clone(),
+                session_id: session.session_id.clone(),
+                cols: 200,
+                rows: 50,
+            })
+            .await
+            .expect("async resize");
+        assert_eq!(resize_event.kind, "resize");
+        assert!(resize_event.data.contains("200x50"));
+
+        // Verify session dimensions were updated.
+        let sessions = service.list_sessions(workspace_id).expect("list sessions");
+        assert_eq!(sessions[0].cols, 200);
+        assert_eq!(sessions[0].rows, 50);
+    }
+
+    #[cfg(not(feature = "ssh-native"))]
+    #[tokio::test]
+    async fn multiple_sessions_handle_concurrent_input_and_close() {
+        let (service, workspace_id, _) = service_with_workspaces().await;
+        let connection = service
+            .save_connection(password_input(&workspace_id))
+            .await
+            .expect("save ssh connection");
+
+        let session_a = service
+            .connect(SshConnectInput {
+                workspace_id: workspace_id.clone(),
+                connection_id: connection.id.clone(),
+                cols: None,
+                rows: None,
+            })
+            .await
+            .expect("connect session a");
+
+        let session_b = service
+            .connect(SshConnectInput {
+                workspace_id: workspace_id.clone(),
+                connection_id: connection.id.clone(),
+                cols: None,
+                rows: None,
+            })
+            .await
+            .expect("connect session b");
+
+        // Send input to both sessions concurrently.
+        let (result_a, result_b) = tokio::join!(
+            service.send_input(SshSessionInput {
+                workspace_id: workspace_id.clone(),
+                session_id: session_a.session_id.clone(),
+                data: "echo A\n".to_string(),
+            }),
+            service.send_input(SshSessionInput {
+                workspace_id: workspace_id.clone(),
+                session_id: session_b.session_id.clone(),
+                data: "echo B\n".to_string(),
+            }),
+        );
+        assert!(result_a.is_ok());
+        assert!(result_b.is_ok());
+
+        // Close session a, session b remains active.
+        service
+            .close_session(SshCloseInput {
+                workspace_id: workspace_id.clone(),
+                session_id: session_a.session_id.clone(),
+            })
+            .await
+            .expect("close session a");
+
+        // Session b should still accept input.
+        let event_b = service
+            .send_input(SshSessionInput {
+                workspace_id: workspace_id.clone(),
+                session_id: session_b.session_id.clone(),
+                data: "whoami\n".to_string(),
+            })
+            .await
+            .expect("session b still active");
+        assert_eq!(event_b.kind, "output");
+
+        let sessions = service.list_sessions(workspace_id).expect("list sessions");
+        let closed = sessions
+            .iter()
+            .find(|s| s.session_id == session_a.session_id)
+            .unwrap();
+        let active = sessions
+            .iter()
+            .find(|s| s.session_id == session_b.session_id)
+            .unwrap();
+        assert_eq!(closed.status, "closed");
+        assert_eq!(active.status, "active");
+    }
+
+    #[cfg(feature = "ssh-native")]
+    #[tokio::test]
+    async fn terminal_output_callback_can_be_registered() {
+        let (service, _, _) = service_with_workspaces().await;
+
+        let received = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let received_clone = received.clone();
+
+        service.set_terminal_output_callback(std::sync::Arc::new(move |payload| {
+            received_clone.lock().unwrap().push(payload);
+        }));
+
+        // Verify the callback is stored.
+        let has_callback = service
+            .on_terminal_output
+            .lock()
+            .map(|slot| slot.is_some())
+            .unwrap_or(false);
+        assert!(has_callback, "callback should be registered");
+
+        // Invoke the callback manually and verify the payload.
+        if let Ok(slot) = service.on_terminal_output.lock() {
+            if let Some(ref cb) = *slot {
+                cb(r#"{"sessionId":"test","data":"hello"}"#.to_string());
+            }
+        }
+        let items = received.lock().unwrap();
+        assert_eq!(items.len(), 1);
+        assert!(items[0].contains("hello"));
     }
 }

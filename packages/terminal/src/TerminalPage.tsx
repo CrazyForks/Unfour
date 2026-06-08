@@ -5,9 +5,7 @@ import {
   connectSshSession,
   deleteSshConnection,
   exportSshLog,
-  resizeSshSession,
   saveSshConnection,
-  sendSshInput,
   type SshConnectionInput,
   type SshSessionSummary,
 } from "@unfour/command-client";
@@ -20,7 +18,6 @@ import { useSshConnections } from "./hooks/useSshConnections";
 import { useTerminalSessions } from "./hooks/useTerminalSessions";
 import { useTerminalSplit } from "./hooks/useTerminalSplit";
 import {
-  redactTerminalLog,
   useTerminalStore,
 } from "./model/terminal-state";
 import {
@@ -47,9 +44,7 @@ export function TerminalPage({ workspaceId }: { workspaceId: string }) {
   const setExportedLog = useTerminalStore((state) => state.setExportedLog);
   const setSearchOpen = useTerminalStore((state) => state.setSearchOpen);
   const startTerminalSession = useTerminalStore((state) => state.startTerminalSession);
-  const setTerminalInput = useTerminalStore((state) => state.setTerminalInput);
   const terminalEvents = useTerminalStore((state) => state.terminalEvents);
-  const terminalInput = useTerminalStore((state) => state.terminalInput);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState<SshConnectionInput>(() =>
     defaultSshConnectionInput(workspaceId),
@@ -157,42 +152,6 @@ export function TerminalPage({ workspaceId }: { workspaceId: string }) {
     },
   });
 
-  const inputMutation = useMutation({
-    mutationFn: () =>
-      sendSshInput({
-        workspaceId,
-        sessionId: activeSessionId ?? "",
-        data: terminalInput,
-      }),
-    onSuccess: (event) => {
-      appendTerminalEvents([
-        {
-          sessionId: event.sessionId,
-          kind: "input",
-          data: redactTerminalLog(terminalInput),
-          createdAt: new Date().toISOString(),
-        },
-        event,
-      ]);
-      setTerminalInput("");
-      queryClient.invalidateQueries({ queryKey: ["ssh-sessions", workspaceId] });
-    },
-  });
-
-  const resizeMutation = useMutation({
-    mutationFn: () =>
-      resizeSshSession({
-        workspaceId,
-        sessionId: activeSessionId ?? "",
-        cols: activeSession?.cols === 120 ? 140 : 120,
-        rows: activeSession?.rows === 32 ? 40 : 32,
-      }),
-    onSuccess: (event) => {
-      appendTerminalEvents([event]);
-      queryClient.invalidateQueries({ queryKey: ["ssh-sessions", workspaceId] });
-    },
-  });
-
   const closeMutation = useMutation({
     mutationFn: (sessionId: string) => closeSshSession({ workspaceId, sessionId }),
     onSuccess: (session) => {
@@ -254,8 +213,6 @@ export function TerminalPage({ workspaceId }: { workspaceId: string }) {
     connectionsQuery.error ??
     sessionsQuery.error ??
     connectMutation.error ??
-    inputMutation.error ??
-    resizeMutation.error ??
     closeMutation.error ??
     exportMutation.error;
 
@@ -273,7 +230,6 @@ export function TerminalPage({ workspaceId }: { workspaceId: string }) {
         onNewConnection={newConnection}
         onNewSession={connectSelectedConnection}
         onOpenPreferences={openConnectionSettings}
-        onResize={() => resizeMutation.mutate()}
         onSearch={() => setSearchOpen(true)}
         onSplit={split.setMode}
         selectedConnectionName={selectedConnection?.name}
@@ -294,13 +250,8 @@ export function TerminalPage({ workspaceId }: { workspaceId: string }) {
               ? "Select an SSH connection and start a session."
               : "No SSH connections are configured for this workspace."
           }
-          inputDisabled={!activeSessionId || activeSession?.status !== "active"}
-          inputPending={inputMutation.isPending}
-          inputValue={terminalInput}
           onCloseSession={(sessionId) => closeMutation.mutate(sessionId)}
-          onInputChange={setTerminalInput}
           onSelectSession={setActiveSessionId}
-          onSendInput={() => inputMutation.mutate()}
           sessions={sessionTabs}
           splitMode={split.mode}
         />

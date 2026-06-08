@@ -1,21 +1,18 @@
 import { useEffect, useRef } from "react";
-import { Send } from "lucide-react";
+import { listen } from "@tauri-apps/api/event";
 import { FitAddon } from "@xterm/addon-fit";
+import { SearchAddon } from "@xterm/addon-search";
 import { Terminal as XTerm } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import type { SshSessionEvent, SshSessionSummary } from "@unfour/command-client";
-import { Button, Input, cn } from "@unfour/ui";
-import { redactTerminalLog } from "../model/terminal-state";
+import { cn } from "@unfour/ui";
+import { redactTerminalLog, useTerminalStore } from "../model/terminal-state";
 
 export function TerminalPane({
   active,
   className,
   events,
   inputDisabled,
-  inputPending,
-  inputValue,
-  onInputChange,
-  onSendInput,
   readOnly,
   session,
 }: {
@@ -23,18 +20,73 @@ export function TerminalPane({
   className?: string;
   events: SshSessionEvent[];
   inputDisabled?: boolean;
-  inputPending?: boolean;
-  inputValue: string;
-  onInputChange: (value: string) => void;
-  onSendInput: () => void;
   readOnly?: boolean;
   session: SshSessionSummary | null;
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<XTerm | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
+  const searchAddonRef = useRef<SearchAddon | null>(null);
   const renderedEventsRef = useRef(0);
   const renderedSessionIdRef = useRef<string | null>(null);
+
+  const activeSessionId = useTerminalStore((s) => s.activeSessionId);
+  const appendTerminalEvents = useTerminalStore((s) => s.appendTerminalEvents);
+  const setTerminalSearchAddon = useTerminalStore((s) => s.setTerminalSearchAddon);
+
+  // Mutable callback refs – updated in useEffect (not during render).
+  const onSendInputRef = useRef<((data: string) => void) | null>(null);
+  const onResizeRef = useRef<
+    ((sessionId: string, cols: number, rows: number) => void) | null
+  >(null);
+  const appendRef = useRef(appendTerminalEvents);
+  const activeSessionIdRef = useRef(activeSessionId);
+
+  // Keep callback refs in sync with latest store / prop values.
+  useEffect(() => {
+    appendRef.current = appendTerminalEvents;
+    activeSessionIdRef.current = activeSessionId;
+
+    onSendInputRef.current =
+      activeSessionId && !readOnly && !inputDisabled
+        ? (data: string) => {
+            import("@unfour/command-client").then(({ sendSshInput }) => {
+              sendSshInput({
+                workspaceId: session?.workspaceId ?? "",
+                sessionId: activeSessionId,
+                data,
+              }).catch(() => {
+                /* swallow – output stream still works */
+              });
+            });
+          }
+        : null;
+
+    onResizeRef.current = activeSessionId
+      ? (sessionId: string, cols: number, rows: number) => {
+          import("@unfour/command-client").then(({ resizeSshSession }) => {
+            resizeSshSession({
+              workspaceId: session?.workspaceId ?? "",
+              sessionId,
+              cols,
+              rows,
+            }).catch(() => {
+              /* resize failures are non-fatal */
+            });
+          });
+        }
+      : null;
+  }, [
+    activeSessionId,
+    appendTerminalEvents,
+    inputDisabled,
+    readOnly,
+    session?.workspaceId,
+  ]);
+
+  // ------------------------------------------------------------------
+  // Terminal initialisation
+  // ------------------------------------------------------------------
 
   useEffect(() => {
     if (!hostRef.current) {
@@ -55,12 +107,77 @@ export function TerminalPane({
       },
     });
     const fitAddon = new FitAddon();
+    const searchAddon = new SearchAddon();
     terminal.loadAddon(fitAddon);
+    terminal.loadAddon(searchAddon);
     terminal.open(hostRef.current);
     safeFit(fitAddon);
     terminalRef.current = terminal;
     fitAddonRef.current = fitAddon;
+    searchAddonRef.current = searchAddon;
+    setTerminalSearchAddon(searchAddon);
 
+    // ---------------------------------------------------------------
+    // Capture keyboard input from xterm
+    // ---------------------------------------------------------------
+    const dataDisposable = terminal.onData((data: string) => {
+      onSendInputRef.current?.(data);
+    });
+
+    // ---------------------------------------------------------------
+    // Detect resize changes from FitAddon
+    // ---------------------------------------------------------------
+    let lastCols = terminal.cols;
+    let lastRows = terminal.rows;
+    const resizeDisposable = terminal.onResize(({ cols, rows }) => {
+      if (cols !== lastCols || rows !== lastRows) {
+        lastCols = cols;
+        lastRows = rows;
+        const sid = activeSessionIdRef.current;
+        if (sid) {
+          onResizeRef.current?.(sid, cols, rows);
+        }
+      }
+    });
+
+    // ---------------------------------------------------------------
+    // Tauri event listener for streaming terminal output
+    // ---------------------------------------------------------------
+    let unlisten: (() => void) | null = null;
+    listen<{ sessionId: string; data: string; closed?: boolean }>(
+      "ssh://terminal-data",
+      (event) => {
+        const { sessionId, data, closed } = event.payload;
+        if (closed) {
+          appendRef.current([
+            {
+              sessionId,
+              kind: "close",
+              data: "SSH session disconnected.\r\n",
+              createdAt: new Date().toISOString(),
+            },
+          ]);
+          return;
+        }
+        if (data) {
+          terminal.write(data);
+          appendRef.current([
+            {
+              sessionId,
+              kind: "output",
+              data,
+              createdAt: new Date().toISOString(),
+            },
+          ]);
+        }
+      },
+    ).then((fn) => {
+      unlisten = fn;
+    });
+
+    // ---------------------------------------------------------------
+    // ResizeObserver for container size changes
+    // ---------------------------------------------------------------
     const resizeObserver =
       typeof ResizeObserver === "undefined"
         ? null
@@ -70,13 +187,23 @@ export function TerminalPane({
     resizeObserver?.observe(hostRef.current);
 
     return () => {
+      dataDisposable.dispose();
+      resizeDisposable.dispose();
       resizeObserver?.disconnect();
+      unlisten?.();
       terminal.dispose();
       terminalRef.current = null;
       fitAddonRef.current = null;
+      searchAddonRef.current = null;
       renderedEventsRef.current = 0;
+      setTerminalSearchAddon(null);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-time init
   }, []);
+
+  // ------------------------------------------------------------------
+  // Re-fit on active / session changes
+  // ------------------------------------------------------------------
 
   useEffect(() => {
     const fitAddon = fitAddonRef.current;
@@ -84,6 +211,10 @@ export function TerminalPane({
       window.requestAnimationFrame(() => safeFit(fitAddon));
     }
   }, [active, readOnly, session?.cols, session?.rows]);
+
+  // ------------------------------------------------------------------
+  // Render polling-based events (fallback for non-Tauri / mock mode)
+  // ------------------------------------------------------------------
 
   useEffect(() => {
     const terminal = terminalRef.current;
@@ -125,8 +256,6 @@ export function TerminalPane({
     renderedEventsRef.current = events.length;
   }, [events, session]);
 
-  const disabled = readOnly || inputDisabled || !session || session.status !== "active";
-
   return (
     <div
       className={cn(
@@ -136,32 +265,6 @@ export function TerminalPane({
       )}
     >
       <div className="min-h-0 flex-1 overflow-hidden p-2" ref={hostRef} />
-      {!readOnly && (
-        <div className="border-t border-[var(--u-color-terminal-border)] bg-[var(--u-color-terminal-input-bg)] p-2">
-          <div className="flex min-w-0 gap-2">
-            <Input
-              className="border-[var(--u-color-terminal-input-border)] bg-[var(--u-color-terminal-input-bg)] font-mono text-[var(--u-color-terminal-text)] placeholder:text-[var(--u-color-terminal-muted)]"
-              disabled={disabled}
-              onChange={(event) => onInputChange(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
-                  onSendInput();
-                }
-              }}
-              placeholder="Command input"
-              value={inputValue}
-            />
-            <Button
-              disabled={disabled || !inputValue || inputPending}
-              onClick={onSendInput}
-              type="button"
-            >
-              <Send size={14} />
-              Send
-            </Button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

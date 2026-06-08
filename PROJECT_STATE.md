@@ -1,55 +1,76 @@
 ## Result
 - Status: Completed
+- Batch: Terminal streaming integration
 - Commit: pending
-- Scope violations: No
 
 ## Modified Files
-- `crates/ssh-engine/Cargo.toml` — added `unfour-secret-store`, `ssh-key`, `tokio` dependencies; expanded `ssh-native` feature
-- `crates/ssh-engine/src/lib.rs` — added `host_key` module export
-- `crates/ssh-engine/src/host_key.rs` — new: TOFU host-key verification with `HostKeyStore`
-- `crates/ssh-engine/src/ssh.rs` — rewritten: native russh transport, password auth from SecretStore, graceful close, idempotent close
-- `crates/local-storage/src/local_db.rs` — added `ssh_host_keys` migration
-- `apps/desktop/src-tauri/src/command_bus.rs` — pass SecretStore to SshService; async close_session
-- `docs/engineering/security.md` — documented host-key verification ADR
+
+### Backend (Rust)
+- `crates/ssh-engine/src/ssh.rs` — PTY channel lifecycle, async send_input/resize, terminal output callback, channel close
+- `crates/ssh-engine/src/lib.rs` — exported `TerminalOutputCallback`
+- `crates/ssh-engine/Cargo.toml` — (no new deps, `futures-lite` was added then removed)
+- `apps/desktop/src-tauri/src/command_bus.rs` — terminal output callback wired to Tauri events, async send_input/resize, stored AppHandle
+- `apps/desktop/src-tauri/capabilities/default.json` — added `core:event:default` permission
+
+### Frontend (TypeScript)
+- `packages/terminal/package.json` — added `@tauri-apps/api`, `@xterm/addon-search`
+- `packages/terminal/src/components/TerminalPane.tsx` — Tauri event listener, xterm onData input capture, resize propagation, search addon init
+- `packages/terminal/src/components/TerminalSearchBar.tsx` — wired search addon (findNext/findPrevious/clearDecorations)
+- `packages/terminal/src/components/TerminalSplitView.tsx` — simplified props (removed input box)
+- `packages/terminal/src/components/TerminalWorkspace.tsx` — simplified props
+- `packages/terminal/src/components/TerminalModuleToolbar.tsx` — onResize made optional
+- `packages/terminal/src/TerminalPage.tsx` — removed input/resize mutations (now in TerminalPane)
+- `packages/terminal/src/model/terminal-state.ts` — added `terminalSearchAddon` + `setTerminalSearchAddon`
+- `packages/terminal/src/model/terminal-state.test.ts` — new: 5 tests for store behavior
 
 ## Verification
 - `cargo fmt --check` — PASS
-- `cargo test --workspace` — PASS (46 tests, 7 new)
-- `cargo check --workspace` — PASS (no warnings)
+- `cargo test -p unfour-ssh-engine` — PASS (13 tests, 2 new)
+- `cargo test -p unfour-ssh-engine --features ssh-native` — PASS (9 tests, 1 new callback test)
+- `cargo check --workspace` — PASS
 - `cargo check -p unfour-workspace --features ssh-native` — PASS
+- `pnpm run lint` — PASS (0 errors)
+- `pnpm run test` — PASS (53 tests, 5 new)
 - `pnpm run build` — PASS
 
-## SSH Transport
-- **Real transport path:** `crates/ssh-engine/src/ssh.rs` under `#[cfg(feature = "ssh-native")]`. Uses `russh::client::connect` with a custom `Handler` for host-key verification.
-- **Feature flag behavior:** `ssh-native` enables real russh transport. Without the flag, the simulated/mock path remains fully functional. Both paths compile cleanly.
-- **Password auth flow:** Password is read from `SecretStore` via the stored `credential_ref`. The password is passed directly to `russh::client::Handle::authenticate_password` and never written to SQLite, logs, or error messages.
-- **Close behavior:** Closing a session sends a `Disconnect::ByApplication` to the SSH server (native path), updates the session status to "closed", and retains the session record for idempotency. Repeated close calls return the stored "closed" summary without error.
+## Terminal Streaming Architecture
 
-## Host Key Verification
-- **Storage location:** `ssh_host_keys` table in SQLite (`host TEXT, port INTEGER, fingerprint TEXT, created_at TEXT`), composite PK on `(host, port)`.
-- **First-connect behavior:** Records the server's SHA-256 fingerprint. Connection proceeds.
-- **Mismatch behavior:** Connection is rejected with a clear error message mentioning the host:port and the possibility of a MITM attack. The connection is never established.
-- **Future extension point:** The `HostKeyStore::verify_or_record` method is the single verification entry point. Future work can replace or extend it to support `known_hosts` file integration, user confirmation UI for fingerprint changes, or per-connection policy overrides.
+### Backend (ssh-engine)
+- **PTY lifecycle:** `connect_native` opens a session channel, requests PTY (`xterm-256color`), starts shell via `request_shell`. Channel stored in `NativeSshHandle` alongside the connection handle.
+- **Output streaming:** Background `tokio::spawn` task reads `ChannelMsg::Data` from the channel and invokes the `TerminalOutputCallback` with JSON payloads (`{sessionId, data}`).
+- **Input:** `send_input` (now async) writes bytes to the native channel via `data_bytes`. Simulated path remains synchronous.
+- **Resize:** `resize` (now async) calls `window_change` on the native channel. Simulated path updates internal state.
+- **Close:** `close_session` closes the channel first (terminating the reader task), then disconnects the connection.
+- **Output callback:** `set_terminal_output_callback` registers an `Arc<dyn Fn(String)>` that the reader task invokes. The `CommandBus` wires this to `app.emit("ssh://terminal-data", payload)`.
+
+### Frontend (terminal package)
+- **Event listener:** `TerminalPane` registers a Tauri `listen("ssh://terminal-data")` handler that writes data directly to xterm and appends events to the store.
+- **Input capture:** `terminal.onData` captures keyboard input and sends it via `sendSshInput` (dynamic import to avoid circular deps).
+- **Resize propagation:** `terminal.onResize` detects dimension changes from FitAddon and calls `resizeSshSession` with actual cols/rows.
+- **Search:** `@xterm/addon-search` initialized in TerminalPane, stored in zustand store, consumed by TerminalSearchBar for findNext/findPrevious/clearDecorations.
+- **Polling fallback:** Non-Tauri (mock) mode still works via the existing event-rendering path.
 
 ## Tests
-- **Added tests:**
-  - `host_key_first_connect_records_fingerprint` — TOFU first-connect records fingerprint
-  - `host_key_matching_fingerprint_succeeds` — matching fingerprint passes verification
-  - `host_key_mismatch_is_rejected` — mismatched fingerprint returns clear error
-  - `host_key_different_hosts_are_independent` — different hosts have separate fingerprints
-  - `host_key_different_ports_are_independent` — different ports have separate fingerprints
-  - `repeated_close_does_not_panic_and_returns_stable_result` — idempotent close
-  - `auth_failure_does_not_leak_password_in_error` — error sanitization strips secrets
-- **Real localhost SSH verification status:** NOT VERIFIED (no SSH server available in the current environment)
-- **Unverified areas:** PTY allocation, stdin/stdout streaming, Tauri event streaming, frontend terminal UI, private-key authentication
+- **New backend tests:**
+  - `async_send_input_and_resize_work_in_simulated_path` — verifies async send_input and resize
+  - `multiple_sessions_handle_concurrent_input_and_close` — concurrent operations, isolation
+  - `terminal_output_callback_can_be_registered` — callback registration and invocation (ssh-native only)
+- **New frontend tests:**
+  - `stores and clears the search addon reference`
+  - `preserves search addon across workspace activation`
+  - `appends terminal events from streaming`
+  - `clears events for a specific session`
+  - `toggles search open state`
+- **Real localhost SSH verification:** NOT VERIFIED (no SSH server available)
+- **Unverified areas:** End-to-end streaming with live SSH server, private-key authentication
 
 ## Checkpoint Refresh
-- **Resolved issues:** SSH host-key verification was listed as not implemented in security.md — now resolved with TOFU.
-- **Remaining issues:** OS keychain not implemented (still using keyring crate). PTY, streaming, events, and private-key auth remain unimplemented.
-- **Next recommended batch:** SSH transport phase 2 — PTY allocation, stdin/stdout streaming, Tauri events, xterm integration, resize.
+- **Resolved issues:** PTY allocation, stdin/stdout streaming, Tauri event streaming, frontend terminal input, terminal search, resize propagation — all implemented.
+- **Remaining issues:** Private-key auth, end-to-end verification with live SSH, reconnection on disconnect, terminal session persistence.
+- **Next recommended batch:** Private-key authentication support, connection health monitoring, reconnection logic.
 
 ## Scope Confirmation
 - Unrelated files changed: No
-- Dependencies added: `ssh-key` (0.7.0-rc.10, optional), `tokio` (optional, for timeout/sync), `unfour-secret-store` (direct dep for ssh-engine)
-- Public contracts changed: No (SshService API unchanged; `new()` signature updated to accept SecretStore, which is an internal construction change)
-- Backend call chain changed: Yes (close_session is now async; CommandBus passes SecretStore to SshService)
+- Dependencies added: `@tauri-apps/api` (terminal), `@xterm/addon-search` (terminal)
+- Public contracts changed: `send_input` and `resize` are now async; `SshService::set_terminal_output_callback` added
+- Backend call chain changed: CommandBus now sets terminal output callback in `new()` to emit Tauri events

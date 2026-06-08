@@ -54,7 +54,7 @@ export function TerminalModuleToolbar({
   onNewConnection: () => void;
   onNewSession: () => void;
   onOpenPreferences: () => void;
-  onResize: () => void;
+  onResize?: () => void;
   onSearch: () => void;
   onSplit: (mode: TerminalSplitMode) => void;
   selectedConnectionName?: string;
@@ -146,7 +146,7 @@ export function TerminalModuleToolbar({
               <Copy size={13} />
               Clear Terminal
             </DropdownMenuItem>
-            <DropdownMenuItem disabled={!canUseSessionActions} onSelect={onResize}>
+            <DropdownMenuItem disabled={!canUseSessionActions || !onResize} onSelect={onResize}>
               <RotateCw size={13} />
               Resize PTY
             </DropdownMenuItem>

@@ -11,13 +11,8 @@ export function TerminalWorkspace({
   emptyMessage,
   error,
   events,
-  inputDisabled,
-  inputPending,
-  inputValue,
   onCloseSession,
-  onInputChange,
   onSelectSession,
-  onSendInput,
   sessions,
   splitMode,
 }: {
@@ -26,13 +21,8 @@ export function TerminalWorkspace({
   emptyMessage: string;
   error?: unknown;
   events: SshSessionEvent[];
-  inputDisabled?: boolean;
-  inputPending?: boolean;
-  inputValue: string;
   onCloseSession: (sessionId: string) => void;
-  onInputChange: (value: string) => void;
   onSelectSession: (sessionId: string) => void;
-  onSendInput: () => void;
   sessions: TerminalSessionTabState[];
   splitMode: TerminalSplitMode;
 }) {
@@ -73,11 +63,6 @@ export function TerminalWorkspace({
             activeEvents={events.filter(
               (event) => event.sessionId === activeSession?.sessionId,
             )}
-            inputDisabled={inputDisabled}
-            inputPending={inputPending}
-            inputValue={inputValue}
-            onInputChange={onInputChange}
-            onSendInput={onSendInput}
             secondaryEvents={events.filter(
               (event) => event.sessionId === secondarySession?.sessionId,
             )}

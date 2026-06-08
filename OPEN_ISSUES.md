@@ -2,11 +2,10 @@
 
 ## SSH Transport
 
-- **PTY allocation:** Not implemented. The russh channel is connected but no PTY is requested. Terminal I/O streaming depends on this.
-- **stdin/stdout streaming:** Not implemented. The russh channel data flow is not wired to the frontend.
-- **Tauri event streaming:** Not implemented. Terminal output events need to be pushed to the frontend via Tauri events.
-- **Terminal resize:** Not implemented for native sessions. PTY resize requires a connected channel.
 - **Private-key authentication:** Not implemented. Only password auth via SecretStore is supported under `ssh-native`.
+- **Connection health monitoring:** No heartbeat or keep-alive mechanism. Disconnected sessions are not detected automatically.
+- **Reconnection logic:** If a native SSH connection drops, there is no automatic reconnection. Users must manually close and re-create sessions.
+- **Terminal session persistence:** Terminal output events are stored in memory only. Refreshing the app loses terminal history.
 
 ## Security
 
@@ -15,4 +14,4 @@
 
 ## General
 
-- **Real SSH connection verification:** The native transport path has not been verified against a live SSH server in this environment. Manual verification is recommended.
+- **Real SSH connection verification:** The native transport path with PTY streaming has not been verified against a live SSH server in this environment. Manual verification is recommended.

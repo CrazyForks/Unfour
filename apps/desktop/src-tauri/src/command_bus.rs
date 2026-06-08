@@ -27,6 +27,8 @@ pub struct CommandBus {
     secret_store: SecretStore,
     ssh: SshService,
     workspace: WorkspaceService,
+    #[allow(dead_code)]
+    app_handle: Option<AppHandle>,
 }
 
 impl CommandBus {
@@ -39,13 +41,26 @@ impl CommandBus {
         let workspace = WorkspaceService::new(db.clone());
         workspace.ensure_default_workspace().await?;
 
+        let ssh = SshService::new(db.clone(), secret_store.clone());
+
+        // Wire up terminal output callback to emit Tauri events.
+        #[cfg(feature = "ssh-native")]
+        {
+            let event_app = app.clone();
+            ssh.set_terminal_output_callback(std::sync::Arc::new(move |payload| {
+                use tauri::Emitter;
+                let _ = event_app.emit("ssh://terminal-data", &payload);
+            }));
+        }
+
         Ok(Self {
             api_client: ApiClientService::new(db.clone()),
             activity_log,
             database: DatabaseService::new(db.clone()),
-            secret_store: secret_store.clone(),
-            ssh: SshService::new(db.clone(), secret_store),
+            secret_store,
+            ssh,
             workspace,
+            app_handle: Some(app),
         })
     }
 
@@ -65,6 +80,7 @@ impl CommandBus {
             secret_store: secret_store.clone(),
             ssh: SshService::new(db.clone(), secret_store),
             workspace,
+            app_handle: None,
         })
     }
 
@@ -513,11 +529,11 @@ impl CommandBus {
     }
 
     pub async fn send_ssh_input(&self, input: SshSessionInput) -> AppResult<SshSessionEvent> {
-        self.ssh.send_input(input)
+        self.ssh.send_input(input).await
     }
 
     pub async fn resize_ssh_session(&self, input: SshResizeInput) -> AppResult<SshSessionEvent> {
-        self.ssh.resize(input)
+        self.ssh.resize(input).await
     }
 
     pub async fn close_ssh_session(&self, input: SshCloseInput) -> AppResult<SshSessionSummary> {

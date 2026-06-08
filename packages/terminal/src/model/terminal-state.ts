@@ -2,6 +2,13 @@ import { create } from "zustand";
 import type { SshSessionEvent } from "@unfour/command-client";
 import type { TerminalSplitMode } from "./types";
 
+type SearchAddonLike = {
+  findNext: (term: string) => boolean;
+  findPrevious: (term: string) => boolean;
+  clearDecorations: () => void;
+  dispose: () => void;
+};
+
 type TerminalStore = {
   activeSessionId: string | null;
   exportedLog: string | null;
@@ -10,6 +17,7 @@ type TerminalStore = {
   splitMode: TerminalSplitMode;
   terminalEvents: SshSessionEvent[];
   terminalInput: string;
+  terminalSearchAddon: SearchAddonLike | null;
   workspaceId: string | null;
   activateWorkspace: (workspaceId: string) => void;
   appendTerminalEvents: (events: SshSessionEvent[]) => void;
@@ -20,6 +28,7 @@ type TerminalStore = {
   setSearchOpen: (open: boolean) => void;
   setSearchQuery: (query: string) => void;
   setSplitMode: (mode: TerminalSplitMode) => void;
+  setTerminalSearchAddon: (addon: SearchAddonLike | null) => void;
   startTerminalSession: (sessionId: string, events: SshSessionEvent[]) => void;
   setTerminalEvents: (events: SshSessionEvent[]) => void;
   setTerminalInput: (input: string) => void;
@@ -37,6 +46,7 @@ export const useTerminalStore = create<TerminalStore>((set) => ({
   splitMode: "single",
   terminalEvents: [],
   terminalInput: defaultTerminalInput(),
+  terminalSearchAddon: null,
   workspaceId: null,
   activateWorkspace: (workspaceId) =>
     set((state) =>
@@ -50,6 +60,7 @@ export const useTerminalStore = create<TerminalStore>((set) => ({
             splitMode: "single",
             terminalEvents: [],
             terminalInput: defaultTerminalInput(),
+            terminalSearchAddon: state.terminalSearchAddon,
             workspaceId,
           },
     ),
@@ -76,6 +87,7 @@ export const useTerminalStore = create<TerminalStore>((set) => ({
   setSearchOpen: (searchOpen) => set({ searchOpen }),
   setSearchQuery: (searchQuery) => set({ searchQuery }),
   setSplitMode: (splitMode) => set({ splitMode }),
+  setTerminalSearchAddon: (terminalSearchAddon) => set({ terminalSearchAddon }),
   startTerminalSession: (sessionId, events) =>
     set((state) => ({
       activeSessionId: sessionId,

@@ -6,22 +6,12 @@ import { TerminalPane } from "./TerminalPane";
 export function TerminalSplitView({
   activeSession,
   activeEvents,
-  inputDisabled,
-  inputPending,
-  inputValue,
-  onInputChange,
-  onSendInput,
   secondaryEvents,
   secondarySession,
   splitMode,
 }: {
   activeSession: SshSessionSummary | null;
   activeEvents: SshSessionEvent[];
-  inputDisabled?: boolean;
-  inputPending?: boolean;
-  inputValue: string;
-  onInputChange: (value: string) => void;
-  onSendInput: () => void;
   secondaryEvents: SshSessionEvent[];
   secondarySession: SshSessionSummary | null;
   splitMode: TerminalSplitMode;
@@ -32,11 +22,6 @@ export function TerminalSplitView({
     <TerminalPane
       active
       events={activeEvents}
-      inputDisabled={inputDisabled}
-      inputPending={inputPending}
-      inputValue={inputValue}
-      onInputChange={onInputChange}
-      onSendInput={onSendInput}
       session={activeSession}
     />
   );
@@ -58,9 +43,6 @@ export function TerminalSplitView({
         {secondarySession ? (
           <TerminalPane
             events={secondaryEvents}
-            inputValue=""
-            onInputChange={() => undefined}
-            onSendInput={() => undefined}
             readOnly
             session={secondarySession}
           />
