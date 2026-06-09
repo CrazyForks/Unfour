@@ -30,7 +30,7 @@ export function TerminalWorkspace({
   const secondarySession =
     sessions.find(
       (item) =>
-        item.session.sessionId !== activeSessionId && item.session.status === "active",
+        item.session.sessionId !== activeSessionId && item.session.status === "connected",
     )?.session ??
     sessions.find((item) => item.session.sessionId !== activeSessionId)?.session ??
     null;
@@ -44,7 +44,9 @@ export function TerminalWorkspace({
           onSelect={onSelectSession}
           tabs={sessions.map((item) => ({
             id: item.session.sessionId,
-            loading: item.session.status === "active" && item.session.sessionId !== activeSessionId,
+            loading:
+              item.session.status === "connected" &&
+              item.session.sessionId !== activeSessionId,
             meta: <TerminalSessionTabMeta session={item.session} />,
             modified: item.modified,
             title: item.title,

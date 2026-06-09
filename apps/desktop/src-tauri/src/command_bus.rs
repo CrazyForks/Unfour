@@ -7,8 +7,8 @@ use unfour_core::models::{
     DatabaseConnectionInput, DatabaseQueryInput, DatabaseQueryResult, DatabaseSchema,
     DatabaseTestResult, KeyValue, SshCloseInput, SshConnectInput, SshConnection,
     SshConnectionInput, SshHostFingerprintInfo, SshHostKeyInput, SshLogExport, SshLogExportInput,
-    SshResizeInput, SshSessionEvent, SshSessionInput, SshSessionSummary, SystemHealth, Workspace,
-    WorkspaceEnvironment, WorkspaceLayout, WorkspaceState,
+    SshReconnectCancelInput, SshResizeInput, SshSessionEvent, SshSessionInput, SshSessionSummary,
+    SystemHealth, Workspace, WorkspaceEnvironment, WorkspaceLayout, WorkspaceState,
 };
 use unfour_core::sync_reserved;
 use unfour_core::AppResult;
@@ -49,7 +49,9 @@ impl CommandBus {
             let event_app = app.clone();
             ssh.set_terminal_output_callback(std::sync::Arc::new(move |payload| {
                 use tauri::Emitter;
-                let _ = event_app.emit("ssh://terminal-data", &payload);
+                if let Ok(payload) = serde_json::from_str::<serde_json::Value>(&payload) {
+                    let _ = event_app.emit("ssh://terminal-data", payload);
+                }
             }));
         }
 
@@ -547,6 +549,13 @@ impl CommandBus {
             )
             .await?;
         Ok(session)
+    }
+
+    pub async fn cancel_ssh_reconnect(
+        &self,
+        input: SshReconnectCancelInput,
+    ) -> AppResult<SshSessionSummary> {
+        self.ssh.cancel_reconnect(input).await
     }
 
     pub async fn export_ssh_log(&self, input: SshLogExportInput) -> AppResult<SshLogExport> {

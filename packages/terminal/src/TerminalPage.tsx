@@ -1,6 +1,8 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
+  cancelSshReconnect,
   closeSshSession,
   connectSshSession,
   deleteSshConnection,
@@ -66,6 +68,65 @@ export function TerminalPage({ workspaceId }: { workspaceId: string }) {
     () => buildTerminalSessionTabs({ connections, sessions }),
     [connections, sessions],
   );
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | null = null;
+    listen<{
+      sessionId: string;
+      data: string;
+      status?: SshSessionSummary["status"] | null;
+      reconnectAttempt?: number;
+    }>("ssh://terminal-data", (event) => {
+      const payload = event.payload;
+      if (!payload?.sessionId) {
+        return;
+      }
+      if (payload.data) {
+        appendTerminalEvents([
+          {
+            sessionId: payload.sessionId,
+            kind:
+              payload.status === "disconnected" || payload.status === "failed"
+                ? "close"
+                : "output",
+            data: payload.data,
+            createdAt: new Date().toISOString(),
+          },
+        ]);
+      }
+      if (payload.status) {
+        queryClient.setQueryData<SshSessionSummary[]>(
+          ["ssh-sessions", workspaceId],
+          (current = []) =>
+            current.map((session) =>
+              session.sessionId === payload.sessionId
+                ? {
+                    ...session,
+                    status: payload.status!,
+                    reconnectAttempt: payload.reconnectAttempt ?? 0,
+                    updatedAt: new Date().toISOString(),
+                  }
+                : session,
+            ),
+        );
+      }
+    })
+      .then((dispose) => {
+        if (disposed) {
+          dispose();
+        } else {
+          unlisten = dispose;
+        }
+      })
+      .catch(() => {
+        // Browser mock mode has no Tauri event transport; query polling remains active.
+      });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [appendTerminalEvents, queryClient, workspaceId]);
 
   useEffect(() => {
     activateWorkspace(workspaceId);
@@ -167,6 +228,18 @@ export function TerminalPage({ workspaceId }: { workspaceId: string }) {
     },
   });
 
+  const cancelReconnectMutation = useMutation({
+    mutationFn: (sessionId: string) =>
+      cancelSshReconnect({ workspaceId, sessionId }),
+    onSuccess: (session) => {
+      queryClient.setQueryData<SshSessionSummary[]>(
+        ["ssh-sessions", workspaceId],
+        (current = []) =>
+          current.map((item) => (item.sessionId === session.sessionId ? session : item)),
+      );
+    },
+  });
+
   const exportMutation = useMutation({
     mutationFn: () => exportSshLog({ workspaceId, sessionId: activeSessionId ?? "" }),
     onSuccess: (log) => setExportedLog(log.content),
@@ -214,6 +287,7 @@ export function TerminalPage({ workspaceId }: { workspaceId: string }) {
     sessionsQuery.error ??
     connectMutation.error ??
     closeMutation.error ??
+    cancelReconnectMutation.error ??
     exportMutation.error;
 
   return (
@@ -221,9 +295,15 @@ export function TerminalPage({ workspaceId }: { workspaceId: string }) {
       <TerminalModuleToolbar
         activeSessionCount={sessions.length}
         canConnect={Boolean(selectedConnectionId)}
-        canSplit={sessions.filter((session) => session.status === "active").length > 1}
+        canSplit={sessions.filter((session) => session.status === "connected").length > 1}
         canUseSessionActions={Boolean(activeSessionId)}
         connecting={connectMutation.isPending}
+        reconnecting={
+          activeSession?.status === "degraded" || activeSession?.status === "reconnecting"
+        }
+        onCancelReconnect={() =>
+          activeSessionId && cancelReconnectMutation.mutate(activeSessionId)
+        }
         onClear={() => clearTerminalSessionEvents(activeSessionId)}
         onCloseSession={() => activeSessionId && closeMutation.mutate(activeSessionId)}
         onExportLog={() => exportMutation.mutate()}

@@ -63,6 +63,7 @@ pub fn run() {
             commands::ssh_session_connect,
             commands::ssh_session_input,
             commands::ssh_session_log_export,
+            commands::ssh_session_reconnect_cancel,
             commands::ssh_session_resize,
             commands::ssh_sessions_list,
         ])

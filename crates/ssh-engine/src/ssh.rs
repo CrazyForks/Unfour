@@ -3,8 +3,9 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use unfour_core::models::{
     SshCloseInput, SshConnectInput, SshConnection, SshConnectionConfig, SshConnectionInput,
-    SshHostFingerprintInfo, SshHostKeyInput, SshLogExport, SshLogExportInput, SshResizeInput,
-    SshSessionEvent, SshSessionInput, SshSessionSummary, StoredConnection,
+    SshHostFingerprintInfo, SshHostKeyInput, SshLogExport, SshLogExportInput,
+    SshReconnectCancelInput, SshResizeInput, SshSessionEvent, SshSessionInput, SshSessionSummary,
+    StoredConnection,
 };
 use unfour_core::redaction::redact_sensitive_lines;
 use unfour_core::{AppError, AppResult};
@@ -29,13 +30,23 @@ pub struct SshService {
     on_terminal_output: Arc<Mutex<Option<TerminalOutputCallback>>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 struct SshSessionState {
     summary: SshSessionSummary,
     events: Vec<SshSessionEvent>,
+    intentional_close: bool,
     #[cfg(feature = "ssh-native")]
     native_handle: Option<NativeSshHandle>,
+    #[cfg(feature = "ssh-native")]
+    cancel_tx: Option<tokio::sync::watch::Sender<bool>>,
 }
+
+#[cfg(feature = "ssh-native")]
+const KEEPALIVE_INTERVAL: std::time::Duration = std::time::Duration::from_secs(3);
+#[cfg(feature = "ssh-native")]
+const KEEPALIVE_MAX_MISSES: usize = 2;
+#[cfg(any(feature = "ssh-native", test))]
+const RECONNECT_BACKOFF_SECS: [u64; 3] = [1, 2, 4];
 
 #[cfg(feature = "ssh-native")]
 struct NativeSshHandle {
@@ -389,8 +400,12 @@ impl SshService {
                 .map_err(|_| AppError::Config("ssh session lock poisoned".to_string()))?;
             let state =
                 session_for_workspace_mut(&mut sessions, &input.workspace_id, &input.session_id)?;
-            if state.summary.status == "closed" {
+            if state.summary.status == "disconnected" {
                 return Ok(state.summary.clone());
+            }
+            state.intentional_close = true;
+            if let Some(cancel_tx) = state.cancel_tx.take() {
+                let _ = cancel_tx.send(true);
             }
             state.native_handle.take()
         };
@@ -418,17 +433,67 @@ impl SshService {
             session_for_workspace_mut(&mut sessions, &input.workspace_id, &input.session_id)?;
 
         // Idempotent: if already closed, return the stored summary.
-        if state.summary.status == "closed" {
+        if state.summary.status == "disconnected" {
             return Ok(state.summary.clone());
         }
 
         let now = Utc::now().to_rfc3339();
-        state.summary.status = "closed".to_string();
+        state.intentional_close = true;
+        state.summary.status = "disconnected".to_string();
+        state.summary.reconnect_attempt = 0;
         state.summary.updated_at = now.clone();
         state.events.push(SshSessionEvent {
             session_id: input.session_id,
             kind: "close".to_string(),
             data: "SSH session closed.\r\n".to_string(),
+            created_at: now,
+        });
+        Ok(state.summary.clone())
+    }
+
+    pub async fn cancel_reconnect(
+        &self,
+        input: SshReconnectCancelInput,
+    ) -> AppResult<SshSessionSummary> {
+        validate_workspace_id(&input.workspace_id)?;
+        validate_session_id(&input.session_id)?;
+
+        #[cfg(feature = "ssh-native")]
+        let native_handle = {
+            let mut sessions = self
+                .sessions
+                .lock()
+                .map_err(|_| AppError::Config("ssh session lock poisoned".to_string()))?;
+            let state =
+                session_for_workspace_mut(&mut sessions, &input.workspace_id, &input.session_id)?;
+            state.intentional_close = true;
+            if let Some(cancel_tx) = state.cancel_tx.take() {
+                let _ = cancel_tx.send(true);
+            }
+            state.native_handle.take()
+        };
+
+        #[cfg(feature = "ssh-native")]
+        if let Some(native) = native_handle {
+            let channel = native.channel.lock().await;
+            let _ = channel.close().await;
+        }
+
+        let mut sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| AppError::Config("ssh session lock poisoned".to_string()))?;
+        let state =
+            session_for_workspace_mut(&mut sessions, &input.workspace_id, &input.session_id)?;
+        let now = Utc::now().to_rfc3339();
+        state.intentional_close = true;
+        state.summary.status = "disconnected".to_string();
+        state.summary.reconnect_attempt = 0;
+        state.summary.updated_at = now.clone();
+        state.events.push(SshSessionEvent {
+            session_id: input.session_id,
+            kind: "close".to_string(),
+            data: "SSH reconnect cancelled.\r\n".to_string(),
             created_at: now,
         });
         Ok(state.summary.clone())
@@ -584,7 +649,7 @@ impl SshService {
                 .filter(|state| {
                     state.summary.workspace_id == workspace_id
                         && state.summary.connection_id == connection_id
-                        && state.summary.status == "active"
+                        && is_live_status(&state.summary.status)
                 })
                 .filter_map(|state| state.native_handle.clone())
                 .collect()
@@ -598,12 +663,19 @@ impl SshService {
             for state in sessions.values_mut().filter(|state| {
                 state.summary.workspace_id == workspace_id
                     && state.summary.connection_id == connection_id
-                    && state.summary.status == "active"
+                    && is_live_status(&state.summary.status)
             }) {
                 #[cfg(feature = "ssh-native")]
-                state.native_handle.take();
+                {
+                    state.intentional_close = true;
+                    if let Some(cancel_tx) = state.cancel_tx.take() {
+                        let _ = cancel_tx.send(true);
+                    }
+                    state.native_handle.take();
+                }
 
-                state.summary.status = "closed".to_string();
+                state.summary.status = "disconnected".to_string();
+                state.summary.reconnect_attempt = 0;
                 state.summary.updated_at = now.clone();
                 state.events.push(SshSessionEvent {
                     session_id: state.summary.session_id.clone(),
@@ -649,7 +721,8 @@ impl SshService {
             session_id: session_id.clone(),
             workspace_id: connection.workspace_id.clone(),
             connection_id: connection.id.clone(),
-            status: "active".to_string(),
+            status: "connected".to_string(),
+            reconnect_attempt: 0,
             auth_kind: connection.auth_kind.clone(),
             host: connection.host.clone(),
             username: connection.username.clone(),
@@ -669,6 +742,7 @@ impl SshService {
                 ),
                 created_at: now,
             }],
+            intentional_close: false,
         };
 
         self.sessions
@@ -689,228 +763,19 @@ impl SshService {
         connection: &SshConnection,
         input: &SshConnectInput,
     ) -> AppResult<SshSessionSummary> {
-        // Build russh config.
-        let config = Arc::new(russh::client::Config::default());
-
-        // Build host-key handler with TOFU store.
-        let host_key_store = HostKeyStore::new(self.db.pool().clone());
-        let handler = SshClientHandler {
-            host_key_store,
-            host: connection.host.clone(),
-            port: connection.port,
-        };
-
-        // Connect with timeout.
-        let addr = format!("{}:{}", connection.host, connection.port);
-        let timeout_duration = std::time::Duration::from_secs(15);
-        let mut handle = match tokio::time::timeout(
-            timeout_duration,
-            russh::client::connect(config, addr.as_str(), handler),
-        )
-        .await
-        {
-            Ok(Ok(h)) => h,
-            Ok(Err(e)) => {
-                return Err(AppError::Config(format!(
-                    "ssh connection to {}:{} failed: {}",
-                    connection.host,
-                    connection.port,
-                    sanitize_ssh_error(&e)
-                )));
-            }
-            Err(_) => {
-                return Err(AppError::Config(format!(
-                    "ssh connection to {}:{} timed out after {}s",
-                    connection.host,
-                    connection.port,
-                    timeout_duration.as_secs()
-                )));
-            }
-        };
-
-        // Authenticate based on auth_kind.
-        match connection.auth_kind.as_str() {
-            "password" => {
-                let credential_ref = connection.credential_ref.as_deref().ok_or_else(|| {
-                    AppError::Validation(
-                        "password auth requires a credential reference".to_string(),
-                    )
-                })?;
-                let password = self
-                    .secret_store
-                    .read_secret(connection.workspace_id.clone(), credential_ref.to_string())
-                    .await
-                    .map_err(|_| {
-                        AppError::Config(
-                            "failed to read ssh credential from secret store".to_string(),
-                        )
-                    })?;
-
-                let auth_result = handle
-                    .authenticate_password(connection.username.clone(), password)
-                    .await
-                    .map_err(|_| AppError::Config("ssh authentication failed".to_string()))?;
-
-                if !auth_result.success() {
-                    return Err(AppError::Config(
-                        "ssh authentication failed: invalid credentials".to_string(),
-                    ));
-                }
-            }
-            "private-key" => {
-                let key_path = connection.key_path.as_deref().ok_or_else(|| {
-                    AppError::Validation("private-key auth requires a key path".to_string())
-                })?;
-
-                let path = std::path::Path::new(key_path);
-                if !path.exists() {
-                    return Err(AppError::Config(format!(
-                        "ssh private key file not found: {}",
-                        key_path
-                    )));
-                }
-
-                // Load the private key from disk.
-                // ssh-key reads OpenSSH-format keys (including PEM-wrapped).
-                let private_key = match ssh_key::PrivateKey::read_openssh_file(path) {
-                    Ok(key) => key,
-                    Err(e) => {
-                        // Check if the key is encrypted and a passphrase credential exists.
-                        let passphrase = match connection.credential_ref.as_deref() {
-                            Some(cred_ref) => self
-                                .secret_store
-                                .read_secret(connection.workspace_id.clone(), cred_ref.to_string())
-                                .await
-                                .ok(),
-                            None => None,
-                        };
-
-                        if passphrase.is_some() {
-                            // Attempt to load encrypted key via PEM with passphrase.
-                            let pem_bytes = std::fs::read(path).map_err(|io_err| {
-                                AppError::Config(format!(
-                                    "failed to read ssh private key file: {}",
-                                    io_err
-                                ))
-                            })?;
-                            ssh_key::PrivateKey::from_openssh(&pem_bytes).map_err(|key_err| {
-                                AppError::Config(format!(
-                                    "failed to decrypt ssh private key (passphrase may be incorrect or format unsupported): {}",
-                                    key_err
-                                ))
-                            })?
-                        } else {
-                            return Err(AppError::Config(format!(
-                                "failed to read ssh private key: {}. \
-                                 If the key is encrypted, save its passphrase as a credential.",
-                                e
-                            )));
-                        }
-                    }
-                };
-
-                let key_with_hash =
-                    russh::keys::PrivateKeyWithHashAlg::new(Arc::new(private_key), None);
-
-                let auth_result = handle
-                    .authenticate_publickey(connection.username.clone(), key_with_hash)
-                    .await
-                    .map_err(|_| {
-                        AppError::Config("ssh public key authentication failed".to_string())
-                    })?;
-
-                if !auth_result.success() {
-                    return Err(AppError::Config(
-                        "ssh public key authentication failed: key rejected by server".to_string(),
-                    ));
-                }
-            }
-            _ => {
-                return Err(AppError::Validation(format!(
-                    "unsupported ssh auth kind: {}",
-                    connection.auth_kind
-                )));
-            }
-        }
-
-        // Build session summary (needed for cols/rows).
         let now = Utc::now().to_rfc3339();
         let session_id = Uuid::new_v4().to_string();
         let cols = input.cols.unwrap_or(120).clamp(20, 300);
         let rows = input.rows.unwrap_or(32).clamp(8, 100);
-
-        // Open an interactive session channel with PTY.
-        let channel = handle
-            .channel_open_session()
-            .await
-            .map_err(|e| AppError::Config(format!("failed to open ssh channel: {}", e)))?;
-
-        // Request PTY allocation.
-        channel
-            .request_pty(true, "xterm-256color", cols as u32, rows as u32, 0, 0, &[])
-            .await
-            .map_err(|e| AppError::Config(format!("failed to request ssh pty: {}", e)))?;
-
-        // Start the user's shell.
-        channel
-            .request_shell(true)
-            .await
-            .map_err(|e| AppError::Config(format!("failed to start ssh shell: {}", e)))?;
-
-        // Wrap channel in Arc<Mutex> for shared access.
-        let channel_arc = std::sync::Arc::new(tokio::sync::Mutex::new(channel));
-
-        // Spawn a background reader task for terminal output.
-        let reader_channel = channel_arc.clone();
-        let reader_session_id = session_id.clone();
-        let reader_callback = {
-            let cb = self
-                .on_terminal_output
-                .lock()
-                .ok()
-                .and_then(|slot| slot.clone());
-            cb
-        };
-        tokio::spawn(async move {
-            loop {
-                let msg = {
-                    let mut ch = reader_channel.lock().await;
-                    ch.wait().await
-                };
-                match msg {
-                    Some(russh::ChannelMsg::Data { data }) => {
-                        let text = String::from_utf8_lossy(&data).to_string();
-                        if let Some(ref callback) = reader_callback {
-                            let payload = serde_json::json!({
-                                "sessionId": reader_session_id,
-                                "data": text,
-                            })
-                            .to_string();
-                            callback(payload);
-                        }
-                    }
-                    Some(russh::ChannelMsg::Close) | Some(russh::ChannelMsg::Eof) => break,
-                    None => break,
-                    _ => {}
-                }
-            }
-            // Emit close event so the frontend updates.
-            if let Some(ref callback) = reader_callback {
-                let payload = serde_json::json!({
-                    "sessionId": reader_session_id,
-                    "data": "",
-                    "closed": true,
-                })
-                .to_string();
-                callback(payload);
-            }
-        });
+        let native_handle = self.open_native_transport(connection, cols, rows).await?;
+        let (cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);
 
         let summary = SshSessionSummary {
             session_id: session_id.clone(),
             workspace_id: connection.workspace_id.clone(),
             connection_id: connection.id.clone(),
-            status: "active".to_string(),
+            status: "connected".to_string(),
+            reconnect_attempt: 0,
             auth_kind: connection.auth_kind.clone(),
             host: connection.host.clone(),
             username: connection.username.clone(),
@@ -930,18 +795,404 @@ impl SshService {
                 ),
                 created_at: now,
             }],
-            native_handle: Some(NativeSshHandle {
-                handle: std::sync::Arc::new(tokio::sync::Mutex::new(handle)),
-                channel: channel_arc,
-            }),
+            intentional_close: false,
+            native_handle: Some(native_handle.clone()),
+            cancel_tx: Some(cancel_tx),
         };
 
         self.sessions
             .lock()
             .map_err(|_| AppError::Config("ssh session lock poisoned".to_string()))?
-            .insert(session_id, state);
+            .insert(session_id.clone(), state);
+
+        self.spawn_native_supervisor(session_id, connection.clone(), native_handle, cancel_rx);
 
         Ok(summary)
+    }
+
+    #[cfg(feature = "ssh-native")]
+    async fn open_native_transport(
+        &self,
+        connection: &SshConnection,
+        cols: u16,
+        rows: u16,
+    ) -> AppResult<NativeSshHandle> {
+        let config = Arc::new(native_client_config());
+        let handler = SshClientHandler {
+            host_key_store: HostKeyStore::new(self.db.pool().clone()),
+            host: connection.host.clone(),
+            port: connection.port,
+        };
+        let addr = format!("{}:{}", connection.host, connection.port);
+        let timeout_duration = std::time::Duration::from_secs(15);
+        let mut handle = match tokio::time::timeout(
+            timeout_duration,
+            russh::client::connect(config, addr.as_str(), handler),
+        )
+        .await
+        {
+            Ok(Ok(handle)) => handle,
+            Ok(Err(error)) => {
+                return Err(AppError::Config(format!(
+                    "ssh connection to {}:{} failed: {}",
+                    connection.host,
+                    connection.port,
+                    sanitize_ssh_error(&error)
+                )));
+            }
+            Err(_) => {
+                return Err(AppError::Config(format!(
+                    "ssh connection to {}:{} timed out after {}s",
+                    connection.host,
+                    connection.port,
+                    timeout_duration.as_secs()
+                )));
+            }
+        };
+
+        self.authenticate_native(&mut handle, connection).await?;
+        let channel = handle
+            .channel_open_session()
+            .await
+            .map_err(|error| AppError::Config(format!("failed to open ssh channel: {}", error)))?;
+        channel
+            .request_pty(true, "xterm-256color", cols as u32, rows as u32, 0, 0, &[])
+            .await
+            .map_err(|error| AppError::Config(format!("failed to request ssh pty: {}", error)))?;
+        channel
+            .request_shell(true)
+            .await
+            .map_err(|error| AppError::Config(format!("failed to start ssh shell: {}", error)))?;
+
+        Ok(NativeSshHandle {
+            handle: Arc::new(tokio::sync::Mutex::new(handle)),
+            channel: Arc::new(tokio::sync::Mutex::new(channel)),
+        })
+    }
+
+    #[cfg(feature = "ssh-native")]
+    async fn authenticate_native(
+        &self,
+        handle: &mut russh::client::Handle<SshClientHandler>,
+        connection: &SshConnection,
+    ) -> AppResult<()> {
+        match connection.auth_kind.as_str() {
+            "password" => {
+                let credential_ref = connection.credential_ref.as_deref().ok_or_else(|| {
+                    AppError::Validation(
+                        "password auth requires a credential reference".to_string(),
+                    )
+                })?;
+                let password = self
+                    .secret_store
+                    .read_secret(connection.workspace_id.clone(), credential_ref.to_string())
+                    .await
+                    .map_err(|_| {
+                        AppError::Config(
+                            "failed to read ssh credential from secret store".to_string(),
+                        )
+                    })?;
+                let result = handle
+                    .authenticate_password(connection.username.clone(), password)
+                    .await
+                    .map_err(|_| AppError::Config("ssh authentication failed".to_string()))?;
+                if !result.success() {
+                    return Err(AppError::Config(
+                        "ssh authentication failed: invalid credentials".to_string(),
+                    ));
+                }
+            }
+            "private-key" => {
+                let key_path = connection.key_path.as_deref().ok_or_else(|| {
+                    AppError::Validation("private-key auth requires a key path".to_string())
+                })?;
+                let path = std::path::Path::new(key_path);
+                if !path.exists() {
+                    return Err(AppError::Config(format!(
+                        "ssh private key file not found: {}",
+                        key_path
+                    )));
+                }
+                let private_key = match ssh_key::PrivateKey::read_openssh_file(path) {
+                    Ok(key) => key,
+                    Err(error) => {
+                        let has_passphrase = match connection.credential_ref.as_deref() {
+                            Some(credential_ref) => self
+                                .secret_store
+                                .read_secret(
+                                    connection.workspace_id.clone(),
+                                    credential_ref.to_string(),
+                                )
+                                .await
+                                .is_ok(),
+                            None => false,
+                        };
+                        if !has_passphrase {
+                            return Err(AppError::Config(format!(
+                                "failed to read ssh private key: {}. If the key is encrypted, save its passphrase as a credential.",
+                                error
+                            )));
+                        }
+                        let pem_bytes = std::fs::read(path).map_err(|io_error| {
+                            AppError::Config(format!(
+                                "failed to read ssh private key file: {}",
+                                io_error
+                            ))
+                        })?;
+                        ssh_key::PrivateKey::from_openssh(&pem_bytes).map_err(|key_error| {
+                            AppError::Config(format!(
+                                "failed to decrypt ssh private key (passphrase may be incorrect or format unsupported): {}",
+                                key_error
+                            ))
+                        })?
+                    }
+                };
+                let key = russh::keys::PrivateKeyWithHashAlg::new(Arc::new(private_key), None);
+                let result = handle
+                    .authenticate_publickey(connection.username.clone(), key)
+                    .await
+                    .map_err(|_| {
+                        AppError::Config("ssh public key authentication failed".to_string())
+                    })?;
+                if !result.success() {
+                    return Err(AppError::Config(
+                        "ssh public key authentication failed: key rejected by server".to_string(),
+                    ));
+                }
+            }
+            _ => {
+                return Err(AppError::Validation(format!(
+                    "unsupported ssh auth kind: {}",
+                    connection.auth_kind
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "ssh-native")]
+    fn spawn_native_supervisor(
+        &self,
+        session_id: String,
+        connection: SshConnection,
+        initial_handle: NativeSshHandle,
+        mut cancel_rx: tokio::sync::watch::Receiver<bool>,
+    ) {
+        let service = self.clone();
+        tokio::spawn(async move {
+            let mut native = initial_handle;
+            loop {
+                let channel_closed = loop {
+                    let message = tokio::select! {
+                        changed = cancel_rx.changed() => {
+                            if changed.is_err() || *cancel_rx.borrow() {
+                                return;
+                            }
+                            continue;
+                        }
+                        message = async {
+                            let mut channel = native.channel.lock().await;
+                            channel.wait().await
+                        } => message,
+                    };
+                    match message {
+                        Some(russh::ChannelMsg::Data { data }) => {
+                            service.emit_terminal_payload(
+                                &session_id,
+                                String::from_utf8_lossy(&data).as_ref(),
+                                None,
+                                0,
+                            );
+                        }
+                        Some(russh::ChannelMsg::Close) | Some(russh::ChannelMsg::Eof) | None => {
+                            break true;
+                        }
+                        _ => {}
+                    }
+                };
+
+                if !channel_closed || !service.session_should_reconnect(&session_id) {
+                    return;
+                }
+                service.set_session_health(
+                    &session_id,
+                    "degraded",
+                    0,
+                    "SSH connection lost. Preparing to reconnect.\r\n",
+                );
+
+                let mut reconnected = None;
+                for (index, backoff_secs) in RECONNECT_BACKOFF_SECS.iter().enumerate() {
+                    let attempt = (index + 1) as u8;
+                    service.set_session_health(
+                        &session_id,
+                        "reconnecting",
+                        attempt,
+                        &format!("Reconnecting SSH session (attempt {attempt}/3).\r\n"),
+                    );
+                    tokio::select! {
+                        changed = cancel_rx.changed() => {
+                            if changed.is_err() || *cancel_rx.borrow() {
+                                service.set_session_health(
+                                    &session_id,
+                                    "disconnected",
+                                    0,
+                                    "SSH reconnect cancelled.\r\n",
+                                );
+                                return;
+                            }
+                        }
+                        _ = tokio::time::sleep(std::time::Duration::from_secs(*backoff_secs)) => {}
+                    }
+                    if *cancel_rx.borrow() {
+                        return;
+                    }
+                    let reconnect = service.open_native_transport(
+                        &connection,
+                        service.session_dimensions(&session_id).0,
+                        service.session_dimensions(&session_id).1,
+                    );
+                    let result = tokio::select! {
+                        changed = cancel_rx.changed() => {
+                            if changed.is_err() || *cancel_rx.borrow() {
+                                return;
+                            }
+                            continue;
+                        }
+                        result = reconnect => result,
+                    };
+                    if let Ok(next_native) = result {
+                        reconnected = Some(next_native);
+                        break;
+                    }
+                }
+
+                match reconnected {
+                    Some(next_native) => {
+                        if !service.install_reconnected_handle(&session_id, next_native.clone()) {
+                            return;
+                        }
+                        service.set_session_health(
+                            &session_id,
+                            "connected",
+                            0,
+                            "SSH session reconnected.\r\n",
+                        );
+                        native = next_native;
+                    }
+                    None => {
+                        service.set_session_health(
+                            &session_id,
+                            "failed",
+                            3,
+                            "SSH reconnect failed after 3 attempts.\r\n",
+                        );
+                        service.clear_native_session_resources(&session_id);
+                        return;
+                    }
+                }
+            }
+        });
+    }
+
+    #[cfg(feature = "ssh-native")]
+    fn session_should_reconnect(&self, session_id: &str) -> bool {
+        self.sessions
+            .lock()
+            .ok()
+            .and_then(|sessions| sessions.get(session_id).map(should_reconnect))
+            .unwrap_or(false)
+    }
+
+    #[cfg(feature = "ssh-native")]
+    fn session_dimensions(&self, session_id: &str) -> (u16, u16) {
+        self.sessions
+            .lock()
+            .ok()
+            .and_then(|sessions| {
+                sessions
+                    .get(session_id)
+                    .map(|state| (state.summary.cols, state.summary.rows))
+            })
+            .unwrap_or((120, 32))
+    }
+
+    #[cfg(feature = "ssh-native")]
+    fn install_reconnected_handle(&self, session_id: &str, native_handle: NativeSshHandle) -> bool {
+        let Ok(mut sessions) = self.sessions.lock() else {
+            return false;
+        };
+        let Some(state) = sessions.get_mut(session_id) else {
+            return false;
+        };
+        if state.intentional_close {
+            return false;
+        }
+        state.native_handle = Some(native_handle);
+        true
+    }
+
+    #[cfg(feature = "ssh-native")]
+    fn clear_native_session_resources(&self, session_id: &str) {
+        if let Ok(mut sessions) = self.sessions.lock() {
+            if let Some(state) = sessions.get_mut(session_id) {
+                state.native_handle = None;
+                state.cancel_tx = None;
+            }
+        }
+    }
+
+    #[cfg(feature = "ssh-native")]
+    fn set_session_health(&self, session_id: &str, status: &str, attempt: u8, message: &str) {
+        let now = Utc::now().to_rfc3339();
+        if let Ok(mut sessions) = self.sessions.lock() {
+            let Some(state) = sessions.get_mut(session_id) else {
+                return;
+            };
+            if state.intentional_close && status != "disconnected" {
+                return;
+            }
+            state.summary.status = status.to_string();
+            state.summary.reconnect_attempt = attempt;
+            state.summary.updated_at = now.clone();
+            state.events.push(SshSessionEvent {
+                session_id: session_id.to_string(),
+                kind: if status == "disconnected" || status == "failed" {
+                    "close".to_string()
+                } else {
+                    "output".to_string()
+                },
+                data: message.to_string(),
+                created_at: now,
+            });
+        }
+        self.emit_terminal_payload(session_id, message, Some(status), attempt);
+    }
+
+    #[cfg(feature = "ssh-native")]
+    fn emit_terminal_payload(
+        &self,
+        session_id: &str,
+        data: &str,
+        status: Option<&str>,
+        attempt: u8,
+    ) {
+        let callback = self
+            .on_terminal_output
+            .lock()
+            .ok()
+            .and_then(|slot| slot.clone());
+        if let Some(callback) = callback {
+            callback(
+                serde_json::json!({
+                    "sessionId": session_id,
+                    "data": data,
+                    "status": status,
+                    "reconnectAttempt": attempt,
+                })
+                .to_string(),
+            );
+        }
     }
 }
 
@@ -1137,10 +1388,30 @@ fn session_for_workspace<'a>(
 }
 
 fn ensure_session_active(state: &SshSessionState) -> AppResult<()> {
-    if state.summary.status != "active" {
-        return Err(AppError::Validation("ssh session is closed".to_string()));
+    if state.summary.status != "connected" {
+        return Err(AppError::Validation(
+            "ssh session is not connected".to_string(),
+        ));
     }
     Ok(())
+}
+
+fn is_live_status(status: &str) -> bool {
+    matches!(status, "connected" | "degraded" | "reconnecting")
+}
+
+#[cfg(any(feature = "ssh-native", test))]
+fn should_reconnect(state: &SshSessionState) -> bool {
+    !state.intentional_close && is_live_status(&state.summary.status)
+}
+
+#[cfg(feature = "ssh-native")]
+fn native_client_config() -> russh::client::Config {
+    let mut config = russh::client::Config::default();
+    config.keepalive_interval = Some(KEEPALIVE_INTERVAL);
+    config.keepalive_max = KEEPALIVE_MAX_MISSES;
+    config.nodelay = true;
+    config
 }
 
 fn redact_ssh_log(value: &str) -> (String, bool) {
@@ -1309,7 +1580,7 @@ mod tests {
             .await
             .expect("connect ssh session");
         assert_eq!(session.connection_id, connection.id);
-        assert_eq!(session.status, "active");
+        assert_eq!(session.status, "connected");
         assert_eq!(session.cols, 100);
 
         let output = service
@@ -1346,7 +1617,7 @@ mod tests {
             })
             .await
             .expect("close session");
-        assert_eq!(closed.status, "closed");
+        assert_eq!(closed.status, "disconnected");
 
         let rejected = service
             .send_input(SshSessionInput {
@@ -1394,7 +1665,7 @@ mod tests {
             .list_sessions(workspace_id)
             .expect("list sessions after delete");
         assert_eq!(sessions[0].session_id, session.session_id);
-        assert_eq!(sessions[0].status, "closed");
+        assert_eq!(sessions[0].status, "disconnected");
     }
 
     #[cfg(not(feature = "ssh-native"))]
@@ -1422,7 +1693,7 @@ mod tests {
             })
             .await
             .expect("first close");
-        assert_eq!(first_close.status, "closed");
+        assert_eq!(first_close.status, "disconnected");
 
         let second_close = service
             .close_session(SshCloseInput {
@@ -1431,7 +1702,7 @@ mod tests {
             })
             .await
             .expect("second close should not fail");
-        assert_eq!(second_close.status, "closed");
+        assert_eq!(second_close.status, "disconnected");
         assert_eq!(second_close.session_id, first_close.session_id);
     }
 
@@ -1595,8 +1866,8 @@ mod tests {
             .iter()
             .find(|s| s.session_id == session_b.session_id)
             .unwrap();
-        assert_eq!(closed.status, "closed");
-        assert_eq!(active.status, "active");
+        assert_eq!(closed.status, "disconnected");
+        assert_eq!(active.status, "connected");
     }
 
     #[cfg(feature = "ssh-native")]
@@ -1628,5 +1899,125 @@ mod tests {
         let items = received.lock().unwrap();
         assert_eq!(items.len(), 1);
         assert!(items[0].contains("hello"));
+    }
+
+    #[cfg(feature = "ssh-native")]
+    #[test]
+    fn native_keepalive_detects_unresponsive_connections_within_about_ten_seconds() {
+        let config = native_client_config();
+        assert_eq!(
+            config.keepalive_interval,
+            Some(std::time::Duration::from_secs(3))
+        );
+        assert_eq!(config.keepalive_max, 2);
+        assert_eq!(
+            config.keepalive_interval.unwrap().as_secs() * (config.keepalive_max as u64 + 1),
+            9
+        );
+    }
+
+    #[test]
+    fn reconnect_policy_is_bounded_to_three_attempts() {
+        assert_eq!(RECONNECT_BACKOFF_SECS, [1, 2, 4]);
+        assert_eq!(RECONNECT_BACKOFF_SECS.len(), 3);
+        assert_eq!(RECONNECT_BACKOFF_SECS.iter().sum::<u64>(), 7);
+    }
+
+    #[cfg(not(feature = "ssh-native"))]
+    #[tokio::test]
+    async fn explicit_close_disables_reconnect() {
+        let (service, workspace_id, _) = service_with_workspaces().await;
+        let connection = service
+            .save_connection(password_input(&workspace_id))
+            .await
+            .expect("save ssh connection");
+        let session = service
+            .connect(SshConnectInput {
+                workspace_id: workspace_id.clone(),
+                connection_id: connection.id,
+                cols: None,
+                rows: None,
+            })
+            .await
+            .expect("connect session");
+
+        service
+            .close_session(SshCloseInput {
+                workspace_id,
+                session_id: session.session_id.clone(),
+            })
+            .await
+            .expect("close session");
+
+        let sessions = service.sessions.lock().expect("session lock");
+        let state = sessions.get(&session.session_id).expect("session state");
+        assert!(state.intentional_close);
+        assert!(!should_reconnect(state));
+        assert_eq!(state.summary.status, "disconnected");
+    }
+
+    #[cfg(not(feature = "ssh-native"))]
+    #[tokio::test]
+    async fn cancel_reconnect_marks_session_disconnected() {
+        let (service, workspace_id, _) = service_with_workspaces().await;
+        let connection = service
+            .save_connection(password_input(&workspace_id))
+            .await
+            .expect("save ssh connection");
+        let session = service
+            .connect(SshConnectInput {
+                workspace_id: workspace_id.clone(),
+                connection_id: connection.id,
+                cols: None,
+                rows: None,
+            })
+            .await
+            .expect("connect session");
+
+        let cancelled = service
+            .cancel_reconnect(SshReconnectCancelInput {
+                workspace_id,
+                session_id: session.session_id.clone(),
+            })
+            .await
+            .expect("cancel reconnect");
+
+        assert_eq!(cancelled.status, "disconnected");
+        assert_eq!(cancelled.reconnect_attempt, 0);
+        let sessions = service.sessions.lock().expect("session lock");
+        assert!(!should_reconnect(
+            sessions.get(&session.session_id).expect("session state")
+        ));
+    }
+
+    #[cfg(not(feature = "ssh-native"))]
+    #[tokio::test]
+    async fn dropped_and_failed_states_stop_after_cleanup() {
+        let (service, workspace_id, _) = service_with_workspaces().await;
+        let connection = service
+            .save_connection(password_input(&workspace_id))
+            .await
+            .expect("save ssh connection");
+        let session = service
+            .connect(SshConnectInput {
+                workspace_id,
+                connection_id: connection.id,
+                cols: None,
+                rows: None,
+            })
+            .await
+            .expect("connect session");
+
+        let mut sessions = service.sessions.lock().expect("session lock");
+        let state = sessions
+            .get_mut(&session.session_id)
+            .expect("session state");
+        state.summary.status = "degraded".to_string();
+        assert!(should_reconnect(state));
+        state.summary.status = "reconnecting".to_string();
+        state.summary.reconnect_attempt = 3;
+        assert!(should_reconnect(state));
+        state.summary.status = "failed".to_string();
+        assert!(!should_reconnect(state));
     }
 }

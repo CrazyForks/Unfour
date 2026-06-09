@@ -9,8 +9,6 @@ None.
 ### SSH Transport
 
 - **Private-key authentication:** Implemented for unencrypted keys. Encrypted key passphrase support is limited by ssh-key crate format constraints.
-- **Connection health monitoring:** No heartbeat or keep-alive mechanism. Disconnected sessions are not detected automatically.
-- **Reconnection logic:** If a native SSH connection drops, there is no automatic reconnection. Users must manually close and re-create sessions.
 
 ### Security
 
@@ -33,12 +31,12 @@ None.
 
 - **OS keychain:** The `keyring` crate is used for production but has not been verified on all target platforms (macOS, Windows, Linux).
 - **Windows workspace tests:** `cargo test -p unfour-workspace` fails with `STATUS_ENTRYPOINT_NOT_FOUND` on this Windows environment. Likely a native DLL dependency issue, not a code defect.
-- **Real SSH connection verification:** The native transport path with PTY streaming has not been verified against a live SSH server in this environment. Manual verification is recommended.
+- **Real SSH connection verification:** Native keepalive, bounded reconnect, cancellation, retry exhaustion, and recovery after server return have automated coverage but remain `NOT VERIFIED` against a live SSH server in this environment.
 
 ## Summary
 
 - P0: 0
-- P1: 3
+- P1: 1
 - P2: 4
 - P3: 3
 - Environment: 3

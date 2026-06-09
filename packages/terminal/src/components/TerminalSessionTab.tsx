@@ -6,13 +6,23 @@ export function terminalSessionStatus(session: SshSessionSummary | null | undefi
     return "disconnected" as const;
   }
 
-  return session.status === "active" ? "connected" : "closed";
+  if (session.status === "failed") {
+    return "error" as const;
+  }
+  if (session.status === "degraded" || session.status === "reconnecting") {
+    return "connecting" as const;
+  }
+  return session.status;
 }
 
 export function TerminalSessionTabMeta({ session }: { session: SshSessionSummary }) {
   return (
     <ConnectionStatus
-      label={session.status === "active" ? "on" : "off"}
+      label={
+        session.status === "reconnecting"
+          ? `reconnecting ${session.reconnectAttempt}/3`
+          : session.status
+      }
       status={terminalSessionStatus(session)}
     />
   );

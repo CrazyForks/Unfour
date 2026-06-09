@@ -6,5 +6,6 @@ export function useTerminalSessions(workspaceId: string) {
     enabled: Boolean(workspaceId),
     queryKey: ["ssh-sessions", workspaceId],
     queryFn: () => listSshSessions(workspaceId),
+    refetchInterval: 2_000,
   });
 }

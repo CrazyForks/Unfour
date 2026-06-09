@@ -2,6 +2,7 @@ import {
   ChevronDown,
   Columns2,
   Copy,
+  CircleX,
   Download,
   FilePlus2,
   MoreHorizontal,
@@ -31,6 +32,8 @@ export function TerminalModuleToolbar({
   canSplit,
   canUseSessionActions,
   connecting,
+  reconnecting,
+  onCancelReconnect,
   onClear,
   onCloseSession,
   onExportLog,
@@ -48,6 +51,8 @@ export function TerminalModuleToolbar({
   canSplit: boolean;
   canUseSessionActions: boolean;
   connecting?: boolean;
+  reconnecting?: boolean;
+  onCancelReconnect: () => void;
   onClear: () => void;
   onCloseSession: () => void;
   onExportLog: () => void;
@@ -99,6 +104,12 @@ export function TerminalModuleToolbar({
         >
           <RotateCw size={14} />
         </IconButton>
+        {reconnecting && (
+          <Button onClick={onCancelReconnect} size="sm" type="button" variant="outline">
+            <CircleX size={14} />
+            <span className="max-[900px]:hidden">Cancel Reconnect</span>
+          </Button>
+        )}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button

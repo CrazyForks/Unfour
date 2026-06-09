@@ -27,6 +27,7 @@ import type {
   SshLogExport,
   SshLogExportInput,
   SshResizeInput,
+  SshReconnectCancelInput,
   SshSessionEvent,
   SshSessionInput,
   SshSessionSummary,
@@ -592,7 +593,8 @@ async function mockInvoke<T>(
       sessionId: crypto.randomUUID(),
       workspaceId: input.workspaceId,
       connectionId: input.connectionId,
-      status: "active",
+      status: "connected",
+      reconnectAttempt: 0,
       authKind: connection.authKind,
       host: connection.host,
       username: connection.username,
@@ -632,7 +634,7 @@ async function mockInvoke<T>(
       (item) => item.workspaceId === input.workspaceId && item.sessionId === input.sessionId,
     );
     if (!session) throw new Error("ssh session not found");
-    if (session.status !== "active") throw new Error("ssh session is closed");
+    if (session.status !== "connected") throw new Error("ssh session is not connected");
     const now = new Date().toISOString();
     mockSshEvents.push({
       sessionId: input.sessionId,
@@ -678,12 +680,32 @@ async function mockInvoke<T>(
     );
     if (!session) throw new Error("ssh session not found");
     const now = new Date().toISOString();
-    session.status = "closed";
+    session.status = "disconnected";
+    session.reconnectAttempt = 0;
     session.updatedAt = now;
     mockSshEvents.push({
       sessionId: input.sessionId,
       kind: "close",
       data: "SSH session closed.\r\n",
+      createdAt: now,
+    });
+    return session as T;
+  }
+
+  if (command === "ssh_session_reconnect_cancel") {
+    const input = args?.input as SshReconnectCancelInput;
+    const session = mockSshSessions.find(
+      (item) => item.workspaceId === input.workspaceId && item.sessionId === input.sessionId,
+    );
+    if (!session) throw new Error("ssh session not found");
+    const now = new Date().toISOString();
+    session.status = "disconnected";
+    session.reconnectAttempt = 0;
+    session.updatedAt = now;
+    mockSshEvents.push({
+      sessionId: input.sessionId,
+      kind: "close",
+      data: "SSH reconnect cancelled.\r\n",
       createdAt: now,
     });
     return session as T;
@@ -885,6 +907,10 @@ export function resizeSshSession(input: SshResizeInput) {
 
 export function closeSshSession(input: SshCloseInput) {
   return call<SshSessionSummary>("ssh_session_close", { input });
+}
+
+export function cancelSshReconnect(input: SshReconnectCancelInput) {
+  return call<SshSessionSummary>("ssh_session_reconnect_cancel", { input });
 }
 
 export function exportSshLog(input: SshLogExportInput) {

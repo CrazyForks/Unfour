@@ -204,6 +204,11 @@ export type SshCloseInput = {
   sessionId: string;
 };
 
+export type SshReconnectCancelInput = {
+  workspaceId: string;
+  sessionId: string;
+};
+
 export type SshLogExportInput = {
   workspaceId: string;
   sessionId: string;
@@ -213,7 +218,8 @@ export type SshSessionSummary = {
   sessionId: string;
   workspaceId: string;
   connectionId: string;
-  status: "active" | "closed";
+  status: "connected" | "degraded" | "reconnecting" | "disconnected" | "failed";
+  reconnectAttempt: number;
   authKind: "password" | "private-key";
   host: string;
   username: string;

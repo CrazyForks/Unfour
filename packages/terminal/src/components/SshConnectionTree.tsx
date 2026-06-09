@@ -31,6 +31,7 @@ import {
 import { useSshConnections } from "../hooks/useSshConnections";
 import { useTerminalSessions } from "../hooks/useTerminalSessions";
 import { useTerminalStore } from "../model/terminal-state";
+import { terminalSessionStatus } from "./TerminalSessionTab";
 
 export function SshConnectionTree({
   active,
@@ -126,7 +127,9 @@ export function SshConnectionTree({
 
   const activeSessionByConnection = new Map<string, SshSessionSummary>();
   sessions
-    .filter((session) => session.status === "active")
+    .filter((session) =>
+      ["connected", "degraded", "reconnecting"].includes(session.status),
+    )
     .forEach((session) => activeSessionByConnection.set(session.connectionId, session));
 
   const connectionItems: TreeViewItem[] = connections.map((connection) => {
@@ -139,7 +142,7 @@ export function SshConnectionTree({
       : connecting
         ? "connecting"
         : activeSession
-          ? "connected"
+          ? terminalSessionStatus(activeSession)
           : "disconnected";
     const menu = (
       <>
@@ -230,7 +233,16 @@ export function SshConnectionTree({
         icon: <TerminalSquare size={13} />,
         id: `session:${session.sessionId}`,
         label: `${session.username}@${session.host}`,
-        meta: <ConnectionStatus status={session.status === "active" ? "connected" : "closed"} />,
+        meta: (
+          <ConnectionStatus
+            label={
+              session.status === "reconnecting"
+                ? `retry ${session.reconnectAttempt}/3`
+                : session.status
+            }
+            status={terminalSessionStatus(session)}
+          />
+        ),
         title: `${session.username}@${session.host} ${session.cols}x${session.rows}`,
       })),
       id: "ssh-sessions",

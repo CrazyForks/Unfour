@@ -7,8 +7,8 @@ use unfour_core::models::{
     DatabaseConnectionInput, DatabaseQueryInput, DatabaseQueryResult, DatabaseSchema,
     DatabaseTestResult, KeyValue, SshCloseInput, SshConnectInput, SshConnection,
     SshConnectionInput, SshHostFingerprintInfo, SshHostKeyInput, SshLogExport, SshLogExportInput,
-    SshResizeInput, SshSessionEvent, SshSessionInput, SshSessionSummary, SystemHealth, Workspace,
-    WorkspaceEnvironment, WorkspaceLayout, WorkspaceState,
+    SshReconnectCancelInput, SshResizeInput, SshSessionEvent, SshSessionInput, SshSessionSummary,
+    SystemHealth, Workspace, WorkspaceEnvironment, WorkspaceLayout, WorkspaceState,
 };
 use unfour_core::AppResult;
 
@@ -336,6 +336,14 @@ pub async fn ssh_session_close(
     state: State<'_, AppState>,
 ) -> AppResult<SshSessionSummary> {
     state.command_bus.close_ssh_session(input).await
+}
+
+#[tauri::command]
+pub async fn ssh_session_reconnect_cancel(
+    input: SshReconnectCancelInput,
+    state: State<'_, AppState>,
+) -> AppResult<SshSessionSummary> {
+    state.command_bus.cancel_ssh_reconnect(input).await
 }
 
 #[tauri::command]

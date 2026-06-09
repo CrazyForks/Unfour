@@ -1,5 +1,4 @@
 import { useEffect, useRef } from "react";
-import { listen } from "@tauri-apps/api/event";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
 import { Terminal as XTerm } from "@xterm/xterm";
@@ -31,7 +30,6 @@ export function TerminalPane({
   const renderedSessionIdRef = useRef<string | null>(null);
 
   const activeSessionId = useTerminalStore((s) => s.activeSessionId);
-  const appendTerminalEvents = useTerminalStore((s) => s.appendTerminalEvents);
   const setTerminalSearchAddon = useTerminalStore((s) => s.setTerminalSearchAddon);
 
   // Mutable callback refs – updated in useEffect (not during render).
@@ -39,12 +37,10 @@ export function TerminalPane({
   const onResizeRef = useRef<
     ((sessionId: string, cols: number, rows: number) => void) | null
   >(null);
-  const appendRef = useRef(appendTerminalEvents);
   const activeSessionIdRef = useRef(activeSessionId);
 
   // Keep callback refs in sync with latest store / prop values.
   useEffect(() => {
-    appendRef.current = appendTerminalEvents;
     activeSessionIdRef.current = activeSessionId;
 
     onSendInputRef.current =
@@ -78,7 +74,6 @@ export function TerminalPane({
       : null;
   }, [
     activeSessionId,
-    appendTerminalEvents,
     inputDisabled,
     readOnly,
     session?.workspaceId,
@@ -141,41 +136,6 @@ export function TerminalPane({
     });
 
     // ---------------------------------------------------------------
-    // Tauri event listener for streaming terminal output
-    // ---------------------------------------------------------------
-    let unlisten: (() => void) | null = null;
-    listen<{ sessionId: string; data: string; closed?: boolean }>(
-      "ssh://terminal-data",
-      (event) => {
-        const { sessionId, data, closed } = event.payload;
-        if (closed) {
-          appendRef.current([
-            {
-              sessionId,
-              kind: "close",
-              data: "SSH session disconnected.\r\n",
-              createdAt: new Date().toISOString(),
-            },
-          ]);
-          return;
-        }
-        if (data) {
-          terminal.write(data);
-          appendRef.current([
-            {
-              sessionId,
-              kind: "output",
-              data,
-              createdAt: new Date().toISOString(),
-            },
-          ]);
-        }
-      },
-    ).then((fn) => {
-      unlisten = fn;
-    });
-
-    // ---------------------------------------------------------------
     // ResizeObserver for container size changes
     // ---------------------------------------------------------------
     const resizeObserver =
@@ -190,7 +150,6 @@ export function TerminalPane({
       dataDisposable.dispose();
       resizeDisposable.dispose();
       resizeObserver?.disconnect();
-      unlisten?.();
       terminal.dispose();
       terminalRef.current = null;
       fitAddonRef.current = null;
@@ -237,7 +196,7 @@ export function TerminalPane({
       terminal.reset();
       terminal.write(
         session
-          ? session.status === "active"
+          ? session.status === "connected"
             ? `Connected to ${session.username}@${session.host}. Waiting for output.\r\n`
             : `Session ${session.username}@${session.host} is disconnected.\r\n`
           : "Select a connection and start a session.\r\n",

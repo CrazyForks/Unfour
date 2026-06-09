@@ -272,6 +272,13 @@ pub struct SshCloseInput {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct SshReconnectCancelInput {
+    pub workspace_id: String,
+    pub session_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SshLogExportInput {
     pub workspace_id: String,
     pub session_id: String,
@@ -284,6 +291,7 @@ pub struct SshSessionSummary {
     pub workspace_id: String,
     pub connection_id: String,
     pub status: String,
+    pub reconnect_attempt: u8,
     pub auth_kind: String,
     pub host: String,
     pub username: String,

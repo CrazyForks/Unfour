@@ -4,10 +4,10 @@
 
 - **Scanned at:** 2026-06-09 (checkpoint refresh)
 - **Branch:** main
-- **Current commit:** 13c4b28
-- **Commit message:** feat(ssh): add private-key authentication and host-key controls
-- **Working tree state:** Clean
-- **Last checkpoint:** 13c4b28 feat(ssh): add private-key authentication and host-key controls
+- **Current batch:** SSH reliability
+- **Commit message:** feat(ssh): add connection health and reconnect handling
+- **Batch state:** Implementation and verification complete
+- **Last checkpoint:** SSH reliability implementation and verification complete
 
 ## Tech Stack
 
@@ -19,7 +19,7 @@
 
 ## Current Phase
 
-Terminal streaming integration is **complete**. PTY lifecycle, stdin/stdout streaming, Tauri event streaming, frontend terminal input capture, resize propagation, and search are all wired end-to-end.
+Terminal streaming and SSH reliability integration are **complete**. PTY lifecycle, stdin/stdout streaming, Tauri event streaming, frontend terminal input capture, resize propagation, search, keepalive monitoring, bounded reconnection, cancellation, and cleanup are wired end-to-end.
 
 UI module split is **in progress**. Terminal and Database packages have been extracted from `packages/app-shell`. Further Workspace extraction is planned.
 
@@ -35,7 +35,7 @@ UI module split is **in progress**. Terminal and Database packages have been ext
 | SecretStore (credential references) | Complete | 4 pass |
 | Database engine (SQLite CRUD + schema) | Complete | 3 pass |
 | HTTP engine (API client + history) | Complete | 8 pass |
-| SSH engine (simulated + native) | Complete | 16 pass |
+| SSH engine (simulated + native) | Complete | 20 default + 14 native-feature pass |
 | Workspace engine | Complete | Tests blocked on Windows DLL issue |
 | CommandBus (Tauri adapter) | Complete | Compile-verified |
 
@@ -46,26 +46,25 @@ UI module split is **in progress**. Terminal and Database packages have been ext
 | Workspace store | Complete | 12 pass |
 | API Debugger | Complete | 20 pass |
 | Database (connections + query) | Complete | 16 pass |
-| Terminal state (streaming + search) | Complete | 5 pass |
+| Terminal state and command-client mock | Complete | 6 pass |
 
 ### Build
 
 - **Frontend production build:** PASS
-- **Frontend bundle chunks:** index (383 kB), xterm (367 kB), vendor-tanstack (101 kB), vendor-radix (88 kB), monaco (15 kB)
-- **Total Rust tests:** 40 passing (6 crates); unfour-workspace blocked by DLL issue
-- **Total frontend tests:** 53 passing (4 files)
+- **Frontend bundle chunks:** index (384 kB), xterm (367 kB), vendor-tanstack (101 kB), vendor-radix (88 kB), monaco (15 kB)
+- **Total Rust tests:** 44 passing before unfour-workspace is blocked by the Windows DLL issue
+- **Total frontend tests:** 54 passing (5 files)
 
 ## Partially Implemented
 
 - **UI module split:** Terminal and Database packages extracted. Workspace package exists but app-shell still contains some workspace UI.
 - **SSH authentication:** Password auth and private-key auth both work under `ssh-native`. Encrypted key passphrase loading has limited support (ssh-key crate format constraints).
 - **Host-key UI:** View trusted fingerprint and reset fingerprint implemented. Mismatch error display is handled by the TOFU backend.
+- **SSH live reliability verification:** Keepalive and reconnect policy are automated-test covered, but a live localhost SSH stop/start cycle was not available in this environment.
 - **Database drivers:** SQLite driver is functional. PostgreSQL/MySQL drivers are not started.
 
 ## Not Started
 
-- SSH connection health monitoring / keep-alive
-- SSH auto-reconnection logic
 - Terminal output persistence to SQLite
 - `known_hosts` integration
 - Terminal multiplexing (tmux/screen-like)
@@ -78,16 +77,18 @@ UI module split is **in progress**. Terminal and Database packages have been ext
 |---|---|---|
 | `git diff --check` | PASS | No trailing whitespace issues |
 | `pnpm run lint` | PASS (warnings) | 0 errors, 63 warnings; pre-existing in api-debugger, database, terminal, desktop |
-| `pnpm run test` | PASS | 53 tests, 4 files |
+| `pnpm run test` | PASS | 54 tests, 5 files |
 | `pnpm run build` | PASS | Production build succeeds |
 | `cargo fmt --check` | PASS | No formatting issues |
-| `cargo test --workspace` | PARTIAL | 40 tests pass across 6 crates. `unfour-workspace` fails with Windows `STATUS_ENTRYPOINT_NOT_FOUND` (DLL loading issue) |
+| `cargo test --workspace` | PARTIAL | 44 tests pass across 6 crates. `unfour-workspace` fails with Windows `STATUS_ENTRYPOINT_NOT_FOUND` (DLL loading issue) |
 | `cargo check --workspace` | PASS | All crates compile |
 | `cargo check -p unfour-workspace --features ssh-native` | PASS | SSH feature compiles |
+| `cargo test -p unfour-ssh-engine --features ssh-native` | PASS | 14 native-feature tests |
+| Browser mock first viewport | PASS | SSH empty state and status bar render correctly |
 
 ## Known Limitations
 
 - **Windows workspace tests:** `cargo test -p unfour-workspace` fails with `STATUS_ENTRYPOINT_NOT_FOUND`. Likely a native DLL dependency issue (OpenSSL/SQLite) on this Windows environment. Does not indicate code defects.
 - **Lint warnings:** Multiple packages have `react-hooks/set-state-in-effect`, `react-hooks/exhaustive-deps`, `react-hooks/refs`, and `react-refresh/only-export-components` warnings. These are pre-existing and do not block builds.
-- **Real SSH verification:** Native SSH transport with PTY streaming has not been manually verified against a live SSH server in this environment.
+- **Real SSH verification:** Native SSH transport drop detection, reconnect cancellation, retry exhaustion, and recovery after server return are `NOT VERIFIED` against a live SSH server in this environment.
 - **API body redaction:** Request bodies are not redacted in logs or history.
