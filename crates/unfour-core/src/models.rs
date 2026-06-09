@@ -322,6 +322,24 @@ pub struct SshConnectionConfig {
     pub key_path: Option<String>,
 }
 
+/// Input for host-key fingerprint operations (get / reset).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SshHostKeyInput {
+    pub host: String,
+    pub port: u16,
+}
+
+/// Information about a stored SSH host-key fingerprint.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SshHostFingerprintInfo {
+    pub host: String,
+    pub port: u16,
+    pub fingerprint: String,
+    pub created_at: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DatabaseConnection {

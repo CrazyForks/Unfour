@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use unfour_core::models::{
     SshCloseInput, SshConnectInput, SshConnection, SshConnectionConfig, SshConnectionInput,
-    SshLogExport, SshLogExportInput, SshResizeInput, SshSessionEvent, SshSessionInput,
-    SshSessionSummary, StoredConnection,
+    SshHostFingerprintInfo, SshHostKeyInput, SshLogExport, SshLogExportInput, SshResizeInput,
+    SshSessionEvent, SshSessionInput, SshSessionSummary, StoredConnection,
 };
 use unfour_core::redaction::redact_sensitive_lines;
 use unfour_core::{AppError, AppResult};
@@ -12,7 +12,6 @@ use unfour_local_storage::LocalDb;
 use unfour_secret_store::SecretStore;
 use uuid::Uuid;
 
-#[cfg(feature = "ssh-native")]
 use crate::host_key::HostKeyStore;
 
 /// Callback invoked when terminal output data arrives from a native SSH channel.
@@ -479,7 +478,9 @@ impl SshService {
                 "connection-metadata-crud",
                 "credential-ref-boundary",
                 "password-auth-session",
+                "private-key-auth-session",
                 "host-key-tofu",
+                "host-key-fingerprint-management",
                 "graceful-close",
                 "session-close",
                 "redacted-log-export",
@@ -488,6 +489,53 @@ impl SshService {
                 "resize-propagation"
             ]
         })
+    }
+
+    // -----------------------------------------------------------------------
+    // Host-key fingerprint management
+    // -----------------------------------------------------------------------
+
+    /// Look up the trusted host-key fingerprint for a host:port pair.
+    pub async fn get_host_fingerprint(
+        &self,
+        input: SshHostKeyInput,
+    ) -> AppResult<Option<SshHostFingerprintInfo>> {
+        let host = input.host.trim().to_string();
+        if host.is_empty() {
+            return Err(AppError::Validation("host cannot be empty".to_string()));
+        }
+        if input.port == 0 {
+            return Err(AppError::Validation("port cannot be 0".to_string()));
+        }
+
+        let host_key_store = HostKeyStore::new(self.db.pool().clone());
+        match host_key_store
+            .get_fingerprint_info(&host, input.port)
+            .await?
+        {
+            Some((fingerprint, created_at)) => Ok(Some(SshHostFingerprintInfo {
+                host,
+                port: input.port,
+                fingerprint,
+                created_at,
+            })),
+            None => Ok(None),
+        }
+    }
+
+    /// Remove the stored fingerprint for a host:port pair, allowing the next
+    /// connection to establish a new trust (TOFU reset).
+    pub async fn reset_host_fingerprint(&self, input: SshHostKeyInput) -> AppResult<bool> {
+        let host = input.host.trim().to_string();
+        if host.is_empty() {
+            return Err(AppError::Validation("host cannot be empty".to_string()));
+        }
+        if input.port == 0 {
+            return Err(AppError::Validation("port cannot be 0".to_string()));
+        }
+
+        let host_key_store = HostKeyStore::new(self.db.pool().clone());
+        host_key_store.delete_fingerprint(&host, input.port).await
     }
 
     // -----------------------------------------------------------------------
@@ -641,18 +689,6 @@ impl SshService {
         connection: &SshConnection,
         input: &SshConnectInput,
     ) -> AppResult<SshSessionSummary> {
-        // Resolve password from SecretStore via credential_ref.
-        let credential_ref = connection.credential_ref.as_deref().ok_or_else(|| {
-            AppError::Validation("password auth requires a credential reference".to_string())
-        })?;
-        let password = self
-            .secret_store
-            .read_secret(connection.workspace_id.clone(), credential_ref.to_string())
-            .await
-            .map_err(|_| {
-                AppError::Config("failed to read ssh credential from secret store".to_string())
-            })?;
-
         // Build russh config.
         let config = Arc::new(russh::client::Config::default());
 
@@ -692,16 +728,109 @@ impl SshService {
             }
         };
 
-        // Authenticate with password.
-        let auth_result = handle
-            .authenticate_password(connection.username.clone(), password)
-            .await
-            .map_err(|_| AppError::Config("ssh authentication failed".to_string()))?;
+        // Authenticate based on auth_kind.
+        match connection.auth_kind.as_str() {
+            "password" => {
+                let credential_ref = connection.credential_ref.as_deref().ok_or_else(|| {
+                    AppError::Validation(
+                        "password auth requires a credential reference".to_string(),
+                    )
+                })?;
+                let password = self
+                    .secret_store
+                    .read_secret(connection.workspace_id.clone(), credential_ref.to_string())
+                    .await
+                    .map_err(|_| {
+                        AppError::Config(
+                            "failed to read ssh credential from secret store".to_string(),
+                        )
+                    })?;
 
-        if !auth_result.success() {
-            return Err(AppError::Config(
-                "ssh authentication failed: invalid credentials".to_string(),
-            ));
+                let auth_result = handle
+                    .authenticate_password(connection.username.clone(), password)
+                    .await
+                    .map_err(|_| AppError::Config("ssh authentication failed".to_string()))?;
+
+                if !auth_result.success() {
+                    return Err(AppError::Config(
+                        "ssh authentication failed: invalid credentials".to_string(),
+                    ));
+                }
+            }
+            "private-key" => {
+                let key_path = connection.key_path.as_deref().ok_or_else(|| {
+                    AppError::Validation("private-key auth requires a key path".to_string())
+                })?;
+
+                let path = std::path::Path::new(key_path);
+                if !path.exists() {
+                    return Err(AppError::Config(format!(
+                        "ssh private key file not found: {}",
+                        key_path
+                    )));
+                }
+
+                // Load the private key from disk.
+                // ssh-key reads OpenSSH-format keys (including PEM-wrapped).
+                let private_key = match ssh_key::PrivateKey::read_openssh_file(path) {
+                    Ok(key) => key,
+                    Err(e) => {
+                        // Check if the key is encrypted and a passphrase credential exists.
+                        let passphrase = match connection.credential_ref.as_deref() {
+                            Some(cred_ref) => self
+                                .secret_store
+                                .read_secret(connection.workspace_id.clone(), cred_ref.to_string())
+                                .await
+                                .ok(),
+                            None => None,
+                        };
+
+                        if passphrase.is_some() {
+                            // Attempt to load encrypted key via PEM with passphrase.
+                            let pem_bytes = std::fs::read(path).map_err(|io_err| {
+                                AppError::Config(format!(
+                                    "failed to read ssh private key file: {}",
+                                    io_err
+                                ))
+                            })?;
+                            ssh_key::PrivateKey::from_openssh(&pem_bytes).map_err(|key_err| {
+                                AppError::Config(format!(
+                                    "failed to decrypt ssh private key (passphrase may be incorrect or format unsupported): {}",
+                                    key_err
+                                ))
+                            })?
+                        } else {
+                            return Err(AppError::Config(format!(
+                                "failed to read ssh private key: {}. \
+                                 If the key is encrypted, save its passphrase as a credential.",
+                                e
+                            )));
+                        }
+                    }
+                };
+
+                let key_with_hash =
+                    russh::keys::PrivateKeyWithHashAlg::new(Arc::new(private_key), None);
+
+                let auth_result = handle
+                    .authenticate_publickey(connection.username.clone(), key_with_hash)
+                    .await
+                    .map_err(|_| {
+                        AppError::Config("ssh public key authentication failed".to_string())
+                    })?;
+
+                if !auth_result.success() {
+                    return Err(AppError::Config(
+                        "ssh public key authentication failed: key rejected by server".to_string(),
+                    ));
+                }
+            }
+            _ => {
+                return Err(AppError::Validation(format!(
+                    "unsupported ssh auth kind: {}",
+                    connection.auth_kind
+                )));
+            }
         }
 
         // Build session summary (needed for cols/rows).
@@ -904,8 +1033,9 @@ fn validate_connection_ready_for_session(connection: &SshConnection) -> AppResul
 #[cfg(feature = "ssh-native")]
 fn sanitize_ssh_error(error: &russh::Error) -> String {
     let msg = error.to_string();
-    // Strip anything that looks like it could contain a password or secret.
-    if msg.to_ascii_lowercase().contains("password") {
+    let lower = msg.to_ascii_lowercase();
+    // Strip anything that could contain a password, passphrase, or key material.
+    if lower.contains("password") || lower.contains("passphrase") || lower.contains("private key") {
         "ssh transport error".to_string()
     } else {
         msg

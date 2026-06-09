@@ -6,9 +6,9 @@ use unfour_core::models::{
     CredentialRotateInput, DatabaseBrowseInput, DatabaseBrowseResult, DatabaseConnection,
     DatabaseConnectionInput, DatabaseQueryInput, DatabaseQueryResult, DatabaseSchema,
     DatabaseTestResult, KeyValue, SshCloseInput, SshConnectInput, SshConnection,
-    SshConnectionInput, SshLogExport, SshLogExportInput, SshResizeInput, SshSessionEvent,
-    SshSessionInput, SshSessionSummary, SystemHealth, Workspace, WorkspaceEnvironment,
-    WorkspaceLayout, WorkspaceState,
+    SshConnectionInput, SshHostFingerprintInfo, SshHostKeyInput, SshLogExport, SshLogExportInput,
+    SshResizeInput, SshSessionEvent, SshSessionInput, SshSessionSummary, SystemHealth, Workspace,
+    WorkspaceEnvironment, WorkspaceLayout, WorkspaceState,
 };
 use unfour_core::AppResult;
 
@@ -344,4 +344,20 @@ pub async fn ssh_session_log_export(
     state: State<'_, AppState>,
 ) -> AppResult<SshLogExport> {
     state.command_bus.export_ssh_log(input).await
+}
+
+#[tauri::command]
+pub async fn ssh_host_key_get(
+    input: SshHostKeyInput,
+    state: State<'_, AppState>,
+) -> AppResult<Option<SshHostFingerprintInfo>> {
+    state.command_bus.get_ssh_host_fingerprint(input).await
+}
+
+#[tauri::command]
+pub async fn ssh_host_key_reset(
+    input: SshHostKeyInput,
+    state: State<'_, AppState>,
+) -> AppResult<bool> {
+    state.command_bus.reset_ssh_host_fingerprint(input).await
 }

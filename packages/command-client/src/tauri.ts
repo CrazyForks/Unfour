@@ -22,6 +22,8 @@ import type {
   SshConnectInput,
   SshConnection,
   SshConnectionInput,
+  SshHostFingerprintInfo,
+  SshHostKeyInput,
   SshLogExport,
   SshLogExportInput,
   SshResizeInput,
@@ -66,6 +68,7 @@ let mockDatabaseConnections: DatabaseConnection[] = [];
 let mockSshConnections: SshConnection[] = [];
 let mockSshSessions: SshSessionSummary[] = [];
 const mockSshEvents: SshSessionEvent[] = [];
+const mockHostKeyFingerprints: Record<string, SshHostFingerprintInfo> = {};
 const mockCredentials: Record<string, string> = {};
 let mockEnvironment: WorkspaceEnvironment = {
   workspaceId: mockWorkspace.id,
@@ -605,6 +608,16 @@ async function mockInvoke<T>(
       data: `Connected to ${session.username}@${session.host} with ${session.authKind} auth. PTY ${session.cols}x${session.rows} allocated.\r\n`,
       createdAt: now,
     });
+    // Simulate TOFU: record a mock fingerprint if not already stored.
+    const hostKey = `${connection.host}:${connection.port}`;
+    if (!(hostKey in mockHostKeyFingerprints)) {
+      mockHostKeyFingerprints[hostKey] = {
+        host: connection.host,
+        port: connection.port,
+        fingerprint: `SHA256:mock-${crypto.randomUUID().slice(0, 12)}`,
+        createdAt: now,
+      };
+    }
     return session as T;
   }
 
@@ -689,6 +702,21 @@ async function mockInvoke<T>(
       lineCount: events.length,
       redacted: content.includes("<redacted>"),
     } satisfies SshLogExport) as T;
+  }
+
+  if (command === "ssh_host_key_get") {
+    const input = args?.input as SshHostKeyInput;
+    const key = `${input.host}:${input.port}`;
+    const info = mockHostKeyFingerprints[key];
+    return (info ?? null) as T;
+  }
+
+  if (command === "ssh_host_key_reset") {
+    const input = args?.input as SshHostKeyInput;
+    const key = `${input.host}:${input.port}`;
+    const existed = key in mockHostKeyFingerprints;
+    delete mockHostKeyFingerprints[key];
+    return existed as T;
   }
 
   throw new Error(`Mock command is not implemented: ${command}`);
@@ -861,6 +889,14 @@ export function closeSshSession(input: SshCloseInput) {
 
 export function exportSshLog(input: SshLogExportInput) {
   return call<SshLogExport>("ssh_session_log_export", { input });
+}
+
+export function getSshHostFingerprint(input: SshHostKeyInput) {
+  return call<SshHostFingerprintInfo | null>("ssh_host_key_get", { input });
+}
+
+export function resetSshHostFingerprint(input: SshHostKeyInput) {
+  return call<boolean>("ssh_host_key_reset", { input });
 }
 
 function resolveInput(input: ApiRequestInput, variables: WorkspaceEnvironment["variables"]) {

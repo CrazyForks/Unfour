@@ -2,12 +2,12 @@
 
 ## Scan Metadata
 
-- **Scanned at:** 2026-06-08
+- **Scanned at:** 2026-06-09
 - **Branch:** main
-- **Current commit:** aa10bfa428fd044e44cc1d1de5b3dc8ac382f76b
-- **Commit message:** feat(terminal): connect ssh streaming to xterm
-- **Working tree state:** Clean (1 untracked: docs/agents/CHECKPOINT_REFRESH.md)
-- **Last checkpoint:** c9b7c13 docs(checkpoint): refresh repository state
+- **Current commit:** 554bb21
+- **Commit message:** feat(ssh): add private-key authentication and host-key controls
+- **Working tree state:** Clean
+- **Last checkpoint:** 554bb21 feat(ssh): add private-key authentication and host-key controls
 
 ## Tech Stack
 
@@ -35,7 +35,7 @@ UI module split is **in progress**. Terminal and Database packages have been ext
 | SecretStore (credential references) | Complete | 4 pass |
 | Database engine (SQLite CRUD + schema) | Complete | 3 pass |
 | HTTP engine (API client + history) | Complete | 8 pass |
-| SSH engine (simulated + native) | Complete | 13 pass |
+| SSH engine (simulated + native) | Complete | 16 pass |
 | Workspace engine | Complete | Tests blocked on Windows DLL issue |
 | CommandBus (Tauri adapter) | Complete | Compile-verified |
 
@@ -56,16 +56,15 @@ UI module split is **in progress**. Terminal and Database packages have been ext
 ## Partially Implemented
 
 - **UI module split:** Terminal and Database packages extracted. Workspace package exists but app-shell still contains some workspace UI.
-- **SSH authentication:** Password auth via SecretStore works under `ssh-native`. Private-key auth not implemented.
+- **SSH authentication:** Password auth and private-key auth both work under `ssh-native`. Encrypted key passphrase loading has limited support (ssh-key crate format constraints).
+- **Host-key UI:** View trusted fingerprint and reset fingerprint implemented. Mismatch error display is handled by the TOFU backend.
 - **Database drivers:** SQLite driver is functional. PostgreSQL/MySQL drivers are not started.
 
 ## Not Started
 
-- SSH private-key authentication
 - SSH connection health monitoring / keep-alive
 - SSH auto-reconnection logic
 - Terminal output persistence to SQLite
-- Host-key UI (view/trust/reset fingerprints)
 - `known_hosts` integration
 - Terminal multiplexing (tmux/screen-like)
 - SCP/SFTP file transfer

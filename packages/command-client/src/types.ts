@@ -238,6 +238,18 @@ export type SshLogExport = {
   redacted: boolean;
 };
 
+export type SshHostKeyInput = {
+  host: string;
+  port: number;
+};
+
+export type SshHostFingerprintInfo = {
+  host: string;
+  port: number;
+  fingerprint: string;
+  createdAt: string;
+};
+
 export type DatabaseConnection = {
   id: string;
   workspaceId: string;

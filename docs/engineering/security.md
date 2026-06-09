@@ -65,12 +65,13 @@ Future AI/workflow actions should distinguish local reads, writes, and data egre
 - Database query cancellation and read-only guardrails are not implemented.
 - API request body redaction is not implemented.
 - Workspace environment values are not encrypted; do not store long-lived secrets there.
+- Encrypted SSH private key passphrase decryption is limited by the ssh-key crate's format support.
 
 ## SSH Host-Key Verification (ADR: TOFU)
 
 **Decision:** Trust-on-first-use (TOFU) for SSH host-key verification.
 
-**Status:** Implemented in `crates/ssh-engine/src/host_key.rs`. Active under the `ssh-native` feature flag.
+**Status:** Implemented in `crates/ssh-engine/src/host_key.rs`. Active under the `ssh-native` feature flag. Works for both password and private-key authentication.
 
 **Behavior:**
 
@@ -81,8 +82,12 @@ Future AI/workflow actions should distinguish local reads, writes, and data egre
 
 **Storage:** Fingerprints are stored in `ssh_host_keys (host, port, fingerprint, created_at)` with `(host, port)` as the composite primary key.
 
+**Management:** Users can view the trusted fingerprint and reset (delete) it via the connection settings dialog. After a reset, the next connection re-establishes trust (TOFU).
+
+**Frontend:** The `HostKeyFingerprint` component in `packages/terminal` displays the trusted fingerprint and allows resetting it.
+
 **Future extension points:**
 
 - OpenSSH `known_hosts` file integration for interoperability.
-- User confirmation UI for fingerprint changes (allow explicit trust updates).
+- User confirmation UI for fingerprint changes (allow explicit trust updates without full reset).
 - Per-connection host-key policy overrides.

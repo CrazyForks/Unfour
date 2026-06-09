@@ -6,9 +6,9 @@ use unfour_core::models::{
     CredentialRotateInput, DatabaseBrowseInput, DatabaseBrowseResult, DatabaseConnection,
     DatabaseConnectionInput, DatabaseQueryInput, DatabaseQueryResult, DatabaseSchema,
     DatabaseTestResult, KeyValue, SshCloseInput, SshConnectInput, SshConnection,
-    SshConnectionInput, SshLogExport, SshLogExportInput, SshResizeInput, SshSessionEvent,
-    SshSessionInput, SshSessionSummary, SystemHealth, Workspace, WorkspaceEnvironment,
-    WorkspaceLayout, WorkspaceState,
+    SshConnectionInput, SshHostFingerprintInfo, SshHostKeyInput, SshLogExport, SshLogExportInput,
+    SshResizeInput, SshSessionEvent, SshSessionInput, SshSessionSummary, SystemHealth, Workspace,
+    WorkspaceEnvironment, WorkspaceLayout, WorkspaceState,
 };
 use unfour_core::sync_reserved;
 use unfour_core::AppResult;
@@ -563,6 +563,30 @@ impl CommandBus {
             )
             .await?;
         Ok(export)
+    }
+
+    pub async fn get_ssh_host_fingerprint(
+        &self,
+        input: SshHostKeyInput,
+    ) -> AppResult<Option<SshHostFingerprintInfo>> {
+        self.ssh.get_host_fingerprint(input).await
+    }
+
+    pub async fn reset_ssh_host_fingerprint(&self, input: SshHostKeyInput) -> AppResult<bool> {
+        let host = input.host.clone();
+        let port = input.port;
+        let deleted = self.ssh.reset_host_fingerprint(input).await?;
+        if deleted {
+            self.activity_log
+                .record(
+                    None,
+                    "ssh.host_key.reset",
+                    Some(&format!("{}:{}", host, port)),
+                    serde_json::json!({ "host": host, "port": port }),
+                )
+                .await?;
+        }
+        Ok(deleted)
     }
 
     pub fn reserved_status(&self) -> serde_json::Value {

@@ -57,6 +57,8 @@ pub fn run() {
             commands::ssh_connection_delete,
             commands::ssh_connection_save,
             commands::ssh_connections_list,
+            commands::ssh_host_key_get,
+            commands::ssh_host_key_reset,
             commands::ssh_session_close,
             commands::ssh_session_connect,
             commands::ssh_session_input,

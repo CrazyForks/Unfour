@@ -77,6 +77,34 @@ impl HostKeyStore {
             ))),
         }
     }
+
+    /// Remove the stored fingerprint for a host:port pair.
+    ///
+    /// Returns `true` if a record was deleted, `false` if no record existed.
+    pub async fn delete_fingerprint(&self, host: &str, port: u16) -> AppResult<bool> {
+        let result = sqlx::query("DELETE FROM ssh_host_keys WHERE host = ?1 AND port = ?2")
+            .bind(host)
+            .bind(port as i64)
+            .execute(&self.pool)
+            .await?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    /// Return the stored fingerprint and the timestamp when it was recorded.
+    pub async fn get_fingerprint_info(
+        &self,
+        host: &str,
+        port: u16,
+    ) -> AppResult<Option<(String, String)>> {
+        let row = sqlx::query_as::<_, (String, String)>(
+            "SELECT fingerprint, created_at FROM ssh_host_keys WHERE host = ?1 AND port = ?2",
+        )
+        .bind(host)
+        .bind(port as i64)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row)
+    }
 }
 
 #[cfg(test)]
@@ -186,5 +214,92 @@ mod tests {
             .verify_or_record("example.com", 2222, "SHA256:port2222")
             .await
             .expect("port 2222 first connect with different fingerprint");
+    }
+
+    #[tokio::test]
+    async fn host_key_delete_fingerprint_removes_record() {
+        let store = test_store().await;
+
+        store
+            .verify_or_record("example.com", 22, "SHA256:abc123")
+            .await
+            .expect("first connect");
+
+        let deleted = store
+            .delete_fingerprint("example.com", 22)
+            .await
+            .expect("delete fingerprint");
+        assert!(deleted, "should have deleted an existing record");
+
+        let stored = store
+            .get_fingerprint("example.com", 22)
+            .await
+            .expect("lookup after delete");
+        assert!(stored.is_none(), "fingerprint should be gone");
+
+        // Deleting again should return false (nothing to delete).
+        let deleted_again = store
+            .delete_fingerprint("example.com", 22)
+            .await
+            .expect("delete again");
+        assert!(!deleted_again, "no record to delete");
+    }
+
+    #[tokio::test]
+    async fn host_key_get_fingerprint_info_returns_metadata() {
+        let store = test_store().await;
+
+        // No record yet.
+        let info = store
+            .get_fingerprint_info("example.com", 22)
+            .await
+            .expect("lookup before any record");
+        assert!(info.is_none());
+
+        store
+            .verify_or_record("example.com", 22, "SHA256:abc123")
+            .await
+            .expect("first connect");
+
+        let info = store
+            .get_fingerprint_info("example.com", 22)
+            .await
+            .expect("lookup after record");
+        let (fingerprint, created_at) = info.expect("should have fingerprint info");
+        assert_eq!(fingerprint, "SHA256:abc123");
+        assert!(!created_at.is_empty(), "created_at should be populated");
+    }
+
+    #[tokio::test]
+    async fn host_key_delete_allows_new_trust() {
+        let store = test_store().await;
+
+        store
+            .verify_or_record("example.com", 22, "SHA256:old_key")
+            .await
+            .expect("first connect");
+
+        // Mismatch would be rejected.
+        let result = store
+            .verify_or_record("example.com", 22, "SHA256:new_key")
+            .await;
+        assert!(result.is_err(), "mismatch must be rejected");
+
+        // After reset, a new fingerprint is accepted (TOFU).
+        store
+            .delete_fingerprint("example.com", 22)
+            .await
+            .expect("reset fingerprint");
+
+        store
+            .verify_or_record("example.com", 22, "SHA256:new_key")
+            .await
+            .expect("new trust after reset");
+
+        let stored = store
+            .get_fingerprint("example.com", 22)
+            .await
+            .expect("lookup");
+        assert_eq!(stored.as_deref(), Some("SHA256:new_key"));
     }
 }

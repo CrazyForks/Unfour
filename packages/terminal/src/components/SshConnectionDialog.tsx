@@ -17,6 +17,7 @@ import {
   Select,
 } from "@unfour/ui";
 import { CredentialReferenceControl } from "./CredentialReferenceControl";
+import { HostKeyFingerprint } from "./HostKeyFingerprint";
 import { formatTerminalError } from "../model/errors";
 
 export function SshConnectionDialog({
@@ -114,6 +115,9 @@ export function SshConnectionDialog({
               value={form.credentialRef}
               workspaceId={workspaceId}
             />
+            {Boolean(form.host) && (
+              <HostKeyFingerprint host={form.host} port={form.port ?? 22} />
+            )}
             {Boolean(error) && (
               <ErrorState className="min-h-0 justify-start py-2 text-left">
                 {formatTerminalError(error)}
