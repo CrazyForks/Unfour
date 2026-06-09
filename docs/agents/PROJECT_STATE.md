@@ -2,12 +2,12 @@
 
 ## Scan Metadata
 
-- **Scanned at:** 2026-06-09
+- **Scanned at:** 2026-06-09 (checkpoint refresh)
 - **Branch:** main
-- **Current commit:** 554bb21
+- **Current commit:** 13c4b28
 - **Commit message:** feat(ssh): add private-key authentication and host-key controls
 - **Working tree state:** Clean
-- **Last checkpoint:** 554bb21 feat(ssh): add private-key authentication and host-key controls
+- **Last checkpoint:** 13c4b28 feat(ssh): add private-key authentication and host-key controls
 
 ## Tech Stack
 
@@ -51,7 +51,9 @@ UI module split is **in progress**. Terminal and Database packages have been ext
 ### Build
 
 - **Frontend production build:** PASS
-- **Frontend bundle chunks:** index (380 kB), xterm (367 kB), vendor-tanstack (101 kB), vendor-radix (88 kB), monaco (15 kB)
+- **Frontend bundle chunks:** index (383 kB), xterm (367 kB), vendor-tanstack (101 kB), vendor-radix (88 kB), monaco (15 kB)
+- **Total Rust tests:** 40 passing (6 crates); unfour-workspace blocked by DLL issue
+- **Total frontend tests:** 53 passing (4 files)
 
 ## Partially Implemented
 
@@ -75,11 +77,11 @@ UI module split is **in progress**. Terminal and Database packages have been ext
 | Command | Result | Notes |
 |---|---|---|
 | `git diff --check` | PASS | No trailing whitespace issues |
-| `pnpm run lint` | PASS (warnings) | 0 errors; warnings exist in api-debugger, database, terminal, desktop |
+| `pnpm run lint` | PASS (warnings) | 0 errors, 63 warnings; pre-existing in api-debugger, database, terminal, desktop |
 | `pnpm run test` | PASS | 53 tests, 4 files |
 | `pnpm run build` | PASS | Production build succeeds |
 | `cargo fmt --check` | PASS | No formatting issues |
-| `cargo test --workspace` | PARTIAL | All crates except `unfour-workspace` pass. `unfour-workspace` fails with Windows `STATUS_ENTRYPOINT_NOT_FOUND` (DLL loading issue) |
+| `cargo test --workspace` | PARTIAL | 40 tests pass across 6 crates. `unfour-workspace` fails with Windows `STATUS_ENTRYPOINT_NOT_FOUND` (DLL loading issue) |
 | `cargo check --workspace` | PASS | All crates compile |
 | `cargo check -p unfour-workspace --features ssh-native` | PASS | SSH feature compiles |
 
