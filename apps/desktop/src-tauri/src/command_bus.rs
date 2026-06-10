@@ -527,7 +527,14 @@ impl CommandBus {
         &self,
         workspace_id: String,
     ) -> AppResult<Vec<SshSessionSummary>> {
-        self.ssh.list_sessions(workspace_id)
+        self.ssh.list_sessions(workspace_id).await
+    }
+
+    pub async fn ssh_session_history(
+        &self,
+        input: SshCloseInput,
+    ) -> AppResult<Vec<SshSessionEvent>> {
+        self.ssh.session_history(input).await
     }
 
     pub async fn send_ssh_input(&self, input: SshSessionInput) -> AppResult<SshSessionEvent> {

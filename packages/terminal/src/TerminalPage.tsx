@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -7,6 +7,7 @@ import {
   connectSshSession,
   deleteSshConnection,
   exportSshLog,
+  getSshSessionHistory,
   saveSshConnection,
   type SshConnectionInput,
   type SshSessionSummary,
@@ -41,6 +42,9 @@ export function TerminalPage({ workspaceId }: { workspaceId: string }) {
   const clearTerminalSessionEvents = useTerminalStore(
     (state) => state.clearTerminalSessionEvents,
   );
+  const hydrateTerminalSession = useTerminalStore(
+    (state) => state.hydrateTerminalSession,
+  );
   const resetTerminalEvents = useTerminalStore((state) => state.resetTerminalEvents);
   const setActiveSessionId = useTerminalStore((state) => state.setActiveSessionId);
   const setExportedLog = useTerminalStore((state) => state.setExportedLog);
@@ -48,6 +52,7 @@ export function TerminalPage({ workspaceId }: { workspaceId: string }) {
   const startTerminalSession = useTerminalStore((state) => state.startTerminalSession);
   const terminalEvents = useTerminalStore((state) => state.terminalEvents);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const hydratedSessionIdsRef = useRef(new Set<string>());
   const [form, setForm] = useState<SshConnectionInput>(() =>
     defaultSshConnectionInput(workspaceId),
   );
@@ -130,7 +135,25 @@ export function TerminalPage({ workspaceId }: { workspaceId: string }) {
 
   useEffect(() => {
     activateWorkspace(workspaceId);
+    hydratedSessionIdsRef.current.clear();
   }, [activateWorkspace, workspaceId]);
+
+  useEffect(() => {
+    const pending = sessions.filter(
+      (session) => !hydratedSessionIdsRef.current.has(session.sessionId),
+    );
+    pending.forEach((session) => hydratedSessionIdsRef.current.add(session.sessionId));
+    pending.forEach((session) => {
+      getSshSessionHistory({
+        workspaceId,
+        sessionId: session.sessionId,
+      })
+        .then((events) => hydrateTerminalSession(session.sessionId, events))
+        .catch(() => {
+          hydratedSessionIdsRef.current.delete(session.sessionId);
+        });
+    });
+  }, [hydrateTerminalSession, sessions, workspaceId]);
 
   useEffect(() => {
     setForm((current) => ({ ...current, workspaceId }));
@@ -194,6 +217,7 @@ export function TerminalPage({ workspaceId }: { workspaceId: string }) {
     mutationFn: (connectionId: string) =>
       connectSshSession({ workspaceId, connectionId, cols: 120, rows: 32 }),
     onSuccess: (session) => {
+      hydratedSessionIdsRef.current.add(session.sessionId);
       startTerminalSession(session.sessionId, [
         {
           sessionId: session.sessionId,

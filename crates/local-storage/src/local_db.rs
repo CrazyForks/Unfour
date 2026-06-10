@@ -176,6 +176,28 @@ const MIGRATIONS: &[&str] = &[
       PRIMARY KEY (host, port)
     )
     "#,
+    r#"
+    CREATE TABLE IF NOT EXISTS ssh_terminal_history (
+      workspace_id TEXT NOT NULL,
+      session_id TEXT NOT NULL,
+      connection_id TEXT NOT NULL,
+      status TEXT NOT NULL,
+      reconnect_attempt INTEGER NOT NULL DEFAULT 0,
+      auth_kind TEXT NOT NULL,
+      host TEXT NOT NULL,
+      username TEXT NOT NULL,
+      cols INTEGER NOT NULL,
+      rows INTEGER NOT NULL,
+      content TEXT NOT NULL DEFAULT '',
+      byte_len INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (workspace_id, session_id),
+      FOREIGN KEY(workspace_id) REFERENCES workspaces(id)
+    )
+    "#,
+    "CREATE INDEX IF NOT EXISTS idx_ssh_terminal_history_workspace_updated ON ssh_terminal_history(workspace_id, updated_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_ssh_terminal_history_connection ON ssh_terminal_history(workspace_id, connection_id)",
 ];
 
 #[cfg(test)]
@@ -214,6 +236,7 @@ mod tests {
         assert!(names.contains(&"activity_events"));
         assert!(names.contains(&"app_settings"));
         assert!(names.contains(&"workspace_settings"));
+        assert!(names.contains(&"ssh_terminal_history"));
     }
 
     #[tokio::test]

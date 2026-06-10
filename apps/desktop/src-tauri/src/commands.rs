@@ -315,6 +315,14 @@ pub async fn ssh_sessions_list(
 }
 
 #[tauri::command]
+pub async fn ssh_session_history(
+    input: SshCloseInput,
+    state: State<'_, AppState>,
+) -> AppResult<Vec<SshSessionEvent>> {
+    state.command_bus.ssh_session_history(input).await
+}
+
+#[tauri::command]
 pub async fn ssh_session_input(
     input: SshSessionInput,
     state: State<'_, AppState>,

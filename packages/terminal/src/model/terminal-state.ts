@@ -22,6 +22,7 @@ type TerminalStore = {
   activateWorkspace: (workspaceId: string) => void;
   appendTerminalEvents: (events: SshSessionEvent[]) => void;
   clearTerminalSessionEvents: (sessionId: string | null) => void;
+  hydrateTerminalSession: (sessionId: string, events: SshSessionEvent[]) => void;
   resetTerminalEvents: () => void;
   setActiveSessionId: (sessionId: string | null) => void;
   setExportedLog: (content: string | null) => void;
@@ -75,6 +76,15 @@ export const useTerminalStore = create<TerminalStore>((set) => ({
         ? state.terminalEvents.filter((event) => event.sessionId !== sessionId)
         : [],
     })),
+  hydrateTerminalSession: (sessionId, events) =>
+    set((state) => {
+      if (state.terminalEvents.some((event) => event.sessionId === sessionId)) {
+        return state;
+      }
+      return {
+        terminalEvents: [...state.terminalEvents, ...events],
+      };
+    }),
   resetTerminalEvents: () =>
     set({
       activeSessionId: null,

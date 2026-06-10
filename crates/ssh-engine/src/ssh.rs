@@ -9,7 +9,7 @@ use unfour_core::models::{
 };
 use unfour_core::redaction::redact_sensitive_lines;
 use unfour_core::{AppError, AppResult};
-use unfour_local_storage::LocalDb;
+use unfour_local_storage::{LocalDb, TerminalHistoryService};
 use unfour_secret_store::SecretStore;
 use uuid::Uuid;
 
@@ -25,6 +25,7 @@ pub struct SshService {
     db: LocalDb,
     #[cfg_attr(not(feature = "ssh-native"), allow(dead_code))]
     secret_store: SecretStore,
+    terminal_history: TerminalHistoryService,
     sessions: Arc<Mutex<HashMap<String, SshSessionState>>>,
     #[cfg(feature = "ssh-native")]
     on_terminal_output: Arc<Mutex<Option<TerminalOutputCallback>>>,
@@ -34,6 +35,7 @@ pub struct SshService {
 struct SshSessionState {
     summary: SshSessionSummary,
     events: Vec<SshSessionEvent>,
+    pending_output: String,
     intentional_close: bool,
     #[cfg(feature = "ssh-native")]
     native_handle: Option<NativeSshHandle>,
@@ -47,6 +49,10 @@ const KEEPALIVE_INTERVAL: std::time::Duration = std::time::Duration::from_secs(3
 const KEEPALIVE_MAX_MISSES: usize = 2;
 #[cfg(any(feature = "ssh-native", test))]
 const RECONNECT_BACKOFF_SECS: [u64; 3] = [1, 2, 4];
+#[cfg(feature = "ssh-native")]
+const PERSIST_FLUSH_BYTES: usize = 16 * 1024;
+#[cfg(feature = "ssh-native")]
+const PERSIST_FLUSH_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
 
 #[cfg(feature = "ssh-native")]
 struct NativeSshHandle {
@@ -115,8 +121,9 @@ impl russh::client::Handler for SshClientHandler {
 impl SshService {
     pub fn new(db: LocalDb, secret_store: SecretStore) -> Self {
         Self {
-            db,
+            db: db.clone(),
             secret_store,
+            terminal_history: TerminalHistoryService::new(db.clone()),
             sessions: Arc::new(Mutex::new(HashMap::new())),
             #[cfg(feature = "ssh-native")]
             on_terminal_output: Arc::new(Mutex::new(None)),
@@ -242,6 +249,9 @@ impl SshService {
 
         self.close_sessions_for_connection(&workspace_id, &connection_id)
             .await?;
+        self.terminal_history
+            .delete_connection_history(&workspace_id, &connection_id)
+            .await?;
 
         self.list_connections(workspace_id).await
     }
@@ -255,18 +265,28 @@ impl SshService {
         validate_connection_ready_for_session(&connection)?;
 
         #[cfg(feature = "ssh-native")]
-        {
-            self.connect_native(&connection, &input).await
-        }
+        let summary = self.connect_native(&connection, &input).await?;
         #[cfg(not(feature = "ssh-native"))]
-        {
-            self.connect_simulated(&connection, &input).await
-        }
+        let summary = self.connect_simulated(&connection, &input).await?;
+
+        self.terminal_history.save_session(&summary).await?;
+        self.terminal_history
+            .append_output(
+                &summary.workspace_id,
+                &summary.session_id,
+                &summary.connection_id,
+                &format!(
+                    "Connected to {}@{}. PTY {}x{} allocated.\r\n",
+                    summary.username, summary.host, summary.cols, summary.rows
+                ),
+            )
+            .await?;
+        Ok(summary)
     }
 
-    pub fn list_sessions(&self, workspace_id: String) -> AppResult<Vec<SshSessionSummary>> {
+    pub async fn list_sessions(&self, workspace_id: String) -> AppResult<Vec<SshSessionSummary>> {
         validate_workspace_id(&workspace_id)?;
-        let mut sessions = self
+        let active_sessions = self
             .sessions
             .lock()
             .map_err(|_| AppError::Config("ssh session lock poisoned".to_string()))?
@@ -274,8 +294,90 @@ impl SshService {
             .filter(|state| state.summary.workspace_id == workspace_id)
             .map(|state| state.summary.clone())
             .collect::<Vec<_>>();
+        let mut sessions = self.terminal_history.list_sessions(&workspace_id).await?;
+        for active in active_sessions {
+            if let Some(stored) = sessions
+                .iter_mut()
+                .find(|stored| stored.session_id == active.session_id)
+            {
+                *stored = active;
+            } else {
+                sessions.push(active);
+            }
+        }
         sessions.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
         Ok(sessions)
+    }
+
+    pub async fn session_history(&self, input: SshCloseInput) -> AppResult<Vec<SshSessionEvent>> {
+        validate_workspace_id(&input.workspace_id)?;
+        validate_session_id(&input.session_id)?;
+        self.flush_session_history(&input.session_id).await?;
+        self.terminal_history
+            .hydrate(&input.workspace_id, &input.session_id)
+            .await
+    }
+
+    #[cfg(feature = "ssh-native")]
+    fn buffer_session_output(&self, session_id: &str, output: &str) -> bool {
+        if output.is_empty() {
+            return false;
+        }
+        let Ok(mut sessions) = self.sessions.lock() else {
+            return false;
+        };
+        let Some(state) = sessions.get_mut(session_id) else {
+            return false;
+        };
+        state.pending_output.push_str(output);
+        state.pending_output.len() >= PERSIST_FLUSH_BYTES
+    }
+
+    async fn flush_session_history(&self, session_id: &str) -> AppResult<()> {
+        let pending = {
+            let mut sessions = self
+                .sessions
+                .lock()
+                .map_err(|_| AppError::Config("ssh session lock poisoned".to_string()))?;
+            let Some(state) = sessions.get_mut(session_id) else {
+                return Ok(());
+            };
+            if state.pending_output.is_empty() {
+                return Ok(());
+            }
+            (
+                state.summary.workspace_id.clone(),
+                state.summary.connection_id.clone(),
+                std::mem::take(&mut state.pending_output),
+            )
+        };
+
+        if let Err(error) = self
+            .terminal_history
+            .append_output(&pending.0, session_id, &pending.1, &pending.2)
+            .await
+        {
+            if let Ok(mut sessions) = self.sessions.lock() {
+                if let Some(state) = sessions.get_mut(session_id) {
+                    state.pending_output.insert_str(0, &pending.2);
+                }
+            }
+            return Err(error);
+        }
+        Ok(())
+    }
+
+    async fn persist_session_summary(&self, session_id: &str) -> AppResult<()> {
+        let summary = self
+            .sessions
+            .lock()
+            .map_err(|_| AppError::Config("ssh session lock poisoned".to_string()))?
+            .get(session_id)
+            .map(|state| state.summary.clone());
+        if let Some(summary) = summary {
+            self.terminal_history.update_session(&summary).await?;
+        }
+        Ok(())
     }
 
     pub async fn send_input(&self, input: SshSessionInput) -> AppResult<SshSessionEvent> {
@@ -311,31 +413,39 @@ impl SshService {
             }
         }
 
-        let mut sessions = self
-            .sessions
-            .lock()
-            .map_err(|_| AppError::Config("ssh session lock poisoned".to_string()))?;
-        let state =
-            session_for_workspace_mut(&mut sessions, &input.workspace_id, &input.session_id)?;
-        ensure_session_active(state)?;
+        let event = {
+            let mut sessions = self
+                .sessions
+                .lock()
+                .map_err(|_| AppError::Config("ssh session lock poisoned".to_string()))?;
+            let state =
+                session_for_workspace_mut(&mut sessions, &input.workspace_id, &input.session_id)?;
+            ensure_session_active(state)?;
 
-        let now = Utc::now().to_rfc3339();
-        let input_event = SshSessionEvent {
-            session_id: input.session_id.clone(),
-            kind: "input".to_string(),
-            data: redact_ssh_log(&input.data).0,
-            created_at: now.clone(),
-        };
-        state.events.push(input_event);
-        let event = SshSessionEvent {
-            session_id: input.session_id,
-            kind: "output".to_string(),
-            data: "Input accepted by SSH PTY stream.\r\n".to_string(),
-            created_at: now.clone(),
+            let now = Utc::now().to_rfc3339();
+            let input_event = SshSessionEvent {
+                session_id: input.session_id.clone(),
+                kind: "input".to_string(),
+                data: redact_ssh_log(&input.data).0,
+                created_at: now.clone(),
+            };
+            state.events.push(input_event);
+            let event = SshSessionEvent {
+                session_id: input.session_id.clone(),
+                kind: "output".to_string(),
+                data: "Input accepted by SSH PTY stream.\r\n".to_string(),
+                created_at: now.clone(),
+            };
+            #[cfg(not(feature = "ssh-native"))]
+            {
+                state.events.push(event.clone());
+                state.pending_output.push_str(&event.data);
+            }
+            state.summary.updated_at = now;
+            event
         };
         #[cfg(not(feature = "ssh-native"))]
-        state.events.push(event.clone());
-        state.summary.updated_at = now;
+        self.flush_session_history(&input.session_id).await?;
         Ok(event)
     }
 
@@ -365,25 +475,29 @@ impl SshService {
             }
         }
 
-        let mut sessions = self
-            .sessions
-            .lock()
-            .map_err(|_| AppError::Config("ssh session lock poisoned".to_string()))?;
-        let state =
-            session_for_workspace_mut(&mut sessions, &input.workspace_id, &input.session_id)?;
-        ensure_session_active(state)?;
+        let event = {
+            let mut sessions = self
+                .sessions
+                .lock()
+                .map_err(|_| AppError::Config("ssh session lock poisoned".to_string()))?;
+            let state =
+                session_for_workspace_mut(&mut sessions, &input.workspace_id, &input.session_id)?;
+            ensure_session_active(state)?;
 
-        let now = Utc::now().to_rfc3339();
-        state.summary.cols = input.cols;
-        state.summary.rows = input.rows;
-        state.summary.updated_at = now.clone();
-        let event = SshSessionEvent {
-            session_id: input.session_id,
-            kind: "resize".to_string(),
-            data: format!("PTY resized to {}x{}.\r\n", input.cols, input.rows),
-            created_at: now,
+            let now = Utc::now().to_rfc3339();
+            state.summary.cols = input.cols;
+            state.summary.rows = input.rows;
+            state.summary.updated_at = now.clone();
+            let event = SshSessionEvent {
+                session_id: input.session_id.clone(),
+                kind: "resize".to_string(),
+                data: format!("PTY resized to {}x{}.\r\n", input.cols, input.rows),
+                created_at: now,
+            };
+            state.events.push(event.clone());
+            event
         };
-        state.events.push(event.clone());
+        self.persist_session_summary(&input.session_id).await?;
         Ok(event)
     }
 
@@ -400,9 +514,6 @@ impl SshService {
                 .map_err(|_| AppError::Config("ssh session lock poisoned".to_string()))?;
             let state =
                 session_for_workspace_mut(&mut sessions, &input.workspace_id, &input.session_id)?;
-            if state.summary.status == "disconnected" {
-                return Ok(state.summary.clone());
-            }
             state.intentional_close = true;
             if let Some(cancel_tx) = state.cancel_tx.take() {
                 let _ = cancel_tx.send(true);
@@ -425,30 +536,32 @@ impl SshService {
         }
 
         // Update session status under the lock.
-        let mut sessions = self
-            .sessions
-            .lock()
-            .map_err(|_| AppError::Config("ssh session lock poisoned".to_string()))?;
-        let state =
-            session_for_workspace_mut(&mut sessions, &input.workspace_id, &input.session_id)?;
-
-        // Idempotent: if already closed, return the stored summary.
-        if state.summary.status == "disconnected" {
-            return Ok(state.summary.clone());
-        }
-
-        let now = Utc::now().to_rfc3339();
-        state.intentional_close = true;
-        state.summary.status = "disconnected".to_string();
-        state.summary.reconnect_attempt = 0;
-        state.summary.updated_at = now.clone();
-        state.events.push(SshSessionEvent {
-            session_id: input.session_id,
-            kind: "close".to_string(),
-            data: "SSH session closed.\r\n".to_string(),
-            created_at: now,
-        });
-        Ok(state.summary.clone())
+        let summary = {
+            let mut sessions = self
+                .sessions
+                .lock()
+                .map_err(|_| AppError::Config("ssh session lock poisoned".to_string()))?;
+            let state =
+                session_for_workspace_mut(&mut sessions, &input.workspace_id, &input.session_id)?;
+            if state.summary.status != "disconnected" {
+                let now = Utc::now().to_rfc3339();
+                state.intentional_close = true;
+                state.summary.status = "disconnected".to_string();
+                state.summary.reconnect_attempt = 0;
+                state.summary.updated_at = now.clone();
+                state.events.push(SshSessionEvent {
+                    session_id: input.session_id.clone(),
+                    kind: "close".to_string(),
+                    data: "SSH session closed.\r\n".to_string(),
+                    created_at: now,
+                });
+                state.pending_output.push_str("SSH session closed.\r\n");
+            }
+            state.summary.clone()
+        };
+        self.flush_session_history(&input.session_id).await?;
+        self.terminal_history.update_session(&summary).await?;
+        Ok(summary)
     }
 
     pub async fn cancel_reconnect(
@@ -479,24 +592,32 @@ impl SshService {
             let _ = channel.close().await;
         }
 
-        let mut sessions = self
-            .sessions
-            .lock()
-            .map_err(|_| AppError::Config("ssh session lock poisoned".to_string()))?;
-        let state =
-            session_for_workspace_mut(&mut sessions, &input.workspace_id, &input.session_id)?;
-        let now = Utc::now().to_rfc3339();
-        state.intentional_close = true;
-        state.summary.status = "disconnected".to_string();
-        state.summary.reconnect_attempt = 0;
-        state.summary.updated_at = now.clone();
-        state.events.push(SshSessionEvent {
-            session_id: input.session_id,
-            kind: "close".to_string(),
-            data: "SSH reconnect cancelled.\r\n".to_string(),
-            created_at: now,
-        });
-        Ok(state.summary.clone())
+        let summary = {
+            let mut sessions = self
+                .sessions
+                .lock()
+                .map_err(|_| AppError::Config("ssh session lock poisoned".to_string()))?;
+            let state =
+                session_for_workspace_mut(&mut sessions, &input.workspace_id, &input.session_id)?;
+            let now = Utc::now().to_rfc3339();
+            state.intentional_close = true;
+            state.summary.status = "disconnected".to_string();
+            state.summary.reconnect_attempt = 0;
+            state.summary.updated_at = now.clone();
+            state.events.push(SshSessionEvent {
+                session_id: input.session_id.clone(),
+                kind: "close".to_string(),
+                data: "SSH reconnect cancelled.\r\n".to_string(),
+                created_at: now,
+            });
+            state
+                .pending_output
+                .push_str("SSH reconnect cancelled.\r\n");
+            state.summary.clone()
+        };
+        self.flush_session_history(&input.session_id).await?;
+        self.terminal_history.update_session(&summary).await?;
+        Ok(summary)
     }
 
     pub fn export_log(&self, input: SshLogExportInput) -> AppResult<SshLogExport> {
@@ -742,6 +863,7 @@ impl SshService {
                 ),
                 created_at: now,
             }],
+            pending_output: String::new(),
             intentional_close: false,
         };
 
@@ -795,6 +917,7 @@ impl SshService {
                 ),
                 created_at: now,
             }],
+            pending_output: String::new(),
             intentional_close: false,
             native_handle: Some(native_handle.clone()),
             cancel_tx: Some(cancel_tx),
@@ -981,6 +1104,8 @@ impl SshService {
         let service = self.clone();
         tokio::spawn(async move {
             let mut native = initial_handle;
+            let mut persist_interval = tokio::time::interval(PERSIST_FLUSH_INTERVAL);
+            persist_interval.tick().await;
             loop {
                 let channel_closed = loop {
                     let message = tokio::select! {
@@ -990,6 +1115,10 @@ impl SshService {
                             }
                             continue;
                         }
+                        _ = persist_interval.tick() => {
+                            let _ = service.flush_session_history(&session_id).await;
+                            continue;
+                        }
                         message = async {
                             let mut channel = native.channel.lock().await;
                             channel.wait().await
@@ -997,12 +1126,11 @@ impl SshService {
                     };
                     match message {
                         Some(russh::ChannelMsg::Data { data }) => {
-                            service.emit_terminal_payload(
-                                &session_id,
-                                String::from_utf8_lossy(&data).as_ref(),
-                                None,
-                                0,
-                            );
+                            let text = String::from_utf8_lossy(&data).to_string();
+                            service.emit_terminal_payload(&session_id, &text, None, 0);
+                            if service.buffer_session_output(&session_id, &text) {
+                                let _ = service.flush_session_history(&session_id).await;
+                            }
                         }
                         Some(russh::ChannelMsg::Close) | Some(russh::ChannelMsg::Eof) | None => {
                             break true;
@@ -1039,6 +1167,7 @@ impl SshService {
                                     0,
                                     "SSH reconnect cancelled.\r\n",
                                 );
+                                let _ = service.flush_session_history(&session_id).await;
                                 return;
                             }
                         }
@@ -1078,6 +1207,7 @@ impl SshService {
                             0,
                             "SSH session reconnected.\r\n",
                         );
+                        let _ = service.persist_session_summary(&session_id).await;
                         native = next_native;
                     }
                     None => {
@@ -1087,6 +1217,8 @@ impl SshService {
                             3,
                             "SSH reconnect failed after 3 attempts.\r\n",
                         );
+                        let _ = service.flush_session_history(&session_id).await;
+                        let _ = service.persist_session_summary(&session_id).await;
                         service.clear_native_session_resources(&session_id);
                         return;
                     }
@@ -1165,6 +1297,7 @@ impl SshService {
                 data: message.to_string(),
                 created_at: now,
             });
+            state.pending_output.push_str(message);
         }
         self.emit_terminal_payload(session_id, message, Some(status), attempt);
     }
@@ -1606,6 +1739,7 @@ mod tests {
 
         let sessions = service
             .list_sessions(workspace_id.clone())
+            .await
             .expect("list sessions");
         assert_eq!(sessions.len(), 1);
         assert_eq!(sessions[0].cols, 120);
@@ -1663,9 +1797,107 @@ mod tests {
             .expect("delete connection");
         let sessions = service
             .list_sessions(workspace_id)
+            .await
             .expect("list sessions after delete");
         assert_eq!(sessions[0].session_id, session.session_id);
         assert_eq!(sessions[0].status, "disconnected");
+    }
+
+    #[cfg(not(feature = "ssh-native"))]
+    #[tokio::test]
+    async fn explicit_close_flushes_buffered_output_and_restore_lists_history() {
+        let (service, workspace_id, _) = service_with_workspaces().await;
+        let connection = service
+            .save_connection(password_input(&workspace_id))
+            .await
+            .expect("save ssh connection");
+        let session = service
+            .connect(SshConnectInput {
+                workspace_id: workspace_id.clone(),
+                connection_id: connection.id,
+                cols: None,
+                rows: None,
+            })
+            .await
+            .expect("connect ssh session");
+
+        {
+            let mut sessions = service.sessions.lock().expect("lock sessions");
+            sessions
+                .get_mut(&session.session_id)
+                .expect("session")
+                .pending_output
+                .push_str("buffered before close\r\n");
+        }
+        service
+            .close_session(SshCloseInput {
+                workspace_id: workspace_id.clone(),
+                session_id: session.session_id.clone(),
+            })
+            .await
+            .expect("close session");
+        service.sessions.lock().expect("lock sessions").clear();
+
+        let restored = service
+            .list_sessions(workspace_id.clone())
+            .await
+            .expect("list persisted sessions");
+        let history = service
+            .session_history(SshCloseInput {
+                workspace_id,
+                session_id: session.session_id,
+            })
+            .await
+            .expect("hydrate persisted history");
+        assert_eq!(restored.len(), 1);
+        assert_eq!(restored[0].status, "disconnected");
+        assert!(history[0].data.contains("buffered before close"));
+        assert!(history[0].data.contains("SSH session closed."));
+    }
+
+    #[cfg(not(feature = "ssh-native"))]
+    #[tokio::test]
+    async fn repeated_flush_without_new_output_does_not_duplicate_history() {
+        let (service, workspace_id, _) = service_with_workspaces().await;
+        let connection = service
+            .save_connection(password_input(&workspace_id))
+            .await
+            .expect("save ssh connection");
+        let session = service
+            .connect(SshConnectInput {
+                workspace_id: workspace_id.clone(),
+                connection_id: connection.id,
+                cols: None,
+                rows: None,
+            })
+            .await
+            .expect("connect ssh session");
+
+        {
+            let mut sessions = service.sessions.lock().expect("lock sessions");
+            sessions
+                .get_mut(&session.session_id)
+                .expect("session")
+                .pending_output
+                .push_str("persist exactly once\r\n");
+        }
+        service
+            .flush_session_history(&session.session_id)
+            .await
+            .expect("first flush");
+        service
+            .flush_session_history(&session.session_id)
+            .await
+            .expect("second flush");
+
+        let history = service
+            .session_history(SshCloseInput {
+                workspace_id,
+                session_id: session.session_id,
+            })
+            .await
+            .expect("hydrate history");
+        assert_eq!(history[0].data.matches("persist exactly once").count(), 1);
     }
 
     #[cfg(not(feature = "ssh-native"))]
@@ -1787,7 +2019,10 @@ mod tests {
         assert!(resize_event.data.contains("200x50"));
 
         // Verify session dimensions were updated.
-        let sessions = service.list_sessions(workspace_id).expect("list sessions");
+        let sessions = service
+            .list_sessions(workspace_id)
+            .await
+            .expect("list sessions");
         assert_eq!(sessions[0].cols, 200);
         assert_eq!(sessions[0].rows, 50);
     }
@@ -1857,7 +2092,10 @@ mod tests {
             .expect("session b still active");
         assert_eq!(event_b.kind, "output");
 
-        let sessions = service.list_sessions(workspace_id).expect("list sessions");
+        let sessions = service
+            .list_sessions(workspace_id)
+            .await
+            .expect("list sessions");
         let closed = sessions
             .iter()
             .find(|s| s.session_id == session_a.session_id)

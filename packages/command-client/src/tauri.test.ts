@@ -3,6 +3,7 @@ import {
   cancelSshReconnect,
   closeSshSession,
   connectSshSession,
+  getSshSessionHistory,
   saveSshConnection,
   sendSshInput,
 } from "./tauri";
@@ -43,5 +44,43 @@ describe("SSH browser mock lifecycle", () => {
       sessionId: session.sessionId,
     });
     expect(closed.status).toBe("disconnected");
+  });
+
+  it("hydrates only safe output for the requested workspace and session", async () => {
+    const workspaceId = `mock-history-${crypto.randomUUID()}`;
+    const connection = await saveSshConnection({
+      workspaceId,
+      name: "Mock SSH history",
+      host: "localhost",
+      username: "developer",
+      authKind: "password",
+      credentialRef: "must-not-be-persisted",
+    });
+    const session = await connectSshSession({
+      workspaceId,
+      connectionId: connection.id,
+    });
+    await sendSshInput({
+      workspaceId,
+      sessionId: session.sessionId,
+      data: "password=secret\n",
+    });
+
+    const history = await getSshSessionHistory({
+      workspaceId,
+      sessionId: session.sessionId,
+    });
+    expect(history.length).toBeGreaterThan(0);
+    expect(history.every((event) => event.kind !== "input")).toBe(true);
+    expect(history.map((event) => event.data).join("")).not.toContain("secret");
+    expect(history.map((event) => event.data).join("")).not.toContain(
+      "must-not-be-persisted",
+    );
+    await expect(
+      getSshSessionHistory({
+        workspaceId: `other-${workspaceId}`,
+        sessionId: session.sessionId,
+      }),
+    ).resolves.toEqual([]);
   });
 });

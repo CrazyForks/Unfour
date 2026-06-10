@@ -69,6 +69,7 @@ let mockDatabaseConnections: DatabaseConnection[] = [];
 let mockSshConnections: SshConnection[] = [];
 let mockSshSessions: SshSessionSummary[] = [];
 const mockSshEvents: SshSessionEvent[] = [];
+const MOCK_TERMINAL_HISTORY_MAX_BYTES = 256 * 1024;
 const mockHostKeyFingerprints: Record<string, SshHostFingerprintInfo> = {};
 const mockCredentials: Record<string, string> = {};
 let mockEnvironment: WorkspaceEnvironment = {
@@ -610,6 +611,7 @@ async function mockInvoke<T>(
       data: `Connected to ${session.username}@${session.host} with ${session.authKind} auth. PTY ${session.cols}x${session.rows} allocated.\r\n`,
       createdAt: now,
     });
+    trimMockSshHistory(session.sessionId);
     // Simulate TOFU: record a mock fingerprint if not already stored.
     const hostKey = `${connection.host}:${connection.port}`;
     if (!(hostKey in mockHostKeyFingerprints)) {
@@ -649,6 +651,7 @@ async function mockInvoke<T>(
       createdAt: now,
     };
     mockSshEvents.push(event);
+    trimMockSshHistory(input.sessionId);
     session.updatedAt = now;
     return event as T;
   }
@@ -690,6 +693,17 @@ async function mockInvoke<T>(
       createdAt: now,
     });
     return session as T;
+  }
+
+  if (command === "ssh_session_history") {
+    const input = args?.input as SshCloseInput;
+    const session = mockSshSessions.find(
+      (item) => item.workspaceId === input.workspaceId && item.sessionId === input.sessionId,
+    );
+    if (!session) return [] as T;
+    return mockSshEvents
+      .filter((event) => event.sessionId === input.sessionId && event.kind !== "input")
+      .map((event) => ({ ...event, data: redactSshLog(event.data) })) as T;
   }
 
   if (command === "ssh_session_reconnect_cancel") {
@@ -897,6 +911,10 @@ export function listSshSessions(workspaceId: string) {
   return call<SshSessionSummary[]>("ssh_sessions_list", { workspaceId });
 }
 
+export function getSshSessionHistory(input: SshCloseInput) {
+  return call<SshSessionEvent[]>("ssh_session_history", { input });
+}
+
 export function sendSshInput(input: SshSessionInput) {
   return call<SshSessionEvent>("ssh_session_input", { input });
 }
@@ -941,6 +959,23 @@ function resolveInput(input: ApiRequestInput, variables: WorkspaceEnvironment["v
     })),
     body: input.body ? resolveTemplate(input.body, variables) : input.body,
   };
+}
+
+function trimMockSshHistory(sessionId: string) {
+  const sessionEvents = mockSshEvents.filter(
+    (event) => event.sessionId === sessionId && event.kind !== "input",
+  );
+  let totalBytes = sessionEvents.reduce(
+    (total, event) => total + new TextEncoder().encode(event.data).byteLength,
+    0,
+  );
+  while (totalBytes > MOCK_TERMINAL_HISTORY_MAX_BYTES && sessionEvents.length > 1) {
+    const removed = sessionEvents.shift();
+    if (!removed) break;
+    totalBytes -= new TextEncoder().encode(removed.data).byteLength;
+    const index = mockSshEvents.indexOf(removed);
+    if (index >= 0) mockSshEvents.splice(index, 1);
+  }
 }
 
 function resolveTemplate(value: string, variables: WorkspaceEnvironment["variables"]) {

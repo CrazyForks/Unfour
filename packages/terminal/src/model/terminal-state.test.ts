@@ -104,6 +104,36 @@ describe("terminal-state store", () => {
     expect(events[0].sessionId).toBe("s2");
   });
 
+  it("hydrates persisted history once without replacing streamed output", () => {
+    resetStore();
+    const store = useTerminalStore.getState();
+    const history = [
+      {
+        sessionId: "s1",
+        kind: "output",
+        data: "persisted\r\n",
+        createdAt: "2026-01-01T00:00:00Z",
+      },
+    ];
+
+    store.hydrateTerminalSession("s1", history);
+    store.hydrateTerminalSession("s1", history);
+    store.hydrateTerminalSession("s2", [
+      {
+        ...history[0],
+        sessionId: "s2",
+        data: "other session\r\n",
+      },
+    ]);
+
+    const events = useTerminalStore.getState().terminalEvents;
+    expect(events).toHaveLength(2);
+    expect(events.map((event) => event.data)).toEqual([
+      "persisted\r\n",
+      "other session\r\n",
+    ]);
+  });
+
   it("toggles search open state", () => {
     resetStore();
     const store = useTerminalStore.getState();

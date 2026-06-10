@@ -2,11 +2,11 @@
 
 ## Scan Metadata
 
-- **Scanned at:** 2026-06-09 (checkpoint refresh, verification-only scan)
+- **Scanned at:** 2026-06-10 (checkpoint refresh, terminal session persistence implemented)
 - **Branch:** main
-- **Current commit:** `5351897` — feat(ssh): add connection health and reconnect handling
-- **Working tree:** Clean (no uncommitted changes)
-- **Last checkpoint:** SSH reliability implementation and verification complete
+- **Current commit:** uncommitted — feat(terminal): persist ssh session output history
+- **Working tree:** Dirty (terminal persistence changes staged)
+- **Last checkpoint:** Terminal session output persistence to SQLite implemented and verified
 
 ## Tech Stack
 
@@ -18,7 +18,7 @@
 
 ## Current Phase
 
-Terminal streaming and SSH reliability integration are **complete**. PTY lifecycle, stdin/stdout streaming, Tauri event streaming, frontend terminal input capture, resize propagation, search, keepalive monitoring, bounded reconnection, cancellation, and cleanup are wired end-to-end.
+Terminal streaming, SSH reliability integration, and **terminal session persistence** are **complete**. PTY lifecycle, stdin/stdout streaming, Tauri event streaming, frontend terminal input capture, resize propagation, search, keepalive monitoring, bounded reconnection, cancellation, cleanup, and SQLite-backed output persistence with secret redaction and truncation are wired end-to-end.
 
 UI module split is **in progress**. Terminal and Database packages have been extracted from `packages/app-shell`. A shared `command-client` package provides the Tauri IPC abstraction, and a `workspace` package provides the Zustand workspace state store. Further Workspace extraction from app-shell is planned.
 
@@ -29,12 +29,12 @@ UI module split is **in progress**. Terminal and Database packages have been ext
 | Capability | Crate | Status | Tests |
 |---|---|---|---|
 | Core models & redaction | `unfour-core` | Complete | 3 pass |
-| Local storage & migrations | `unfour-local-storage` | Complete | 6 pass |
+| Local storage & migrations | `unfour-local-storage` | Complete | 11 pass |
 | Activity logging | `unfour-local-storage` | Complete | Covered in local_storage |
 | SecretStore (OS keyring credential references) | `unfour-secret-store` | Complete | 4 pass |
 | Database engine (SQLite CRUD + schema) | `unfour-database-engine` | Complete | 3 pass |
 | HTTP engine (API client + history) | `unfour-http-engine` | Complete | 8 pass |
-| SSH engine (simulated + native) | `unfour-ssh-engine` | Complete | 20 default + 14 native-feature pass |
+| SSH engine (simulated + native) | `unfour-ssh-engine` | Complete | 22 default + 14 native-feature pass |
 | Workspace engine | `unfour-workspace-engine` | Complete | Tests blocked on Windows DLL issue |
 | CommandBus (Tauri adapter) | `unfour-workspace` (apps/desktop/src-tauri) | Complete | Compile-verified, 3 integration tests in command_bus.rs |
 
@@ -45,26 +45,26 @@ UI module split is **in progress**. Terminal and Database packages have been ext
 | Workspace store | `@unfour/workspace` | Complete | 12 pass |
 | API Debugger | `@unfour/api-debugger` | Complete | 20 pass |
 | Database (connections + query) | `@unfour/database` | Complete | 16 pass |
-| Terminal state and command-client mock | `@unfour/terminal`, `@unfour/command-client` | Complete | 5 + 1 pass |
+| Terminal state, history, and command-client mock | `@unfour/terminal`, `@unfour/command-client` | Complete | 6 + 2 pass |
 
 ### Build
 
 - **Frontend production build:** PASS
 - **Frontend bundle chunks:** index (384 kB), xterm (367 kB), vendor-tanstack (101 kB), vendor-radix (88 kB), monaco (15 kB)
-- **Total Rust tests:** 44 passing across 6 crates (unfour-workspace blocked by Windows DLL issue)
-- **Total frontend tests:** 54 passing (5 files)
+- **Total Rust tests:** 51 passing across 6 crates (unfour-workspace blocked by Windows DLL issue)
+- **Total frontend tests:** 56 passing (5 files)
 
 ## Partially Implemented
 
 - **UI module split:** Terminal, Database, Workspace, and Command-Client packages extracted. `packages/app-shell` now contains only AppShell layout composition. Further workspace UI extraction from desktop components is planned.
 - **SSH authentication:** Password auth and private-key auth both work under `ssh-native`. Encrypted key passphrase loading has limited support (ssh-key crate format constraints).
 - **Host-key UI:** View trusted fingerprint and reset fingerprint implemented. Mismatch error display is handled by the TOFU backend.
+- **Terminal session persistence:** SQLite-backed output history with per-session buffering, periodic flush, secret redaction, and UTF-8-safe truncation (256 KB retention). Hydration on app reopen. Browser mock mode compatible.
 - **SSH live reliability verification:** Keepalive and reconnect policy are automated-test covered, but a live localhost SSH stop/start cycle was not available in this environment.
 - **Database drivers:** SQLite driver is functional. PostgreSQL/MySQL drivers are not started.
 
 ## Not Started
 
-- Terminal output persistence to SQLite
 - `known_hosts` integration
 - Terminal multiplexing (tmux/screen-like)
 - SCP/SFTP file transfer
@@ -76,10 +76,10 @@ UI module split is **in progress**. Terminal and Database packages have been ext
 |---|---|---|
 | `git diff --check` | PASS | No trailing whitespace issues |
 | `pnpm run lint` | PASS (warnings) | 0 errors, 64 warnings; pre-existing in api-debugger, database, terminal, desktop |
-| `pnpm run test` | PASS | 54 tests, 5 files |
+| `pnpm run test` | PASS | 56 tests, 5 files |
 | `pnpm run build` | PASS | Production build succeeds |
 | `cargo fmt --check` | PASS | No formatting issues |
-| `cargo test --workspace` | PARTIAL | 44 tests pass across 6 crates. `unfour-workspace` fails with Windows `STATUS_ENTRYPOINT_NOT_FOUND` (DLL loading issue) |
+| `cargo test --workspace` | PARTIAL | 51 tests pass across 6 crates. `unfour-workspace` fails with Windows `STATUS_ENTRYPOINT_NOT_FOUND` (DLL loading issue) |
 | `cargo check --workspace` | PASS | All crates compile |
 | `cargo check -p unfour-workspace --features ssh-native` | PASS | SSH feature compiles |
 | `cargo test -p unfour-ssh-engine --features ssh-native` | PASS | 14 native-feature tests |

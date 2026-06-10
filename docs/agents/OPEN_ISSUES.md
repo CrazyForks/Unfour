@@ -16,7 +16,6 @@ None.
 
 ## P2 — Medium priority
 
-- **Terminal session persistence:** Terminal output events are stored in memory only. Refreshing the app loses terminal history.
 - **Host-key UI:** View/reset fingerprint implemented. Mismatch rejection handled by TOFU backend. Confirmation dialog for accepting new fingerprints after reset not yet built.
 - **known_hosts integration:** Import or export fingerprints from/to the system `known_hosts` file.
 - **Encrypted key passphrase:** The ssh-key crate 0.7.0-rc.10 has limited support for decrypting encrypted OpenSSH keys. Keys without passphrases work. Encrypted key loading returns a clear error guiding users to save a passphrase credential.
@@ -37,6 +36,6 @@ None.
 
 - P0: 0
 - P1: 2
-- P2: 4
+- P2: 3
 - P3: 3
 - Environment: 3

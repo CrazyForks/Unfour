@@ -61,6 +61,7 @@ pub fn run() {
             commands::ssh_host_key_reset,
             commands::ssh_session_close,
             commands::ssh_session_connect,
+            commands::ssh_session_history,
             commands::ssh_session_input,
             commands::ssh_session_log_export,
             commands::ssh_session_reconnect_cancel,
