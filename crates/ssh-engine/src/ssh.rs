@@ -3,9 +3,9 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use unfour_core::models::{
     SshCloseInput, SshConnectInput, SshConnection, SshConnectionConfig, SshConnectionInput,
-    SshHostFingerprintInfo, SshHostKeyInput, SshLogExport, SshLogExportInput,
-    SshReconnectCancelInput, SshResizeInput, SshSessionEvent, SshSessionInput, SshSessionSummary,
-    StoredConnection,
+    SshHostFingerprintInfo, SshHostKeyInput, SshKnownHostsExportResult, SshKnownHostsImportInput,
+    SshKnownHostsImportResult, SshLogExport, SshLogExportInput, SshReconnectCancelInput,
+    SshResizeInput, SshSessionEvent, SshSessionInput, SshSessionSummary, StoredConnection,
 };
 use unfour_core::redaction::redact_sensitive_lines;
 use unfour_core::{AppError, AppResult};
@@ -722,6 +722,46 @@ impl SshService {
 
         let host_key_store = HostKeyStore::new(self.db.pool().clone());
         host_key_store.delete_fingerprint(&host, input.port).await
+    }
+
+    /// List all stored host-key fingerprints.
+    pub async fn list_all_host_fingerprints(&self) -> AppResult<Vec<SshHostFingerprintInfo>> {
+        let host_key_store = HostKeyStore::new(self.db.pool().clone());
+        let entries = host_key_store.list_all().await?;
+        Ok(entries
+            .into_iter()
+            .map(|entry| SshHostFingerprintInfo {
+                host: entry.host,
+                port: entry.port.clamp(0, u16::MAX as i64) as u16,
+                fingerprint: entry.fingerprint,
+                created_at: entry.created_at,
+            })
+            .collect())
+    }
+
+    /// Import entries from OpenSSH known_hosts content.
+    pub async fn import_known_hosts(
+        &self,
+        input: SshKnownHostsImportInput,
+    ) -> AppResult<SshKnownHostsImportResult> {
+        validate_workspace_id(&input.workspace_id)?;
+        if input.content.trim().is_empty() {
+            return Err(AppError::Validation(
+                "known_hosts content cannot be empty".to_string(),
+            ));
+        }
+        let host_key_store = HostKeyStore::new(self.db.pool().clone());
+        host_key_store.import_known_hosts(&input.content).await
+    }
+
+    /// Export stored fingerprints to OpenSSH known_hosts format.
+    pub async fn export_known_hosts(&self) -> AppResult<SshKnownHostsExportResult> {
+        let host_key_store = HostKeyStore::new(self.db.pool().clone());
+        let (content, entry_count) = host_key_store.export_known_hosts().await?;
+        Ok(SshKnownHostsExportResult {
+            content,
+            entry_count,
+        })
     }
 
     // -----------------------------------------------------------------------

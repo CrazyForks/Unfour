@@ -24,6 +24,9 @@ import type {
   SshConnectionInput,
   SshHostFingerprintInfo,
   SshHostKeyInput,
+  SshKnownHostsExportResult,
+  SshKnownHostsImportInput,
+  SshKnownHostsImportResult,
   SshLogExport,
   SshLogExportInput,
   SshResizeInput,
@@ -211,9 +214,9 @@ async function mockInvoke<T>(
       folderPath: normalizeFolderPath(input.folderPath),
       method: input.method,
       url: input.url,
-      headersJson: JSON.stringify(input.headers),
+      headersJson: JSON.stringify(redactHeaders(input.headers)),
       queryJson: JSON.stringify(input.query),
-      body: input.body ?? null,
+      body: redactJsonBody(input.body),
       bodyKind: input.bodyKind,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -320,7 +323,7 @@ async function mockInvoke<T>(
         url: resolved.url,
         requestHeadersJson: JSON.stringify(redactHeaders(input.headers)),
         requestQueryJson: JSON.stringify(input.query),
-        requestBody: input.body ?? null,
+        requestBody: redactJsonBody(input.body),
         status: result.status,
         durationMs: result.durationMs,
         responseHeadersJson: JSON.stringify(result.headers),
@@ -755,6 +758,65 @@ async function mockInvoke<T>(
     return existed as T;
   }
 
+  if (command === "ssh_host_key_list") {
+    return Object.values(mockHostKeyFingerprints) as T;
+  }
+
+  if (command === "ssh_known_hosts_import") {
+    const input = args?.input as SshKnownHostsImportInput;
+    const lines = input.content.split("\n");
+    let imported = 0;
+    let skipped = 0;
+    const errors: string[] = [];
+    const now = new Date().toISOString();
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line || line.startsWith("#")) continue;
+      const parts = line.split(/\s+/);
+      if (parts.length < 3 || (!parts[1].startsWith("ssh-") && !parts[1].startsWith("ecdsa-"))) {
+        skipped++;
+        continue;
+      }
+      const hostField = parts[0];
+      let host: string;
+      let port = 22;
+      if (hostField.startsWith("[")) {
+        const bracketEnd = hostField.indexOf("]");
+        if (bracketEnd < 0) { skipped++; continue; }
+        host = hostField.slice(1, bracketEnd);
+        const rest = hostField.slice(bracketEnd + 1);
+        if (rest.startsWith(":")) port = parseInt(rest.slice(1), 10) || 22;
+      } else {
+        host = hostField;
+      }
+      const key = `${host}:${port}`;
+      if (key in mockHostKeyFingerprints) {
+        skipped++;
+        continue;
+      }
+      mockHostKeyFingerprints[key] = {
+        host,
+        port,
+        fingerprint: `SHA256:mock-${crypto.randomUUID().slice(0, 12)}`,
+        createdAt: now,
+      };
+      imported++;
+    }
+    return { imported, skipped, errors } as T;
+  }
+
+  if (command === "ssh_known_hosts_export") {
+    const entries = Object.values(mockHostKeyFingerprints);
+    const lines = entries.map((e) => {
+      const hostPort = e.port === 22 ? e.host : `[${e.host}]:${e.port}`;
+      return `# ${hostPort} ${e.fingerprint} (fingerprint only, no key data)`;
+    });
+    return {
+      content: lines.length > 0 ? lines.join("\n") + "\n" : "",
+      entryCount: 0,
+    } as T;
+  }
+
   throw new Error(`Mock command is not implemented: ${command}`);
 }
 
@@ -943,6 +1005,18 @@ export function resetSshHostFingerprint(input: SshHostKeyInput) {
   return call<boolean>("ssh_host_key_reset", { input });
 }
 
+export function listSshHostFingerprints() {
+  return call<SshHostFingerprintInfo[]>("ssh_host_key_list");
+}
+
+export function importSshKnownHosts(input: SshKnownHostsImportInput) {
+  return call<SshKnownHostsImportResult>("ssh_known_hosts_import", { input });
+}
+
+export function exportSshKnownHosts() {
+  return call<SshKnownHostsExportResult>("ssh_known_hosts_export");
+}
+
 function resolveInput(input: ApiRequestInput, variables: WorkspaceEnvironment["variables"]) {
   return {
     ...input,
@@ -999,6 +1073,44 @@ function redactHeaders(headers: ApiRequestInput["headers"]) {
     ...item,
     value: sensitive.has(item.key.toLowerCase()) ? "<redacted>" : item.value,
   }));
+}
+
+function redactJsonBody(body: string | null | undefined): string | null {
+  if (!body) return null;
+  try {
+    const parsed = JSON.parse(body);
+    const sensitive = new Set([
+      "authorization",
+      "cookie",
+      "proxy-authorization",
+      "x-api-key",
+      "x-auth-token",
+    ]);
+    let changed = false;
+    function walk(value: unknown): unknown {
+      if (value && typeof value === "object" && !Array.isArray(value)) {
+        const obj = value as Record<string, unknown>;
+        const result: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(obj)) {
+          if (sensitive.has(k.toLowerCase())) {
+            result[k] = "<redacted>";
+            changed = true;
+          } else {
+            result[k] = walk(v);
+          }
+        }
+        return result;
+      }
+      if (Array.isArray(value)) {
+        return value.map(walk);
+      }
+      return value;
+    }
+    const redacted = walk(parsed);
+    return changed ? JSON.stringify(redacted) : body;
+  } catch {
+    return body;
+  }
 }
 
 function normalizeFolderPath(value: ApiRequestInput["folderPath"]) {

@@ -2,11 +2,11 @@
 
 ## Scan Metadata
 
-- **Scanned at:** 2026-06-10 (checkpoint refresh, terminal session persistence implemented)
+- **Scanned at:** 2026-06-10 (checkpoint refresh, security polish batch implemented)
 - **Branch:** main
-- **Current commit:** uncommitted — feat(terminal): persist ssh session output history
-- **Working tree:** Dirty (terminal persistence changes staged)
-- **Last checkpoint:** Terminal session output persistence to SQLite implemented and verified
+- **Current commit:** uncommitted — feat(security): add redaction and host-key interoperability
+- **Working tree:** Dirty (security polish changes staged)
+- **Last checkpoint:** API body redaction, host-key trust dialog, and known_hosts import/export implemented and verified
 
 ## Tech Stack
 
@@ -18,7 +18,7 @@
 
 ## Current Phase
 
-Terminal streaming, SSH reliability integration, and **terminal session persistence** are **complete**. PTY lifecycle, stdin/stdout streaming, Tauri event streaming, frontend terminal input capture, resize propagation, search, keepalive monitoring, bounded reconnection, cancellation, cleanup, and SQLite-backed output persistence with secret redaction and truncation are wired end-to-end.
+Terminal streaming, SSH reliability integration, terminal session persistence, and **security polish** (body redaction + host-key interoperability) are **complete**. PTY lifecycle, stdin/stdout streaming, Tauri event streaming, frontend terminal input capture, resize propagation, search, keepalive monitoring, bounded reconnection, cancellation, cleanup, SQLite-backed output persistence with secret redaction and truncation, API request body redaction in persistence paths, host-key trust confirmation dialog, and known_hosts import/export are wired end-to-end.
 
 UI module split is **in progress**. Terminal and Database packages have been extracted from `packages/app-shell`. A shared `command-client` package provides the Tauri IPC abstraction, and a `workspace` package provides the Zustand workspace state store. Further Workspace extraction from app-shell is planned.
 
@@ -28,15 +28,15 @@ UI module split is **in progress**. Terminal and Database packages have been ext
 
 | Capability | Crate | Status | Tests |
 |---|---|---|---|
-| Core models & redaction | `unfour-core` | Complete | 3 pass |
+| Core models & redaction | `unfour-core` | Complete | 10 pass |
 | Local storage & migrations | `unfour-local-storage` | Complete | 11 pass |
 | Activity logging | `unfour-local-storage` | Complete | Covered in local_storage |
 | SecretStore (OS keyring credential references) | `unfour-secret-store` | Complete | 4 pass |
 | Database engine (SQLite CRUD + schema) | `unfour-database-engine` | Complete | 3 pass |
-| HTTP engine (API client + history) | `unfour-http-engine` | Complete | 8 pass |
-| SSH engine (simulated + native) | `unfour-ssh-engine` | Complete | 22 default + 14 native-feature pass |
+| HTTP engine (API client + history + body redaction) | `unfour-http-engine` | Complete | 10 pass |
+| SSH engine (simulated + native + known_hosts) | `unfour-ssh-engine` | Complete | 33 pass |
 | Workspace engine | `unfour-workspace-engine` | Complete | Tests blocked on Windows DLL issue |
-| CommandBus (Tauri adapter) | `unfour-workspace` (apps/desktop/src-tauri) | Complete | Compile-verified, 3 integration tests in command_bus.rs |
+| CommandBus (Tauri adapter) | `unfour-workspace` (apps/desktop/src-tauri) | Complete | Compile-verified, 3 integration tests in command_bus.rs, 43 Tauri commands |
 
 ### Frontend (TypeScript)
 
@@ -45,27 +45,27 @@ UI module split is **in progress**. Terminal and Database packages have been ext
 | Workspace store | `@unfour/workspace` | Complete | 12 pass |
 | API Debugger | `@unfour/api-debugger` | Complete | 20 pass |
 | Database (connections + query) | `@unfour/database` | Complete | 16 pass |
-| Terminal state, history, and command-client mock | `@unfour/terminal`, `@unfour/command-client` | Complete | 6 + 2 pass |
+| Terminal state, history, host-key dialog, and command-client mock | `@unfour/terminal`, `@unfour/command-client` | Complete | 6 + 5 pass |
 
 ### Build
 
 - **Frontend production build:** PASS
 - **Frontend bundle chunks:** index (384 kB), xterm (367 kB), vendor-tanstack (101 kB), vendor-radix (88 kB), monaco (15 kB)
-- **Total Rust tests:** 51 passing across 6 crates (unfour-workspace blocked by Windows DLL issue)
-- **Total frontend tests:** 56 passing (5 files)
+- **Total Rust tests:** 71 passing across 6 crates (unfour-workspace blocked by Windows DLL issue)
+- **Total frontend tests:** 59 passing (5 files)
 
 ## Partially Implemented
 
 - **UI module split:** Terminal, Database, Workspace, and Command-Client packages extracted. `packages/app-shell` now contains only AppShell layout composition. Further workspace UI extraction from desktop components is planned.
 - **SSH authentication:** Password auth and private-key auth both work under `ssh-native`. Encrypted key passphrase loading has limited support (ssh-key crate format constraints).
-- **Host-key UI:** View trusted fingerprint and reset fingerprint implemented. Mismatch error display is handled by the TOFU backend.
+- **Host-key UI:** View trusted fingerprint, reset fingerprint, trust confirmation dialog (first trust + mismatch), and known_hosts import/export all implemented.
 - **Terminal session persistence:** SQLite-backed output history with per-session buffering, periodic flush, secret redaction, and UTF-8-safe truncation (256 KB retention). Hydration on app reopen. Browser mock mode compatible.
+- **API body redaction:** JSON body redaction applied in both Rust persistence paths (save_request, insert_history) and browser mock. Sensitive keys (authorization, cookie, proxy-authorization, x-api-key, x-auth-token) are recursively replaced with `<redacted>` while preserving JSON structure.
 - **SSH live reliability verification:** Keepalive and reconnect policy are automated-test covered, but a live localhost SSH stop/start cycle was not available in this environment.
 - **Database drivers:** SQLite driver is functional. PostgreSQL/MySQL drivers are not started.
 
 ## Not Started
 
-- `known_hosts` integration
 - Terminal multiplexing (tmux/screen-like)
 - SCP/SFTP file transfer
 - Additional database drivers (PostgreSQL, MySQL)
@@ -75,11 +75,11 @@ UI module split is **in progress**. Terminal and Database packages have been ext
 | Command | Result | Notes |
 |---|---|---|
 | `git diff --check` | PASS | No trailing whitespace issues |
-| `pnpm run lint` | PASS (warnings) | 0 errors, 64 warnings; pre-existing in api-debugger, database, terminal, desktop |
-| `pnpm run test` | PASS | 56 tests, 5 files |
+| `pnpm run lint` | PASS (warnings) | 0 errors, pre-existing warnings in api-debugger, database, terminal, desktop |
+| `pnpm run test` | PASS | 59 tests, 5 files |
 | `pnpm run build` | PASS | Production build succeeds |
 | `cargo fmt --check` | PASS | No formatting issues |
-| `cargo test --workspace` | PARTIAL | 51 tests pass across 6 crates. `unfour-workspace` fails with Windows `STATUS_ENTRYPOINT_NOT_FOUND` (DLL loading issue) |
+| `cargo test --workspace` | PARTIAL | 71 tests pass across 6 crates. `unfour-workspace` fails with Windows `STATUS_ENTRYPOINT_NOT_FOUND` (DLL loading issue) |
 | `cargo check --workspace` | PASS | All crates compile |
 | `cargo check -p unfour-workspace --features ssh-native` | PASS | SSH feature compiles |
 | `cargo test -p unfour-ssh-engine --features ssh-native` | PASS | 14 native-feature tests |
@@ -90,7 +90,6 @@ UI module split is **in progress**. Terminal and Database packages have been ext
 - **Windows workspace tests:** `cargo test -p unfour-workspace` fails with `STATUS_ENTRYPOINT_NOT_FOUND`. Likely a native DLL dependency issue (OpenSSL/SQLite) on this Windows environment. Does not indicate code defects.
 - **Lint warnings:** Multiple packages have `react-hooks/set-state-in-effect`, `react-hooks/exhaustive-deps`, `react-hooks/refs`, and `react-refresh/only-export-components` warnings. These are pre-existing and do not block builds.
 - **Real SSH verification:** Native SSH transport drop detection, reconnect cancellation, retry exhaustion, and recovery after server return are `NOT VERIFIED` against a live SSH server in this environment.
-- **API body redaction:** Request bodies are not redacted in logs or history.
 
 ## Repository Structure
 
@@ -117,4 +116,4 @@ UI module split is **in progress**. Terminal and Database packages have been ext
 | `unfour-ssh-engine` | SSH connections, sessions, PTY, host keys |
 | `unfour-workspace-engine` | Workspace CRUD, environment, layout |
 | `unfour-secret-store` | OS keyring-backed credential storage |
-| `unfour-workspace` (Tauri) | CommandBus, 40 Tauri commands, app setup |
+| `unfour-workspace` (Tauri) | CommandBus, 43 Tauri commands, app setup |

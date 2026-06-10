@@ -24,7 +24,7 @@ Logs and request history redact these header names:
 - `x-api-key`
 - `x-auth-token`
 
-Body redaction is not implemented yet. Until it is, users should avoid saving secrets in API bodies.
+Body redaction is implemented for JSON request bodies. The same sensitive-key list is applied recursively to all nested keys in the JSON structure. Redaction is applied in the Rust persistence paths (`save_request` and `insert_history` in `crates/http-engine/src/api_client.rs`) and in the browser mock (`packages/command-client/src/tauri.ts`). The actual HTTP request payload sent to servers is never modified — redaction only affects stored history and saved requests. Non-JSON bodies and plain text are passed through unchanged.
 
 ## Local Activity
 
@@ -63,7 +63,6 @@ Future AI/workflow actions should distinguish local reads, writes, and data egre
 
 - OS keychain/Stronghold write/read is reserved but not implemented.
 - Database query cancellation and read-only guardrails are not implemented.
-- API request body redaction is not implemented.
 - Workspace environment values are not encrypted; do not store long-lived secrets there.
 - Encrypted SSH private key passphrase decryption is limited by the ssh-key crate's format support.
 
@@ -80,14 +79,15 @@ Future AI/workflow actions should distinguish local reads, writes, and data egre
 - A fingerprint mismatch is rejected with a clear error message. The connection is not established.
 - Fingerprint changes are never silently accepted.
 
-**Storage:** Fingerprints are stored in `ssh_host_keys (host, port, fingerprint, created_at)` with `(host, port)` as the composite primary key.
+**Storage:** Fingerprints are stored in `ssh_host_keys (host, port, fingerprint, key_type, public_key_data, created_at)` with `(host, port)` as the composite primary key. The `key_type` and `public_key_data` columns are added via idempotent ALTER TABLE migration.
 
-**Management:** Users can view the trusted fingerprint and reset (delete) it via the connection settings dialog. After a reset, the next connection re-establishes trust (TOFU).
+**Management:** Users can view the trusted fingerprint and reset (delete) it via the connection settings dialog. After a reset, the next connection re-establishes trust (TOFU). A trust confirmation dialog (`HostKeyTrustDialog`) shows the fingerprint and requires explicit user confirmation before first trust. Mismatch errors are displayed clearly.
 
-**Frontend:** The `HostKeyFingerprint` component in `packages/terminal` displays the trusted fingerprint and allows resetting it.
+**known_hosts interoperability:** Import and export of OpenSSH `known_hosts` format files. Import parses each line, computes SHA-256 fingerprints from raw public key bytes, and stores entries that are valid and not already present. Export generates `known_hosts` format output with comments for entries missing key data. Tauri commands: `ssh_known_hosts_import`, `ssh_known_hosts_export`, `ssh_host_key_list`.
+
+**Frontend:** The `HostKeyFingerprint` component in `packages/terminal` displays the trusted fingerprint and allows resetting it. The `HostKeyTrustDialog` component provides trust confirmation before first connection and shows clear mismatch warnings.
 
 **Future extension points:**
 
-- OpenSSH `known_hosts` file integration for interoperability.
 - User confirmation UI for fingerprint changes (allow explicit trust updates without full reset).
 - Per-connection host-key policy overrides.

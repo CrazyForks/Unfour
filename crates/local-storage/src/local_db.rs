@@ -40,6 +40,7 @@ impl LocalDb {
             sqlx::query(statement).execute(&self.pool).await?;
         }
         self.ensure_api_request_folder_path().await?;
+        self.ensure_host_key_columns().await?;
 
         Ok(())
     }
@@ -199,6 +200,26 @@ const MIGRATIONS: &[&str] = &[
     "CREATE INDEX IF NOT EXISTS idx_ssh_terminal_history_workspace_updated ON ssh_terminal_history(workspace_id, updated_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_ssh_terminal_history_connection ON ssh_terminal_history(workspace_id, connection_id)",
 ];
+
+impl LocalDb {
+    async fn ensure_host_key_columns(&self) -> AppResult<()> {
+        let columns =
+            sqlx::query_as::<_, (String,)>("SELECT name FROM pragma_table_info('ssh_host_keys')")
+                .fetch_all(&self.pool)
+                .await?;
+        if !columns.iter().any(|(name,)| name == "key_type") {
+            sqlx::query("ALTER TABLE ssh_host_keys ADD COLUMN key_type TEXT")
+                .execute(&self.pool)
+                .await?;
+        }
+        if !columns.iter().any(|(name,)| name == "public_key_data") {
+            sqlx::query("ALTER TABLE ssh_host_keys ADD COLUMN public_key_data TEXT")
+                .execute(&self.pool)
+                .await?;
+        }
+        Ok(())
+    }
+}
 
 #[cfg(test)]
 mod tests {

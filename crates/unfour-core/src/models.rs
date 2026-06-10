@@ -348,6 +348,31 @@ pub struct SshHostFingerprintInfo {
     pub created_at: String,
 }
 
+/// Input for importing known_hosts content.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SshKnownHostsImportInput {
+    pub workspace_id: String,
+    pub content: String,
+}
+
+/// Result of a known_hosts import operation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SshKnownHostsImportResult {
+    pub imported: u32,
+    pub skipped: u32,
+    pub errors: Vec<String>,
+}
+
+/// Result of a known_hosts export operation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SshKnownHostsExportResult {
+    pub content: String,
+    pub entry_count: u32,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DatabaseConnection {

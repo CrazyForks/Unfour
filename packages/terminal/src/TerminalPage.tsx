@@ -7,9 +7,11 @@ import {
   connectSshSession,
   deleteSshConnection,
   exportSshLog,
+  getSshHostFingerprint,
   getSshSessionHistory,
   saveSshConnection,
   type SshConnectionInput,
+  type SshHostFingerprintInfo,
   type SshSessionSummary,
 } from "@unfour/command-client";
 import { useWorkspaceStore } from "@unfour/workspace";
@@ -17,6 +19,7 @@ import { LoadingState } from "@unfour/ui";
 import { TerminalModuleToolbar } from "./components/TerminalModuleToolbar";
 import { TerminalWorkspace } from "./components/TerminalWorkspace";
 import { SshConnectionDialog } from "./components/SshConnectionDialog";
+import { HostKeyTrustDialog } from "./components/HostKeyTrustDialog";
 import { useSshConnections } from "./hooks/useSshConnections";
 import { useTerminalSessions } from "./hooks/useTerminalSessions";
 import { useTerminalSplit } from "./hooks/useTerminalSplit";
@@ -52,6 +55,21 @@ export function TerminalPage({ workspaceId }: { workspaceId: string }) {
   const startTerminalSession = useTerminalStore((state) => state.startTerminalSession);
   const terminalEvents = useTerminalStore((state) => state.terminalEvents);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [trustDialogState, setTrustDialogState] = useState<{
+    open: boolean;
+    connectionId: string | null;
+    host: string;
+    port: number;
+    fingerprint: SshHostFingerprintInfo | null | undefined;
+    mismatchError: string | null;
+  }>({
+    open: false,
+    connectionId: null,
+    host: "",
+    port: 22,
+    fingerprint: undefined,
+    mismatchError: null,
+  });
   const hydratedSessionIdsRef = useRef(new Set<string>());
   const [form, setForm] = useState<SshConnectionInput>(() =>
     defaultSshConnectionInput(workspaceId),
@@ -298,13 +316,65 @@ export function TerminalPage({ workspaceId }: { workspaceId: string }) {
   }
 
   function connectSelectedConnection() {
-    if (!selectedConnectionId) {
+    if (!selectedConnectionId || !selectedConnection) {
       newConnection();
       return;
     }
 
-    connectMutation.mutate(selectedConnectionId);
+    const host = selectedConnection.host;
+    const port = selectedConnection.port ?? 22;
+
+    // Check if we already trust this host.
+    getSshHostFingerprint({ host, port })
+      .then((info) => {
+        if (info) {
+          // Already trusted — connect directly.
+          connectMutation.mutate(selectedConnectionId);
+        } else {
+          // First trust — show confirmation dialog.
+          setTrustDialogState({
+            open: true,
+            connectionId: selectedConnectionId,
+            host,
+            port,
+            fingerprint: null,
+            mismatchError: null,
+          });
+        }
+      })
+      .catch(() => {
+        // If fingerprint check fails, proceed with connection anyway
+        // (the backend TOFU will handle it).
+        connectMutation.mutate(selectedConnectionId);
+      });
   }
+
+  function confirmTrustAndConnect() {
+    if (!trustDialogState.connectionId) return;
+    setTrustDialogState((prev) => ({ ...prev, open: false }));
+    connectMutation.mutate(trustDialogState.connectionId);
+  }
+
+  // Detect host-key mismatch errors from connect failures.
+  useEffect(() => {
+    const error = connectMutation.error;
+    if (!error) return;
+    const message = error instanceof Error ? error.message : String(error);
+    if (
+      message.includes("host key verification failed") ||
+      message.includes("fingerprint does not match")
+    ) {
+      const conn = selectedConnection;
+      setTrustDialogState({
+        open: true,
+        connectionId: null,
+        host: conn?.host ?? "",
+        port: conn?.port ?? 22,
+        fingerprint: undefined,
+        mismatchError: message,
+      });
+    }
+  }, [connectMutation.error, selectedConnection]);
 
   const activeError =
     connectionsQuery.error ??
@@ -371,6 +441,18 @@ export function TerminalPage({ workspaceId }: { workspaceId: string }) {
         open={dialogOpen}
         pending={saveMutation.isPending || deleteMutation.isPending}
         workspaceId={workspaceId}
+      />
+      <HostKeyTrustDialog
+        existingFingerprint={trustDialogState.fingerprint}
+        host={trustDialogState.host}
+        mismatchError={trustDialogState.mismatchError}
+        onConfirm={confirmTrustAndConnect}
+        onOpenChange={(open) =>
+          setTrustDialogState((prev) => ({ ...prev, open }))
+        }
+        open={trustDialogState.open}
+        pending={connectMutation.isPending}
+        port={trustDialogState.port}
       />
     </div>
   );

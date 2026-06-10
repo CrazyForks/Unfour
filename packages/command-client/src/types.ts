@@ -256,6 +256,22 @@ export type SshHostFingerprintInfo = {
   createdAt: string;
 };
 
+export type SshKnownHostsImportInput = {
+  workspaceId: string;
+  content: string;
+};
+
+export type SshKnownHostsImportResult = {
+  imported: number;
+  skipped: number;
+  errors: string[];
+};
+
+export type SshKnownHostsExportResult = {
+  content: string;
+  entryCount: number;
+};
+
 export type DatabaseConnection = {
   id: string;
   workspaceId: string;

@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 use unfour_core::models::{
     ApiHistoryDetail, ApiHistoryItem, ApiRequestInput, ApiResponse, ApiSavedRequest, KeyValue,
 };
-use unfour_core::redaction::redact_key_values;
+use unfour_core::redaction::{redact_json_body, redact_key_values};
 use unfour_core::{AppError, AppResult};
 use unfour_local_storage::LocalDb;
 use uuid::Uuid;
@@ -182,7 +182,7 @@ impl ApiClientService {
         .bind(input.url)
         .bind(serde_json::to_string(&redact_headers(&input.headers))?)
         .bind(serde_json::to_string(&input.query)?)
-        .bind(input.body)
+        .bind(input.body.as_deref().map(|b| redact_json_body(b).0))
         .bind(input.body_kind)
         .bind(now)
         .execute(self.db.pool())
@@ -361,7 +361,7 @@ impl ApiClientService {
         .bind(&input.url)
         .bind(serde_json::to_string(&redact_headers(&input.headers))?)
         .bind(serde_json::to_string(&input.query)?)
-        .bind(&input.body)
+        .bind(input.body.as_deref().map(|b| redact_json_body(b).0))
         .bind(i64::from(status))
         .bind(i64::try_from(duration_ms).unwrap_or(i64::MAX))
         .bind(serde_json::to_string(response_headers)?)
@@ -573,6 +573,70 @@ mod tests {
 
         assert!(saved.headers_json.contains("<redacted>"));
         assert!(!saved.headers_json.contains("Bearer secret"));
+    }
+
+    #[tokio::test]
+    async fn save_request_redacts_sensitive_body_fields() {
+        let service = service().await;
+
+        let saved = service
+            .save_request(ApiRequestInput {
+                workspace_id: "workspace-a".to_string(),
+                name: Some("Body redaction test".to_string()),
+                folder_path: None,
+                method: "POST".to_string(),
+                url: "https://example.test".to_string(),
+                headers: vec![],
+                query: vec![],
+                body: Some(
+                    r#"{"user":"alice","Authorization":"Bearer secret","data":"safe"}"#.to_string(),
+                ),
+                body_kind: "json".to_string(),
+                timeout_ms: None,
+            })
+            .await
+            .expect("save request");
+
+        assert!(
+            saved.body.as_deref().unwrap_or("").contains("<redacted>"),
+            "saved body should be redacted"
+        );
+        assert!(
+            !saved
+                .body
+                .as_deref()
+                .unwrap_or("")
+                .contains("Bearer secret"),
+            "saved body should not contain the secret"
+        );
+        assert!(
+            saved.body.as_deref().unwrap_or("").contains("alice"),
+            "non-sensitive values should be preserved"
+        );
+    }
+
+    #[tokio::test]
+    async fn save_request_preserves_non_json_body_unchanged() {
+        let service = service().await;
+
+        let plain_text = "plain text body with no json structure";
+        let saved = service
+            .save_request(ApiRequestInput {
+                workspace_id: "workspace-a".to_string(),
+                name: Some("Plain text body".to_string()),
+                folder_path: None,
+                method: "POST".to_string(),
+                url: "https://example.test".to_string(),
+                headers: vec![],
+                query: vec![],
+                body: Some(plain_text.to_string()),
+                body_kind: "text".to_string(),
+                timeout_ms: None,
+            })
+            .await
+            .expect("save request");
+
+        assert_eq!(saved.body.as_deref(), Some(plain_text));
     }
 
     #[tokio::test]

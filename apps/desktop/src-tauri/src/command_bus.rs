@@ -6,7 +6,8 @@ use unfour_core::models::{
     CredentialRotateInput, DatabaseBrowseInput, DatabaseBrowseResult, DatabaseConnection,
     DatabaseConnectionInput, DatabaseQueryInput, DatabaseQueryResult, DatabaseSchema,
     DatabaseTestResult, KeyValue, SshCloseInput, SshConnectInput, SshConnection,
-    SshConnectionInput, SshHostFingerprintInfo, SshHostKeyInput, SshLogExport, SshLogExportInput,
+    SshConnectionInput, SshHostFingerprintInfo, SshHostKeyInput, SshKnownHostsExportResult,
+    SshKnownHostsImportInput, SshKnownHostsImportResult, SshLogExport, SshLogExportInput,
     SshReconnectCancelInput, SshResizeInput, SshSessionEvent, SshSessionInput, SshSessionSummary,
     SystemHealth, Workspace, WorkspaceEnvironment, WorkspaceLayout, WorkspaceState,
 };
@@ -603,6 +604,34 @@ impl CommandBus {
                 .await?;
         }
         Ok(deleted)
+    }
+
+    pub async fn list_all_ssh_fingerprints(&self) -> AppResult<Vec<SshHostFingerprintInfo>> {
+        self.ssh.list_all_host_fingerprints().await
+    }
+
+    pub async fn import_ssh_known_hosts(
+        &self,
+        input: SshKnownHostsImportInput,
+    ) -> AppResult<SshKnownHostsImportResult> {
+        let result = self.ssh.import_known_hosts(input).await?;
+        self.activity_log
+            .record(
+                None,
+                "ssh.known_hosts.import",
+                None,
+                serde_json::json!({
+                    "imported": result.imported,
+                    "skipped": result.skipped,
+                    "errors": result.errors.len(),
+                }),
+            )
+            .await?;
+        Ok(result)
+    }
+
+    pub async fn export_ssh_known_hosts(&self) -> AppResult<SshKnownHostsExportResult> {
+        self.ssh.export_known_hosts().await
     }
 
     pub fn reserved_status(&self) -> serde_json::Value {

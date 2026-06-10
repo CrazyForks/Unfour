@@ -6,7 +6,8 @@ use unfour_core::models::{
     CredentialRotateInput, DatabaseBrowseInput, DatabaseBrowseResult, DatabaseConnection,
     DatabaseConnectionInput, DatabaseQueryInput, DatabaseQueryResult, DatabaseSchema,
     DatabaseTestResult, KeyValue, SshCloseInput, SshConnectInput, SshConnection,
-    SshConnectionInput, SshHostFingerprintInfo, SshHostKeyInput, SshLogExport, SshLogExportInput,
+    SshConnectionInput, SshHostFingerprintInfo, SshHostKeyInput, SshKnownHostsExportResult,
+    SshKnownHostsImportInput, SshKnownHostsImportResult, SshLogExport, SshLogExportInput,
     SshReconnectCancelInput, SshResizeInput, SshSessionEvent, SshSessionInput, SshSessionSummary,
     SystemHealth, Workspace, WorkspaceEnvironment, WorkspaceLayout, WorkspaceState,
 };
@@ -376,4 +377,26 @@ pub async fn ssh_host_key_reset(
     state: State<'_, AppState>,
 ) -> AppResult<bool> {
     state.command_bus.reset_ssh_host_fingerprint(input).await
+}
+
+#[tauri::command]
+pub async fn ssh_host_key_list(
+    state: State<'_, AppState>,
+) -> AppResult<Vec<SshHostFingerprintInfo>> {
+    state.command_bus.list_all_ssh_fingerprints().await
+}
+
+#[tauri::command]
+pub async fn ssh_known_hosts_import(
+    input: SshKnownHostsImportInput,
+    state: State<'_, AppState>,
+) -> AppResult<SshKnownHostsImportResult> {
+    state.command_bus.import_ssh_known_hosts(input).await
+}
+
+#[tauri::command]
+pub async fn ssh_known_hosts_export(
+    state: State<'_, AppState>,
+) -> AppResult<SshKnownHostsExportResult> {
+    state.command_bus.export_ssh_known_hosts().await
 }
