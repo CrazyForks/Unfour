@@ -1,4 +1,5 @@
 use chrono::Utc;
+use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::{Column, Row, TypeInfo, ValueRef};
 use std::path::Path;
@@ -11,16 +12,26 @@ use unfour_core::models::{
 };
 use unfour_core::{AppError, AppResult};
 use unfour_local_storage::LocalDb;
+use unfour_secret_store::SecretStore;
 use uuid::Uuid;
 
 #[derive(Clone)]
 pub struct DatabaseService {
     db: LocalDb,
+    secret_store: Option<SecretStore>,
 }
 
 impl DatabaseService {
     pub fn new(db: LocalDb) -> Self {
-        Self { db }
+        Self {
+            db,
+            secret_store: None,
+        }
+    }
+
+    pub fn with_secret_store(mut self, secret_store: SecretStore) -> Self {
+        self.secret_store = Some(secret_store);
+        self
     }
 
     pub async fn list_connections(
@@ -159,10 +170,23 @@ impl DatabaseService {
                     server_version: Some(version.0),
                 })
             }
-            "postgres" | "mysql" => Ok(DatabaseTestResult {
+            "postgres" => {
+                let pool = self.postgres_pool(&connection).await?;
+                let row: (String,) = sqlx::query_as("SELECT version()")
+                    .fetch_one(&pool)
+                    .await
+                    .map_err(sanitize_pg_error)?;
+
+                Ok(DatabaseTestResult {
+                    ok: true,
+                    message: "PostgreSQL connection OK".to_string(),
+                    server_version: Some(row.0),
+                })
+            }
+            "mysql" => Ok(DatabaseTestResult {
                 ok: false,
                 message: format!(
-                    "{} metadata is saved; credential-backed live connections are reserved for the next phase.",
+                    "{} metadata is saved; MySQL live connections are reserved for a future phase.",
                     display_driver(&connection.driver)
                 ),
                 server_version: None,
@@ -180,41 +204,82 @@ impl DatabaseService {
         connection_id: String,
     ) -> AppResult<DatabaseSchema> {
         let connection = self.get_connection(&workspace_id, &connection_id).await?;
-        if connection.driver != "sqlite" {
-            return Err(AppError::Unsupported(format!(
-                "{} schema browsing is reserved for the next phase",
-                display_driver(&connection.driver)
-            )));
+
+        match connection.driver.as_str() {
+            "sqlite" => {
+                let pool = sqlite_pool(&connection).await?;
+                let table_rows = sqlx::query(
+                    r#"
+                    SELECT name, type
+                    FROM sqlite_master
+                    WHERE type IN ('table', 'view') AND name NOT LIKE 'sqlite_%'
+                    ORDER BY type, name
+                    "#,
+                )
+                .fetch_all(&pool)
+                .await?;
+
+                let mut tables = Vec::with_capacity(table_rows.len());
+                for row in table_rows {
+                    let name: String = row.try_get("name")?;
+                    let kind: String = row.try_get("type")?;
+                    let columns = sqlite_columns(&pool, &name).await?;
+                    tables.push(DatabaseTable {
+                        name,
+                        kind,
+                        columns,
+                    });
+                }
+
+                Ok(DatabaseSchema {
+                    connection_id,
+                    tables,
+                })
+            }
+            "postgres" => {
+                let pool = self.postgres_pool(&connection).await?;
+                let table_rows = sqlx::query(
+                    r#"
+                    SELECT table_name, table_type
+                    FROM information_schema.tables
+                    WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
+                    ORDER BY table_schema, table_name
+                    "#,
+                )
+                .fetch_all(&pool)
+                .await
+                .map_err(sanitize_pg_error)?;
+
+                let mut tables = Vec::with_capacity(table_rows.len());
+                for row in table_rows {
+                    let name: String = row.try_get("table_name").map_err(sanitize_pg_error)?;
+                    let table_type: String =
+                        row.try_get("table_type").map_err(sanitize_pg_error)?;
+                    let kind = if table_type == "VIEW" {
+                        "view".to_string()
+                    } else {
+                        "table".to_string()
+                    };
+                    let columns = postgres_columns(&pool, &name)
+                        .await
+                        .map_err(sanitize_pg_app_error)?;
+                    tables.push(DatabaseTable {
+                        name,
+                        kind,
+                        columns,
+                    });
+                }
+
+                Ok(DatabaseSchema {
+                    connection_id,
+                    tables,
+                })
+            }
+            driver => Err(AppError::Unsupported(format!(
+                "{} schema browsing is not yet supported",
+                display_driver(driver)
+            ))),
         }
-
-        let pool = sqlite_pool(&connection).await?;
-        let table_rows = sqlx::query(
-            r#"
-            SELECT name, type
-            FROM sqlite_master
-            WHERE type IN ('table', 'view') AND name NOT LIKE 'sqlite_%'
-            ORDER BY type, name
-            "#,
-        )
-        .fetch_all(&pool)
-        .await?;
-
-        let mut tables = Vec::with_capacity(table_rows.len());
-        for row in table_rows {
-            let name: String = row.try_get("name")?;
-            let kind: String = row.try_get("type")?;
-            let columns = sqlite_columns(&pool, &name).await?;
-            tables.push(DatabaseTable {
-                name,
-                kind,
-                columns,
-            });
-        }
-
-        Ok(DatabaseSchema {
-            connection_id,
-            tables,
-        })
     }
 
     pub async fn execute_query(&self, input: DatabaseQueryInput) -> AppResult<DatabaseQueryResult> {
@@ -242,47 +307,94 @@ impl DatabaseService {
         let connection = self
             .get_connection(&input.workspace_id, &input.connection_id)
             .await?;
-        if connection.driver != "sqlite" {
-            return Err(AppError::Unsupported(format!(
-                "{} query execution is reserved for the next phase",
-                display_driver(&connection.driver)
-            )));
+
+        match connection.driver.as_str() {
+            "sqlite" => {
+                let pool = sqlite_pool(&connection).await?;
+                let limit = input.limit.unwrap_or(100).clamp(1, 1_000);
+                let started = Instant::now();
+
+                if returns_rows(sql) {
+                    let query_sql = sql_with_limit(sql, limit);
+                    let rows = sqlx::query(&query_sql).fetch_all(&pool).await?;
+                    let columns = rows.first().map(sqlite_result_columns).unwrap_or_default();
+                    let values = rows
+                        .iter()
+                        .take(limit as usize)
+                        .map(sqlite_row_values)
+                        .collect::<AppResult<Vec<_>>>()?;
+
+                    return Ok(DatabaseQueryResult {
+                        columns,
+                        rows: values,
+                        affected_rows: 0,
+                        duration_ms: started.elapsed().as_millis(),
+                        safety,
+                    });
+                }
+
+                let result = sqlx::query(sql).execute(&pool).await?;
+                Ok(DatabaseQueryResult {
+                    columns: Vec::new(),
+                    rows: Vec::new(),
+                    affected_rows: result.rows_affected(),
+                    duration_ms: started.elapsed().as_millis(),
+                    safety: DatabaseQuerySafety {
+                        confirmed: input.confirm_mutation == Some(true),
+                        ..safety
+                    },
+                })
+            }
+            "postgres" => {
+                let pool = self.postgres_pool(&connection).await?;
+                let limit = input.limit.unwrap_or(100).clamp(1, 1_000);
+                let started = Instant::now();
+
+                if returns_rows(sql) {
+                    let query_sql = sql_with_limit(sql, limit);
+                    let rows = sqlx::query(&query_sql)
+                        .fetch_all(&pool)
+                        .await
+                        .map_err(sanitize_pg_error)?;
+                    let columns = rows
+                        .first()
+                        .map(postgres_result_columns)
+                        .unwrap_or_default();
+                    let values = rows
+                        .iter()
+                        .take(limit as usize)
+                        .map(postgres_row_values)
+                        .collect::<AppResult<Vec<_>>>()?;
+
+                    return Ok(DatabaseQueryResult {
+                        columns,
+                        rows: values,
+                        affected_rows: 0,
+                        duration_ms: started.elapsed().as_millis(),
+                        safety,
+                    });
+                }
+
+                let result = sqlx::query(sql)
+                    .execute(&pool)
+                    .await
+                    .map_err(sanitize_pg_error)?;
+                Ok(DatabaseQueryResult {
+                    columns: Vec::new(),
+                    rows: Vec::new(),
+                    affected_rows: result.rows_affected(),
+                    duration_ms: started.elapsed().as_millis(),
+                    safety: DatabaseQuerySafety {
+                        confirmed: input.confirm_mutation == Some(true),
+                        ..safety
+                    },
+                })
+            }
+            driver => Err(AppError::Unsupported(format!(
+                "{} query execution is not yet supported",
+                display_driver(driver)
+            ))),
         }
-
-        let pool = sqlite_pool(&connection).await?;
-        let limit = input.limit.unwrap_or(100).clamp(1, 1_000);
-        let started = Instant::now();
-
-        if returns_rows(sql) {
-            let query_sql = sql_with_limit(sql, limit);
-            let rows = sqlx::query(&query_sql).fetch_all(&pool).await?;
-            let columns = rows.first().map(sqlite_result_columns).unwrap_or_default();
-            let values = rows
-                .iter()
-                .take(limit as usize)
-                .map(sqlite_row_values)
-                .collect::<AppResult<Vec<_>>>()?;
-
-            return Ok(DatabaseQueryResult {
-                columns,
-                rows: values,
-                affected_rows: 0,
-                duration_ms: started.elapsed().as_millis(),
-                safety,
-            });
-        }
-
-        let result = sqlx::query(sql).execute(&pool).await?;
-        Ok(DatabaseQueryResult {
-            columns: Vec::new(),
-            rows: Vec::new(),
-            affected_rows: result.rows_affected(),
-            duration_ms: started.elapsed().as_millis(),
-            safety: DatabaseQuerySafety {
-                confirmed: input.confirm_mutation == Some(true),
-                ..safety
-            },
-        })
     }
 
     pub async fn browse_table(
@@ -301,72 +413,134 @@ impl DatabaseService {
         let connection = self
             .get_connection(&input.workspace_id, &input.connection_id)
             .await?;
-        if connection.driver != "sqlite" {
-            return Err(AppError::Unsupported(format!(
-                "{} table browsing is reserved for the next phase",
-                display_driver(&connection.driver)
-            )));
+
+        match connection.driver.as_str() {
+            "sqlite" => {
+                let pool = sqlite_pool(&connection).await?;
+                ensure_sqlite_table_exists(&pool, table_name).await?;
+
+                let limit = input.limit.unwrap_or(100).clamp(1, 1_000);
+                let offset = input.offset.unwrap_or(0);
+                let total_rows = sqlite_table_row_count(&pool, table_name).await?;
+                let sql = format!(
+                    "SELECT * FROM {} LIMIT {} OFFSET {}",
+                    quote_identifier(table_name),
+                    limit,
+                    offset
+                );
+                let started = Instant::now();
+                let rows = sqlx::query(&sql).fetch_all(&pool).await?;
+                let columns = if let Some(row) = rows.first() {
+                    sqlite_result_columns(row)
+                } else {
+                    sqlite_table_result_columns(&pool, table_name).await?
+                };
+                let values = rows
+                    .iter()
+                    .map(sqlite_row_values)
+                    .collect::<AppResult<Vec<_>>>()?;
+
+                Ok(DatabaseBrowseResult {
+                    table_name: table_name.to_string(),
+                    sql,
+                    limit,
+                    offset,
+                    total_rows,
+                    read_only: true,
+                    result: DatabaseQueryResult {
+                        columns,
+                        rows: values,
+                        affected_rows: 0,
+                        duration_ms: started.elapsed().as_millis(),
+                        safety: DatabaseQuerySafety {
+                            classification: "read".to_string(),
+                            requires_confirmation: false,
+                            confirmed: true,
+                            message: None,
+                        },
+                    },
+                })
+            }
+            "postgres" => {
+                let pool = self.postgres_pool(&connection).await?;
+                ensure_postgres_table_exists(&pool, table_name)
+                    .await
+                    .map_err(sanitize_pg_app_error)?;
+
+                let limit = input.limit.unwrap_or(100).clamp(1, 1_000);
+                let offset = input.offset.unwrap_or(0);
+                let total_rows = postgres_table_row_count(&pool, table_name)
+                    .await
+                    .map_err(sanitize_pg_app_error)?;
+                let sql = format!(
+                    "SELECT * FROM {} LIMIT {} OFFSET {}",
+                    quote_identifier(table_name),
+                    limit,
+                    offset
+                );
+                let started = Instant::now();
+                let rows = sqlx::query(&sql)
+                    .fetch_all(&pool)
+                    .await
+                    .map_err(sanitize_pg_error)?;
+                let columns = if let Some(row) = rows.first() {
+                    postgres_result_columns(row)
+                } else {
+                    postgres_table_result_columns(&pool, table_name)
+                        .await
+                        .map_err(sanitize_pg_app_error)?
+                };
+                let values = rows
+                    .iter()
+                    .map(postgres_row_values)
+                    .collect::<AppResult<Vec<_>>>()?;
+
+                Ok(DatabaseBrowseResult {
+                    table_name: table_name.to_string(),
+                    sql,
+                    limit,
+                    offset,
+                    total_rows,
+                    read_only: true,
+                    result: DatabaseQueryResult {
+                        columns,
+                        rows: values,
+                        affected_rows: 0,
+                        duration_ms: started.elapsed().as_millis(),
+                        safety: DatabaseQuerySafety {
+                            classification: "read".to_string(),
+                            requires_confirmation: false,
+                            confirmed: true,
+                            message: None,
+                        },
+                    },
+                })
+            }
+            driver => Err(AppError::Unsupported(format!(
+                "{} table browsing is not yet supported",
+                display_driver(driver)
+            ))),
         }
-
-        let pool = sqlite_pool(&connection).await?;
-        ensure_sqlite_table_exists(&pool, table_name).await?;
-
-        let limit = input.limit.unwrap_or(100).clamp(1, 1_000);
-        let offset = input.offset.unwrap_or(0);
-        let total_rows = sqlite_table_row_count(&pool, table_name).await?;
-        let sql = format!(
-            "SELECT * FROM {} LIMIT {} OFFSET {}",
-            quote_identifier(table_name),
-            limit,
-            offset
-        );
-        let started = Instant::now();
-        let rows = sqlx::query(&sql).fetch_all(&pool).await?;
-        let columns = if let Some(row) = rows.first() {
-            sqlite_result_columns(row)
-        } else {
-            sqlite_table_result_columns(&pool, table_name).await?
-        };
-        let values = rows
-            .iter()
-            .map(sqlite_row_values)
-            .collect::<AppResult<Vec<_>>>()?;
-
-        Ok(DatabaseBrowseResult {
-            table_name: table_name.to_string(),
-            sql,
-            limit,
-            offset,
-            total_rows,
-            read_only: true,
-            result: DatabaseQueryResult {
-                columns,
-                rows: values,
-                affected_rows: 0,
-                duration_ms: started.elapsed().as_millis(),
-                safety: DatabaseQuerySafety {
-                    classification: "read".to_string(),
-                    requires_confirmation: false,
-                    confirmed: true,
-                    message: None,
-                },
-            },
-        })
     }
 
     pub fn capability_summary(&self) -> serde_json::Value {
         serde_json::json!({
-            "status": "mvp-started",
+            "status": "mvp",
             "backend": "sqlx",
-            "activeDrivers": ["sqlite"],
-            "reservedDrivers": ["postgres", "mysql"],
+            "activeDrivers": ["sqlite", "postgres"],
+            "reservedDrivers": ["mysql"],
             "features": [
                 "connection-metadata-crud",
                 "sqlite-connection-test",
                 "sqlite-schema-browser",
                 "sqlite-sql-editor",
                 "sqlite-read-only-table-data",
-                "paged-query-results"
+                "postgres-connection-test",
+                "postgres-schema-browser",
+                "postgres-sql-editor",
+                "postgres-read-only-table-data",
+                "paged-query-results",
+                "credential-backed-auth"
             ]
         })
     }
@@ -397,7 +571,261 @@ impl DatabaseService {
             .transpose()?
             .ok_or_else(|| AppError::NotFound("database connection".to_string()))
     }
+
+    /// Create a PostgreSQL connection pool, loading the password from SecretStore
+    /// if a credential reference is present on the connection.
+    async fn postgres_pool(&self, connection: &DatabaseConnection) -> AppResult<sqlx::PgPool> {
+        let options = pg_connect_options(connection, self.secret_store.as_ref()).await?;
+        PgPoolOptions::new()
+            .max_connections(4)
+            .connect_with(options)
+            .await
+            .map_err(|e| sanitize_pg_error(e))
+    }
 }
+
+// ---------------------------------------------------------------------------
+// PostgreSQL helpers
+// ---------------------------------------------------------------------------
+
+async fn pg_connect_options(
+    connection: &DatabaseConnection,
+    secret_store: Option<&SecretStore>,
+) -> AppResult<PgConnectOptions> {
+    let host = connection
+        .host
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .unwrap_or("127.0.0.1");
+    let port = connection.port.unwrap_or(5432);
+    let database = connection
+        .database
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .ok_or_else(|| AppError::Validation("PostgreSQL database name is required".to_string()))?;
+    let username = connection
+        .username
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .ok_or_else(|| AppError::Validation("PostgreSQL username is required".to_string()))?;
+
+    let password = resolve_pg_password(connection, secret_store).await?;
+
+    let mut options = PgConnectOptions::new()
+        .host(host)
+        .port(port as u16)
+        .database(database)
+        .username(username);
+
+    if let Some(pw) = password {
+        options = options.password(&pw);
+    }
+
+    Ok(options)
+}
+
+/// Load the PostgreSQL password from SecretStore if a credential reference is
+/// present.  Returns `None` when no credential_ref is configured (passwordless
+/// / peer auth).
+async fn resolve_pg_password(
+    connection: &DatabaseConnection,
+    secret_store: Option<&SecretStore>,
+) -> AppResult<Option<String>> {
+    if let Some(credential_ref) = connection
+        .credential_ref
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+    {
+        let store = secret_store.ok_or_else(|| {
+            AppError::Config(
+                "SecretStore is not available; cannot load database password".to_string(),
+            )
+        })?;
+        let secret = store
+            .read_secret(connection.workspace_id.clone(), credential_ref.to_string())
+            .await
+            .map_err(|_| {
+                AppError::Config("Failed to load database password from SecretStore".to_string())
+            })?;
+        Ok(Some(secret))
+    } else {
+        Ok(None)
+    }
+}
+
+async fn postgres_columns(
+    pool: &sqlx::PgPool,
+    table_name: &str,
+) -> Result<Vec<DatabaseTableColumn>, AppError> {
+    let rows = sqlx::query(
+        r#"
+        SELECT column_name, data_type, is_nullable, column_default
+        FROM information_schema.columns
+        WHERE table_name = $1
+        ORDER BY ordinal_position
+        "#,
+    )
+    .bind(table_name)
+    .fetch_all(pool)
+    .await?;
+
+    rows.into_iter()
+        .map(|row| {
+            let name: String = row.try_get("column_name")?;
+            let data_type: String = row.try_get("data_type")?;
+            let is_nullable: String = row.try_get("is_nullable")?;
+            let column_default: Option<String> = row.try_get("column_default")?;
+
+            // Detect primary key from column_default (serial types get nextval)
+            // For a more accurate check we'd need pg_constraint, but this is
+            // sufficient for the initial phase.
+            let primary_key = column_default
+                .as_deref()
+                .map(|d| d.starts_with("nextval("))
+                .unwrap_or(false);
+
+            Ok(DatabaseTableColumn {
+                name,
+                data_type,
+                nullable: is_nullable == "YES",
+                primary_key,
+            })
+        })
+        .collect()
+}
+
+async fn ensure_postgres_table_exists(
+    pool: &sqlx::PgPool,
+    table_name: &str,
+) -> Result<(), AppError> {
+    let row: Option<(String,)> = sqlx::query_as(
+        r#"
+        SELECT table_name
+        FROM information_schema.tables
+        WHERE table_name = $1
+          AND table_schema NOT IN ('pg_catalog', 'information_schema')
+        LIMIT 1
+        "#,
+    )
+    .bind(table_name)
+    .fetch_optional(pool)
+    .await?;
+
+    row.map(|_| ())
+        .ok_or_else(|| AppError::NotFound("database table".to_string()))
+}
+
+async fn postgres_table_row_count(pool: &sqlx::PgPool, table_name: &str) -> Result<u64, AppError> {
+    let sql = format!(
+        "SELECT COUNT(*) AS total_rows FROM {}",
+        quote_identifier(table_name)
+    );
+    let row = sqlx::query(&sql).fetch_one(pool).await?;
+    let total_rows: i64 = row.try_get("total_rows")?;
+    Ok(total_rows.max(0) as u64)
+}
+
+async fn postgres_table_result_columns(
+    pool: &sqlx::PgPool,
+    table_name: &str,
+) -> Result<Vec<DatabaseResultColumn>, AppError> {
+    Ok(postgres_columns(pool, table_name)
+        .await?
+        .into_iter()
+        .map(|column| DatabaseResultColumn {
+            name: column.name,
+            data_type: column.data_type,
+        })
+        .collect())
+}
+
+fn postgres_result_columns(row: &sqlx::postgres::PgRow) -> Vec<DatabaseResultColumn> {
+    row.columns()
+        .iter()
+        .map(|column| DatabaseResultColumn {
+            name: column.name().to_string(),
+            data_type: column.type_info().name().to_string(),
+        })
+        .collect()
+}
+
+fn postgres_row_values(row: &sqlx::postgres::PgRow) -> AppResult<Vec<Option<String>>> {
+    (0..row.columns().len())
+        .map(|index| {
+            let raw = row.try_get_raw(index)?;
+            if raw.is_null() {
+                return Ok(None);
+            }
+
+            if let Ok(value) = row.try_get::<String, _>(index) {
+                return Ok(Some(value));
+            }
+            if let Ok(value) = row.try_get::<i64, _>(index) {
+                return Ok(Some(value.to_string()));
+            }
+            if let Ok(value) = row.try_get::<i32, _>(index) {
+                return Ok(Some(value.to_string()));
+            }
+            if let Ok(value) = row.try_get::<i16, _>(index) {
+                return Ok(Some(value.to_string()));
+            }
+            if let Ok(value) = row.try_get::<f64, _>(index) {
+                return Ok(Some(value.to_string()));
+            }
+            if let Ok(value) = row.try_get::<f32, _>(index) {
+                return Ok(Some(value.to_string()));
+            }
+            if let Ok(value) = row.try_get::<bool, _>(index) {
+                return Ok(Some(value.to_string()));
+            }
+            if let Ok(value) = row.try_get::<Vec<u8>, _>(index) {
+                return Ok(Some(format!("<binary {} bytes>", value.len())));
+            }
+            if let Ok(value) = row.try_get::<serde_json::Value, _>(index) {
+                return Ok(Some(value.to_string()));
+            }
+
+            Ok(Some("<unsupported>".to_string()))
+        })
+        .collect()
+}
+
+/// Sanitize a sqlx::Error into an AppError, stripping password/connection leaks.
+fn sanitize_pg_error(error: sqlx::Error) -> AppError {
+    let msg = error.to_string();
+    if msg.contains("password") || msg.contains("userinfo") {
+        AppError::Database(sqlx::Error::Protocol(
+            "PostgreSQL connection error (details redacted)".to_string(),
+        ))
+    } else {
+        AppError::Database(error)
+    }
+}
+
+/// Sanitize an AppError from a helper that already wraps sqlx errors.
+fn sanitize_pg_app_error(error: AppError) -> AppError {
+    match &error {
+        AppError::Database(sqlx_err) => {
+            let msg = sqlx_err.to_string();
+            if msg.contains("password") || msg.contains("userinfo") {
+                AppError::Database(sqlx::Error::Protocol(
+                    "PostgreSQL connection error (details redacted)".to_string(),
+                ))
+            } else {
+                error
+            }
+        }
+        _ => error,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// SQLite helpers (unchanged)
+// ---------------------------------------------------------------------------
 
 async fn sqlite_columns(
     pool: &sqlx::SqlitePool,
@@ -529,6 +957,10 @@ async fn sqlite_pool(connection: &DatabaseConnection) -> AppResult<sqlx::SqliteP
         .map_err(AppError::from)
 }
 
+// ---------------------------------------------------------------------------
+// Shared helpers
+// ---------------------------------------------------------------------------
+
 fn stored_to_database_connection(row: StoredConnection) -> AppResult<DatabaseConnection> {
     let config = serde_json::from_str::<DatabaseConnectionConfig>(&row.config_json)?;
     Ok(DatabaseConnection {
@@ -637,7 +1069,10 @@ fn returns_rows(sql: &str) -> bool {
         .next()
         .unwrap_or_default()
         .to_ascii_lowercase();
-    matches!(keyword.as_str(), "select" | "with" | "pragma" | "explain")
+    matches!(
+        keyword.as_str(),
+        "select" | "with" | "pragma" | "explain" | "show"
+    )
 }
 
 fn validate_single_statement(sql: &str) -> AppResult<()> {
@@ -659,7 +1094,7 @@ fn classify_query(sql: &str) -> DatabaseQuerySafety {
         .to_ascii_lowercase();
 
     match keyword.as_str() {
-        "select" | "with" | "pragma" | "explain" => DatabaseQuerySafety {
+        "select" | "with" | "pragma" | "explain" | "show" => DatabaseQuerySafety {
             classification: "read".to_string(),
             requires_confirmation: false,
             confirmed: true,
@@ -719,6 +1154,10 @@ fn display_driver(driver: &str) -> &'static str {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -756,7 +1195,10 @@ mod tests {
         .await
         .expect("insert workspace");
 
-        (DatabaseService::new(db), workspace_id)
+        let secret_store = SecretStore::in_memory("unfour-test");
+        let service = DatabaseService::new(db).with_secret_store(secret_store);
+
+        (service, workspace_id)
     }
 
     async fn sqlite_fixture() -> PathBuf {
@@ -815,6 +1257,21 @@ mod tests {
             username: None,
             sqlite_path: Some(path.to_string_lossy().to_string()),
             credential_ref: Some("  ".to_string()),
+        }
+    }
+
+    fn postgres_input(workspace_id: &str) -> DatabaseConnectionInput {
+        DatabaseConnectionInput {
+            id: None,
+            workspace_id: workspace_id.to_string(),
+            name: "PG test".to_string(),
+            driver: "postgres".to_string(),
+            host: Some("127.0.0.1".to_string()),
+            port: Some(5432),
+            database: Some("testdb".to_string()),
+            username: Some("testuser".to_string()),
+            sqlite_path: None,
+            credential_ref: None,
         }
     }
 
@@ -1014,5 +1471,217 @@ mod tests {
             .await;
         assert!(matches!(multiple, Err(AppError::Validation(_))));
         let _ = fs::remove_file(path);
+    }
+
+    // -----------------------------------------------------------------------
+    // PostgreSQL-specific tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn postgres_config_maps_host_port_database_username() {
+        let input = DatabaseConnectionInput {
+            id: None,
+            workspace_id: "ws".to_string(),
+            name: "My PG".to_string(),
+            driver: "postgres".to_string(),
+            host: Some("pg.example.com".to_string()),
+            port: Some(5433),
+            database: Some("mydb".to_string()),
+            username: Some("admin".to_string()),
+            sqlite_path: None,
+            credential_ref: Some("unfour-workspace:ws:database-password:abc".to_string()),
+        };
+
+        let config = input_to_config(&input).expect("config");
+        assert_eq!(config.driver, "postgres");
+        assert_eq!(config.host.as_deref(), Some("pg.example.com"));
+        assert_eq!(config.port, Some(5433));
+        assert_eq!(config.database.as_deref(), Some("mydb"));
+        assert_eq!(config.username.as_deref(), Some("admin"));
+        assert!(config.sqlite_path.is_none());
+    }
+
+    #[tokio::test]
+    async fn postgres_password_not_leaked_in_connection_error() {
+        let (service, workspace_id) = service_with_workspace().await;
+
+        // Save a PostgreSQL connection that points to a non-existent server
+        let connection = service
+            .save_connection(DatabaseConnectionInput {
+                id: None,
+                workspace_id: workspace_id.clone(),
+                name: "Bad PG".to_string(),
+                driver: "postgres".to_string(),
+                host: Some("192.0.2.1".to_string()), // RFC 5737 TEST-NET, unreachable
+                port: Some(5432),
+                database: Some("testdb".to_string()),
+                username: Some("testuser".to_string()),
+                sqlite_path: None,
+                credential_ref: None,
+            })
+            .await
+            .expect("save pg connection");
+
+        // test_connection should fail (no server), but should not panic
+        let result = service.test_connection(workspace_id, connection.id).await;
+        assert!(result.is_err());
+        // The error message should not contain the username or host
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(
+            !err_msg.contains("testuser"),
+            "error should not leak username: {}",
+            err_msg
+        );
+    }
+
+    #[tokio::test]
+    async fn postgres_connection_without_credential_ref_uses_no_password() {
+        let connection = DatabaseConnection {
+            id: "pg1".to_string(),
+            workspace_id: "ws1".to_string(),
+            name: "No PW".to_string(),
+            driver: "postgres".to_string(),
+            host: Some("localhost".to_string()),
+            port: Some(5432),
+            database: Some("testdb".to_string()),
+            username: Some("dev".to_string()),
+            sqlite_path: None,
+            credential_ref: None,
+            created_at: String::new(),
+            updated_at: String::new(),
+            deleted_at: None,
+            revision: 1,
+            sync_status: "local".to_string(),
+            remote_id: None,
+        };
+
+        // No credential_ref → password resolves to None (passwordless / peer auth)
+        let password = resolve_pg_password(&connection, None)
+            .await
+            .expect("resolve password without credential_ref");
+        assert!(
+            password.is_none(),
+            "expected no password when credential_ref is None"
+        );
+
+        // Empty-string credential_ref should also resolve to None
+        let mut empty_ref = connection.clone();
+        empty_ref.credential_ref = Some("".to_string());
+        let password = resolve_pg_password(&empty_ref, None)
+            .await
+            .expect("resolve password with empty credential_ref");
+        assert!(
+            password.is_none(),
+            "expected no password when credential_ref is empty"
+        );
+
+        // Whitespace-only credential_ref should also resolve to None
+        let mut ws_ref = connection.clone();
+        ws_ref.credential_ref = Some("   ".to_string());
+        let password = resolve_pg_password(&ws_ref, None)
+            .await
+            .expect("resolve password with whitespace credential_ref");
+        assert!(
+            password.is_none(),
+            "expected no password when credential_ref is whitespace"
+        );
+    }
+
+    #[tokio::test]
+    async fn postgres_connection_with_credential_ref_loads_password() {
+        let secret_store = SecretStore::in_memory("unfour-test");
+        let credential_ref = secret_store
+            .create_credential(
+                "ws1".to_string(),
+                "database-password".to_string(),
+                "PG password".to_string(),
+                "s3cret!".to_string(),
+            )
+            .await
+            .expect("create credential");
+
+        let connection = DatabaseConnection {
+            id: "pg2".to_string(),
+            workspace_id: "ws1".to_string(),
+            name: "With PW".to_string(),
+            driver: "postgres".to_string(),
+            host: Some("localhost".to_string()),
+            port: Some(5432),
+            database: Some("testdb".to_string()),
+            username: Some("dev".to_string()),
+            sqlite_path: None,
+            credential_ref: Some(credential_ref.credential_ref),
+            created_at: String::new(),
+            updated_at: String::new(),
+            deleted_at: None,
+            revision: 1,
+            sync_status: "local".to_string(),
+            remote_id: None,
+        };
+
+        let password = resolve_pg_password(&connection, Some(&secret_store))
+            .await
+            .expect("resolve password with valid credential_ref");
+        assert_eq!(password, Some("s3cret!".to_string()));
+    }
+
+    #[tokio::test]
+    async fn postgres_mutating_query_requires_confirmation() {
+        let (service, workspace_id) = service_with_workspace().await;
+
+        // Save a PostgreSQL connection (no live server needed for this test —
+        // the confirmation check happens before the connection is opened)
+        let connection = service
+            .save_connection(postgres_input(&workspace_id))
+            .await
+            .expect("save pg connection");
+
+        let unconfirmed = service
+            .execute_query(DatabaseQueryInput {
+                workspace_id: workspace_id.clone(),
+                connection_id: connection.id.clone(),
+                sql: "UPDATE users SET active = false".to_string(),
+                limit: Some(100),
+                confirm_mutation: None,
+            })
+            .await;
+        assert!(
+            matches!(unconfirmed, Err(AppError::ConfirmationRequired { .. })),
+            "PostgreSQL mutations should require confirmation"
+        );
+    }
+
+    #[tokio::test]
+    async fn postgres_metadata_can_be_saved_and_listed() {
+        let (service, workspace_id) = service_with_workspace().await;
+
+        let saved = service
+            .save_connection(postgres_input(&workspace_id))
+            .await
+            .expect("save pg connection");
+        assert_eq!(saved.driver, "postgres");
+        assert_eq!(saved.name, "PG test");
+        assert_eq!(saved.host.as_deref(), Some("127.0.0.1"));
+        assert_eq!(saved.port, Some(5432));
+
+        let listed = service
+            .list_connections(workspace_id)
+            .await
+            .expect("list connections");
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].driver, "postgres");
+    }
+
+    #[tokio::test]
+    async fn postgres_schema_fails_without_live_server() {
+        let (service, workspace_id) = service_with_workspace().await;
+        let connection = service
+            .save_connection(postgres_input(&workspace_id))
+            .await
+            .expect("save pg connection");
+
+        let result = service.schema(workspace_id, connection.id).await;
+        // Should fail because there's no live PostgreSQL server
+        assert!(result.is_err());
     }
 }

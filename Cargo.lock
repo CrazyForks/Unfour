@@ -6054,6 +6054,7 @@ dependencies = [
  "tokio",
  "unfour-core",
  "unfour-local-storage",
+ "unfour-secret-store",
  "uuid",
 ]
 

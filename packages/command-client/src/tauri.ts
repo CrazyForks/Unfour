@@ -424,18 +424,52 @@ async function mockInvoke<T>(
   if (command === "database_connection_test") {
     const connectionId = String(args?.connectionId ?? "");
     const connection = mockDatabaseConnections.find((item) => item.id === connectionId);
+    const driver = connection?.driver ?? "sqlite";
+    const isSqlite = driver === "sqlite";
+    const isPostgres = driver === "postgres";
+    const ok = isSqlite || isPostgres;
     return ({
-      ok: connection?.driver === "sqlite",
-      message:
-        connection?.driver === "sqlite"
-          ? "SQLite connection OK"
-          : "Live PostgreSQL/MySQL connections are reserved for the next phase.",
-      serverVersion: connection?.driver === "sqlite" ? "mock-sqlite-3.x" : null,
+      ok,
+      message: ok
+        ? `${isSqlite ? "SQLite" : "PostgreSQL"} connection OK`
+        : "MySQL connections are reserved for a future phase.",
+      serverVersion: isSqlite
+        ? "mock-sqlite-3.x"
+        : isPostgres
+          ? "mock-postgresql-16.x"
+          : null,
     } satisfies DatabaseTestResult) as T;
   }
 
   if (command === "database_schema_get") {
     const connectionId = String(args?.connectionId ?? "");
+    const connection = mockDatabaseConnections.find((item) => item.id === connectionId);
+    const isPostgres = connection?.driver === "postgres";
+    if (isPostgres) {
+      return ({
+        connectionId,
+        tables: [
+          {
+            name: "users",
+            kind: "table",
+            columns: [
+              { name: "id", dataType: "integer", nullable: false, primaryKey: true },
+              { name: "email", dataType: "character varying", nullable: false, primaryKey: false },
+              { name: "created_at", dataType: "timestamp with time zone", nullable: false, primaryKey: false },
+            ],
+          },
+          {
+            name: "orders",
+            kind: "table",
+            columns: [
+              { name: "id", dataType: "integer", nullable: false, primaryKey: true },
+              { name: "user_id", dataType: "integer", nullable: false, primaryKey: false },
+              { name: "total", dataType: "numeric", nullable: true, primaryKey: false },
+            ],
+          },
+        ],
+      } satisfies DatabaseSchema) as T;
+    }
     return ({
       connectionId,
       tables: [
@@ -464,7 +498,7 @@ async function mockInvoke<T>(
     const input = args?.input as DatabaseQueryInput;
     const isSelect = input.sql.trim().toLowerCase().startsWith("select");
     const keyword = input.sql.trim().split(/\s+/)[0]?.toLowerCase() ?? "";
-    const requiresConfirmation = !["select", "with", "pragma", "explain"].includes(keyword);
+    const requiresConfirmation = !["select", "with", "pragma", "explain", "show"].includes(keyword);
     if (requiresConfirmation && !input.confirmMutation) {
       throw {
         code: "CONFIRMATION_REQUIRED",

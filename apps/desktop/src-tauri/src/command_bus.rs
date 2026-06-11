@@ -59,7 +59,7 @@ impl CommandBus {
         Ok(Self {
             api_client: ApiClientService::new(db.clone()),
             activity_log,
-            database: DatabaseService::new(db.clone()),
+            database: DatabaseService::new(db.clone()).with_secret_store(secret_store.clone()),
             secret_store,
             ssh,
             workspace,
@@ -79,7 +79,7 @@ impl CommandBus {
         Ok(Self {
             api_client: ApiClientService::new(db.clone()),
             activity_log,
-            database: DatabaseService::new(db.clone()),
+            database: DatabaseService::new(db.clone()).with_secret_store(secret_store.clone()),
             secret_store: secret_store.clone(),
             ssh: SshService::new(db.clone(), secret_store),
             workspace,

@@ -1,6 +1,6 @@
 # Next Steps
 
-> Last scanned: 2026-06-11. No changes since previous checkpoint — task list remains current.
+> Last scanned: 2026-06-11 (post-PostgreSQL live driver phase 1).
 
 ## Recommended: Polish & Integration
 
@@ -36,8 +36,25 @@ Priority order:
    - Independent commit: Yes.
    - Recommended model: Codex / stronger coding model.
 
+4. **PostgreSQL live driver phase 2 — live verification**
+   - Goal: Verify PostgreSQL connection, schema browsing, query execution, and table browsing against a real PostgreSQL server.
+   - Scope: No code changes expected. Run the app with a local PostgreSQL instance and verify all database operations.
+   - Risk: Low — verification only.
+   - Prerequisites: A local PostgreSQL server with test data.
+   - Acceptance criteria: All PostgreSQL operations verified against live server; any bugs found are documented and fixed.
+   - Independent commit: If fixes needed.
+
+5. **PostgreSQL live driver phase 3 — MySQL driver**
+   - Goal: Add MySQL live connection support following the same architecture as PostgreSQL.
+   - Scope: `crates/database-engine`, `packages/command-client`, `packages/database`.
+   - Risk: Medium — new driver with different SQL dialect and metadata queries.
+   - Prerequisites: PostgreSQL phase 1 complete.
+   - Acceptance criteria: MySQL connection, schema browsing, query execution, and table browsing all working; browser mock updated; tests added.
+   - Independent commit: Yes.
+
 ## Completed
 
+- **PostgreSQL live driver phase 1:** Full PostgreSQL connection support in `unfour-database-engine`. Credential loading from SecretStore via `resolve_pg_password()`, `sqlx::PgPool` lifecycle in `DatabaseService`, live `test_connection`, schema browsing (schemas, tables, columns via `information_schema`), read-only query execution with mutation confirmation policy, table browsing with pagination, error sanitization without credential leaks. Browser mock updated for PostgreSQL test_connection, schema_get, and query_execute. Frontend schema tree and connection tree updated to enable PostgreSQL. 7 new PostgreSQL tests (config mapping, credential loading with/without SecretStore, credential-not-leaked in errors, mutation confirmation, metadata CRUD, schema failure without server). All 10 database-engine tests pass. All 78 Rust tests across 6 crates pass. 59 frontend tests pass. Production build succeeds. Live PostgreSQL verification is `NOT VERIFIED` (no local PostgreSQL server available).
 - **SSH authentication UX completion:** Full verification pass confirming private-key authentication (unencrypted + passphrase-encrypted via SecretStore), host-key fingerprint management (view/reset/mismatch), connection form auth-type selection, browser mock compatibility, and error sanitization. 25 native-feature tests pass. All 71 Rust tests across 6 crates pass. 59 frontend tests pass. Production build succeeds.
 - **API body redaction:** JSON body redaction via `redact_json_body` in `crates/unfour-core/src/redaction.rs`. Applied in `crates/http-engine/src/api_client.rs` for both `save_request` and `insert_history` persistence paths. Applied in browser mock (`packages/command-client/src/tauri.ts`) for `api_request_save` and `api_send_request`. Sensitive keys (authorization, cookie, proxy-authorization, x-api-key, x-auth-token) recursively replaced with `<redacted>` while preserving JSON structure. 7 Rust unit tests + 2 Rust integration tests + 3 browser mock tests.
 - **Host-key trust confirmation dialog:** `HostKeyTrustDialog` component in `packages/terminal/src/components/HostKeyTrustDialog.tsx`. Pre-connect fingerprint check via `getSshHostFingerprint`, confirmation required for first trust, clear mismatch display. Integrated into `TerminalPage.tsx` connect flow.

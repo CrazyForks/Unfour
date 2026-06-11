@@ -74,7 +74,7 @@ export function DatabaseConnectionTree({
       selectedConnectionId === connection.id ? (
         <ConnectionStatus connected />
       ) : (
-        <StatusBadge tone={connection.driver === "sqlite" ? "success" : "warning"}>
+        <StatusBadge tone={connection.driver === "sqlite" || connection.driver === "postgres" ? "success" : "warning"}>
           {connection.driver}
         </StatusBadge>
       ),

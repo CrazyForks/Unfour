@@ -1,6 +1,6 @@
 # Open Issues
 
-> Last scanned: 2026-06-11. No changes since previous checkpoint — all issues remain current.
+> Last scanned: 2026-06-11 (post-PostgreSQL live driver phase 1).
 
 ## P0 — Blocks core usage
 
@@ -15,23 +15,25 @@ None.
 ## P2 — Medium priority
 
 - **Host-key UI:** View/reset fingerprint implemented. Trust confirmation dialog (first trust + mismatch) implemented. known_hosts import/export implemented. Fingerprint change confirmation without full reset is a future enhancement.
+- **PostgreSQL live verification:** Code is complete for PostgreSQL connection, schema browsing, query execution, and table browsing. Automated tests cover credential loading, error sanitization, confirmation flow, and metadata CRUD. Live server verification remains `NOT VERIFIED`.
 
 ## P3 — Low priority / Future
 
 - **Terminal multiplexing:** Support tmux/screen-like session management within the app.
 - **SCP/SFTP file transfer:** Leverage the existing russh connection for file operations.
-- **Additional database drivers:** PostgreSQL and MySQL support.
+- **MySQL database driver:** Not started. PostgreSQL phase 1 is complete; MySQL is reserved for a future phase.
 
 ## Environment / Tooling
 
 - **OS keychain:** The `keyring` crate is used for production but has not been verified on all target platforms (macOS, Windows, Linux).
 - **Windows workspace tests:** `cargo test -p unfour-workspace` fails with `STATUS_ENTRYPOINT_NOT_FOUND` on this Windows environment. Likely a native DLL dependency issue, not a code defect.
 - **Real SSH connection verification:** Native keepalive, bounded reconnect, cancellation, retry exhaustion, and recovery after server return have automated coverage but remain `NOT VERIFIED` against a live SSH server in this environment.
+- **Real PostgreSQL verification:** Connection, schema browsing, query execution, and table browsing are code-complete but `NOT VERIFIED` against a live PostgreSQL server in this environment.
 
 ## Summary
 
 - P0: 0
 - P1: 1 (encrypted key format limitation)
-- P2: 1 (host-key UI enhancement)
+- P2: 2 (host-key UI enhancement, PostgreSQL live verification)
 - P3: 3
-- Environment: 3
+- Environment: 4
