@@ -140,6 +140,21 @@ Refresh the task list:
 - reorder priorities
 ```
 
+### Cross-Document Consistency Gate
+
+Before finalizing NEXT_STEPS.md, verify every pending task against the other checkpoint documents and recent repository history:
+
+```text
+- pending tasks must be checked against PROJECT_STATE.md
+- pending tasks must be checked against OPEN_ISSUES.md
+- pending tasks must be checked against recent commits
+- completed capabilities must not reappear as pending tasks
+- each pending task must include an Evidence field
+- uncertain tasks must be marked Needs human review
+```
+
+The Evidence field must reference a concrete source (e.g. a commit hash, a file path, a verification result, or an OPEN_ISSUES.md entry). Tasks that cannot be confirmed against the current repository state must be tagged `Needs human review` rather than silently carried forward.
+
 Each pending task should include:
 
 ```text
@@ -150,6 +165,7 @@ Each pending task should include:
 - Prerequisites
 - Acceptance criteria
 - Independent commit
+- Evidence
 - Recommended model
 ```
 
@@ -201,7 +217,7 @@ Do not modify:
 
 ```text
 AGENTS.md
-docs/agents/*
+docs/agents/* except the three checkpoint files listed below (allowed exceptions)
 docs/architecture/*
 docs/ui/*
 docs/engineering/*
@@ -213,6 +229,16 @@ pnpm-lock.yaml
 Cargo.toml
 Cargo.lock
 ```
+
+The following three checkpoint files are the only allowed exceptions under `docs/agents/*`:
+
+```text
+docs/agents/PROJECT_STATE.md
+docs/agents/OPEN_ISSUES.md
+docs/agents/NEXT_STEPS.md
+```
+
+All other files under `docs/agents/` (e.g. START_HERE.md, EXECUTION_PROTOCOL.md, CHECKPOINT_REFRESH.md) are out of scope during a checkpoint refresh.
 
 Do not fix issues discovered during the scan. Record them only.
 
