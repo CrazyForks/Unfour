@@ -18,15 +18,18 @@ export function useTableData({
     mutationFn: ({
       pageIndex,
       pageSize,
+      schema,
       tableName,
     }: {
       pageIndex: number;
       pageSize: number;
+      schema?: string | null;
       tableName: string;
     }) =>
       browseDatabaseTable({
         workspaceId,
         connectionId: connectionId ?? "",
+        schema,
         tableName,
         limit: pageSize,
         offset: pageIndex * pageSize,

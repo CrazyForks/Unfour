@@ -440,6 +440,7 @@ pub struct DatabaseSchema {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DatabaseTable {
+    pub schema: Option<String>,
     pub name: String,
     pub kind: String,
     pub columns: Vec<DatabaseTableColumn>,
@@ -469,6 +470,7 @@ pub struct DatabaseQueryInput {
 pub struct DatabaseBrowseInput {
     pub workspace_id: String,
     pub connection_id: String,
+    pub schema: Option<String>,
     pub table_name: String,
     pub limit: Option<u32>,
     pub offset: Option<u32>,

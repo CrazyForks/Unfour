@@ -1,12 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
+  browseDatabaseTable,
   cancelSshReconnect,
   closeSshSession,
   connectSshSession,
+  executeDatabaseQuery,
+  getDatabaseSchema,
   getSshSessionHistory,
   saveApiRequest,
+  saveDatabaseConnection,
   saveSshConnection,
   sendSshInput,
+  testDatabaseConnection,
 } from "./tauri";
 
 describe("SSH browser mock lifecycle", () => {
@@ -178,5 +183,65 @@ describe("API body redaction in browser mock", () => {
       bodyKind: "none",
     });
     expect(emptySaved.body).toBeNull();
+  });
+});
+
+describe("MySQL browser mock compatibility", () => {
+  it("supports connection test, schema browsing, read queries, pagination, and confirmation", async () => {
+    const workspaceId = `mock-mysql-${crypto.randomUUID()}`;
+    const connection = await saveDatabaseConnection({
+      workspaceId,
+      name: "Mock MySQL",
+      driver: "mysql",
+      host: "127.0.0.1",
+      port: 3306,
+      database: "app",
+      username: "developer",
+      credentialRef: "unfour-workspace:mock:database-password:ref",
+    });
+
+    await expect(testDatabaseConnection(workspaceId, connection.id)).resolves.toMatchObject({
+      ok: true,
+      serverVersion: "mock-mysql-8.x",
+    });
+
+    const schema = await getDatabaseSchema(workspaceId, connection.id);
+    expect(schema.tables.map((table) => table.schema)).toEqual(["app", "analytics"]);
+    expect(schema.tables[0].columns[0]).toMatchObject({
+      name: "id",
+      primaryKey: true,
+    });
+
+    await expect(
+      executeDatabaseQuery({
+        workspaceId,
+        connectionId: connection.id,
+        sql: "SELECT id, email FROM users",
+        limit: 25,
+      }),
+    ).resolves.toMatchObject({
+      safety: { classification: "read", requiresConfirmation: false },
+    });
+
+    const browse = await browseDatabaseTable({
+      workspaceId,
+      connectionId: connection.id,
+      schema: "analytics",
+      tableName: "events",
+      limit: 2,
+      offset: 1,
+    });
+    expect(browse.sql).toBe("SELECT * FROM `analytics`.`events` LIMIT 2 OFFSET 1");
+    expect(browse.result.rows).toHaveLength(2);
+
+    await expect(
+      executeDatabaseQuery({
+        workspaceId,
+        connectionId: connection.id,
+        sql: "UPDATE users SET active = false",
+      }),
+    ).rejects.toMatchObject({
+      code: "CONFIRMATION_REQUIRED",
+    });
   });
 });

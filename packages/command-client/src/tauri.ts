@@ -427,17 +427,16 @@ async function mockInvoke<T>(
     const driver = connection?.driver ?? "sqlite";
     const isSqlite = driver === "sqlite";
     const isPostgres = driver === "postgres";
-    const ok = isSqlite || isPostgres;
+    const isMySql = driver === "mysql";
+    const ok = isSqlite || isPostgres || isMySql;
     return ({
       ok,
-      message: ok
-        ? `${isSqlite ? "SQLite" : "PostgreSQL"} connection OK`
-        : "MySQL connections are reserved for a future phase.",
+      message: `${isSqlite ? "SQLite" : isPostgres ? "PostgreSQL" : "MySQL"} connection OK`,
       serverVersion: isSqlite
         ? "mock-sqlite-3.x"
         : isPostgres
           ? "mock-postgresql-16.x"
-          : null,
+          : "mock-mysql-8.x",
     } satisfies DatabaseTestResult) as T;
   }
 
@@ -445,6 +444,33 @@ async function mockInvoke<T>(
     const connectionId = String(args?.connectionId ?? "");
     const connection = mockDatabaseConnections.find((item) => item.id === connectionId);
     const isPostgres = connection?.driver === "postgres";
+    const isMySql = connection?.driver === "mysql";
+    if (isMySql) {
+      return ({
+        connectionId,
+        tables: [
+          {
+            schema: connection.database ?? "app",
+            name: "users",
+            kind: "table",
+            columns: [
+              { name: "id", dataType: "bigint unsigned", nullable: false, primaryKey: true },
+              { name: "email", dataType: "varchar(255)", nullable: false, primaryKey: false },
+              { name: "created_at", dataType: "datetime", nullable: false, primaryKey: false },
+            ],
+          },
+          {
+            schema: "analytics",
+            name: "events",
+            kind: "table",
+            columns: [
+              { name: "id", dataType: "bigint unsigned", nullable: false, primaryKey: true },
+              { name: "event_name", dataType: "varchar(255)", nullable: false, primaryKey: false },
+            ],
+          },
+        ],
+      } satisfies DatabaseSchema) as T;
+    }
     if (isPostgres) {
       return ({
         connectionId,
@@ -549,9 +575,14 @@ async function mockInvoke<T>(
       ["mock-db", "Database", "local"],
       ["mock-ssh", "SSH Terminal", "reserved"],
     ];
+    const connection = mockDatabaseConnections.find((item) => item.id === input.connectionId);
+    const qualifiedTable =
+      connection?.driver === "mysql"
+        ? `${quoteMySqlIdentifier(input.schema ?? connection.database ?? "app")}.${quoteMySqlIdentifier(input.tableName)}`
+        : `"${input.tableName.split('"').join('""')}"`;
     return ({
       tableName: input.tableName,
-      sql: `SELECT * FROM "${input.tableName.split('"').join('""')}" LIMIT ${limit} OFFSET ${offset}`,
+      sql: `SELECT * FROM ${qualifiedTable} LIMIT ${limit} OFFSET ${offset}`,
       limit,
       offset,
       totalRows: mockRows.length,
@@ -1193,6 +1224,10 @@ function inspectMockCredential(
     label: "Credential reference",
     credentialRef,
   };
+}
+
+function quoteMySqlIdentifier(value: string) {
+  return `\`${value.split("`").join("``")}\``;
 }
 
 function getMockLayout(workspaceId: string): WorkspaceLayout {

@@ -2,23 +2,23 @@
 
 ## Scan Metadata
 
-- **Scanned at:** 2026-06-13 (checkpoint refresh, working tree clean, no new commits since last checkpoint)
+- **Scanned at:** 2026-06-13 (MySQL live driver phase 1 completion)
 - **Branch:** main
-- **Current commit:** c6927c6 — docs(checkpoint): refresh repository state
-- **Working tree:** Clean
-- **Last checkpoint:** Re-verified all capabilities against current codebase. Tasks 2 (semantic token replacement in App.tsx) and 3 (workspace dialog extraction from App.tsx) from NEXT_STEPS.md confirmed completed at commit `fbc7330`. Tauri command count updated to 44. Lint warnings reduced from 65 to 64. All Rust tests (78), frontend tests (59), and production build passing. Source code free of TODO/FIXME/HACK/placeholder comments.
+- **Current commit:** MySQL live driver phase 1 batch (see Git history)
+- **Working tree:** Clean after batch commit
+- **Last checkpoint:** MySQL live support completed using the PostgreSQL architecture as the reference path. SecretStore-backed passwords, `sqlx::MySqlPool`, live connection testing, multi-database schema browsing, read-only query execution, mutation confirmation, paginated table browsing, sanitized errors, browser mocks, and focused tests are implemented. Live MySQL verification remains `NOT VERIFIED`.
 
 ## Tech Stack
 
 - **Desktop shell:** Tauri 2 (Rust + WebView)
 - **Frontend:** React 19, TypeScript, Vite, Tailwind CSS, Radix UI, TanStack Query, Zustand
-- **Backend:** Rust, Tokio, SQLite (rusqlite via sqlx), PostgreSQL (sqlx postgres feature), russh (SSH native), keyring (OS credential storage)
+- **Backend:** Rust, Tokio, SQLite, PostgreSQL, and MySQL via sqlx, russh (SSH native), keyring (OS credential storage)
 - **Build:** pnpm workspace (7 packages), Cargo workspace (7 crates + Tauri adapter)
 - **Test:** Vitest (frontend), Cargo test (Rust)
 
 ## Current Phase
 
-SSH authentication UX — including private-key authentication, SecretStore-backed key references, host-key fingerprint management, and terminal streaming — is **complete**. PostgreSQL live connection support (phase 1) is **complete**: credential loading from SecretStore, `sqlx::PgPool` lifecycle, live `test_connection`, schema browsing (schemas, tables, columns), read-only query execution with mutation confirmation policy, table browsing with pagination, error sanitization without credential leaks, and browser mock compatibility are all wired end-to-end.
+SSH authentication UX — including private-key authentication, SecretStore-backed key references, host-key fingerprint management, and terminal streaming — is **complete**. PostgreSQL and MySQL live connection support (phase 1) are **complete**: credential loading from SecretStore, sqlx pool lifecycle, live `test_connection`, schema browsing, read-only query execution with mutation confirmation policy, table browsing with pagination, error sanitization without credential leaks, and browser mock compatibility are wired end-to-end.
 
 UI module split is **in progress**. Terminal, Database, Workspace, and Command-Client packages have been extracted from `packages/app-shell`. Workspace dialogs (`WorkspaceMenu`, `WorkspaceDialogs`), window controls (`WindowControls`, `TitlebarWindowButton`), and the title bar (`AppTitleBar`) have been extracted from `App.tsx` into dedicated component files within `apps/desktop/src/components/`. Semantic token replacement is complete — `App.tsx` and all desktop components use `--u-color-*` CSS custom properties exclusively. `packages/app-shell` now contains only the `AppShell` layout composition wrapper (2 source files). Further workspace UI extraction from desktop components is planned.
 
@@ -32,7 +32,7 @@ UI module split is **in progress**. Terminal, Database, Workspace, and Command-C
 | Local storage & migrations | `unfour-local-storage` | Complete | 11 pass |
 | Activity logging | `unfour-local-storage` | Complete | Covered in local_storage |
 | SecretStore (OS keyring credential references) | `unfour-secret-store` | Complete | 4 pass |
-| Database engine (SQLite + PostgreSQL CRUD, schema, queries) | `unfour-database-engine` | Complete | 10 pass |
+| Database engine (SQLite + PostgreSQL + MySQL CRUD, schema, queries) | `unfour-database-engine` | Complete | 17 pass |
 | HTTP engine (API client + history + body redaction) | `unfour-http-engine` | Complete | 10 pass |
 | SSH engine (simulated + native + known_hosts) | `unfour-ssh-engine` | Complete | 33 pass |
 | Workspace engine | `unfour-workspace-engine` | Complete | Tests blocked on Windows DLL issue |
@@ -45,14 +45,14 @@ UI module split is **in progress**. Terminal, Database, Workspace, and Command-C
 | Workspace store | `@unfour/workspace` | Complete | 12 pass |
 | API Debugger | `@unfour/api-debugger` | Complete | 20 pass |
 | Database (connections + query) | `@unfour/database` | Complete | 16 pass |
-| Terminal state, history, host-key dialog, and command-client mock | `@unfour/terminal`, `@unfour/command-client` | Complete | 6 + 5 pass |
+| Terminal state, history, host-key dialog, and command-client mock | `@unfour/terminal`, `@unfour/command-client` | Complete | 6 + 6 pass |
 
 ### Build
 
 - **Frontend production build:** PASS
 - **Frontend bundle chunks:** index (393 kB), xterm (367 kB), vendor-tanstack (101 kB), vendor-radix (88 kB), monaco (15 kB)
-- **Total Rust tests:** 78 passing across 6 crates (unfour-workspace blocked by Windows DLL issue)
-- **Total frontend tests:** 59 passing (5 files)
+- **Total Rust tests:** 85 passing across 6 crates (unfour-workspace blocked by Windows DLL issue)
+- **Total frontend tests:** 60 passing (5 files)
 
 ## Partially Implemented
 
@@ -62,14 +62,14 @@ UI module split is **in progress**. Terminal, Database, Workspace, and Command-C
 - **Terminal session persistence:** SQLite-backed output history with per-session buffering, periodic flush, secret redaction, and UTF-8-safe truncation (256 KB retention). Hydration on app reopen. Browser mock mode compatible.
 - **API body redaction:** JSON body redaction applied in both Rust persistence paths (save_request, insert_history) and browser mock. Sensitive keys (authorization, cookie, proxy-authorization, x-api-key, x-auth-token) are recursively replaced with `<redacted>` while preserving JSON structure.
 - **SSH live reliability verification:** Keepalive and reconnect policy are automated-test covered, but a live localhost SSH stop/start cycle was not available in this environment.
-- **Database drivers:** SQLite driver is fully functional. PostgreSQL live connection support (phase 1) is implemented: credential loading from SecretStore, PgPool lifecycle, test_connection, schema browsing, read-only query execution with mutation confirmation, table browsing with pagination, and error sanitization. Live PostgreSQL verification is `NOT VERIFIED` (no local PostgreSQL server available in this environment). MySQL driver is not started.
+- **Database drivers:** SQLite is fully functional. PostgreSQL and MySQL live connection support (phase 1) are implemented with SecretStore credential loading, sqlx pool lifecycle, connection tests, schema browsing, read-only query execution, mutation confirmation, pagination, and error sanitization. Live PostgreSQL and MySQL verification are `NOT VERIFIED`.
 
 ## Not Started
 
 - Terminal multiplexing (tmux/screen-like)
 - SCP/SFTP file transfer
-- MySQL database driver
 - PostgreSQL live verification (requires local PostgreSQL server)
+- MySQL live verification (requires local MySQL server)
 
 ## Verification Results
 
@@ -80,18 +80,20 @@ UI module split is **in progress**. Terminal, Database, Workspace, and Command-C
 | `pnpm run test` | PASS | 59 tests, 5 files |
 | `pnpm run build` | PASS | Production build succeeds (1994 modules, 4.24s) |
 | `cargo fmt --check` | PASS | No formatting issues |
-| `cargo test --workspace` | PARTIAL | 78 tests pass across 6 crates. `unfour-workspace` fails with Windows `STATUS_ENTRYPOINT_NOT_FOUND` (DLL loading issue) |
+| `cargo test --workspace` | PARTIAL | 85 tests pass across 6 crates. `unfour-workspace` fails with Windows `STATUS_ENTRYPOINT_NOT_FOUND` (DLL loading issue) |
 | `cargo check --workspace` | PASS | All crates compile |
 | `cargo check -p unfour-workspace --features ssh-native` | PASS | SSH feature compiles |
 | `cargo test -p unfour-ssh-engine --features ssh-native` | PASS | 25 native-feature tests (included in workspace run above; 33 total ssh-engine tests) |
-| `cargo test -p unfour-database-engine` | PASS | 10 tests (3 SQLite + 7 PostgreSQL) |
+| `cargo test -p unfour-database-engine` | PASS | 17 tests (3 shared/SQLite + 7 PostgreSQL + 7 MySQL) |
 | PostgreSQL live connection | NOT VERIFIED | No local PostgreSQL server available in this environment |
-| Browser mock first viewport | NOT VERIFIED | No live browser available in this scan |
+| MySQL live connection | NOT VERIFIED | No local MySQL server available in this environment |
+| Browser mock first viewport | PASS | MySQL metadata, connection test, schema groups, columns, and table browsing inspected |
 
 ## Known Limitations
 
 - **Windows workspace tests:** `cargo test -p unfour-workspace` fails with `STATUS_ENTRYPOINT_NOT_FOUND`. Likely a native DLL dependency issue (OpenSSL/SQLite) on this Windows environment. Does not indicate code defects.
 - **PostgreSQL live verification:** PostgreSQL connection, schema browsing, query execution, and table browsing are code-complete and compile-verified, but `NOT VERIFIED` against a live PostgreSQL server in this environment. Automated tests cover credential loading, error sanitization, confirmation flow, and metadata CRUD.
+- **MySQL live verification:** MySQL connection, multi-database schema browsing, query execution, and table browsing are code-complete and compile-verified, but `NOT VERIFIED` against a live MySQL server in this environment. Automated tests cover credential loading, no-plaintext persistence, error sanitization, schema mapping, read path, pagination SQL, mutation confirmation, and browser mocks.
 - **Lint warnings:** 64 warnings across `packages/api-debugger` (primarily `react-hooks/refs` in ApiDebuggerPage), `apps/desktop` (`react-hooks/set-state-in-effect`, `react-hooks/exhaustive-deps`, `react-refresh/only-export-components`). All pre-existing; none block builds.
 - **Real SSH verification:** Native SSH transport, private-key authentication, passphrase-encrypted key loading, host-key TOFU first-trust, mismatch rejection, and fingerprint reset are `NOT VERIFIED` against a live SSH server in this environment. Automated tests cover the full code path.
 

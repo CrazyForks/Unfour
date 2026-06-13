@@ -12,7 +12,7 @@ export function useSchemaTree({
   workspaceId: string;
 }) {
   return useQuery({
-    enabled: Boolean(workspaceId && connectionId && (connection?.driver === "sqlite" || connection?.driver === "postgres")),
+    enabled: Boolean(workspaceId && connectionId && connection),
     queryKey: ["database-schema", workspaceId, connectionId],
     queryFn: () => getDatabaseSchema(workspaceId, connectionId ?? ""),
   });

@@ -303,6 +303,7 @@ export type DatabaseSchema = {
 };
 
 export type DatabaseTable = {
+  schema?: string | null;
   name: string;
   kind: string;
   columns: DatabaseTableColumn[];
@@ -326,6 +327,7 @@ export type DatabaseQueryInput = {
 export type DatabaseBrowseInput = {
   workspaceId: string;
   connectionId: string;
+  schema?: string | null;
   tableName: string;
   limit?: number;
   offset?: number;

@@ -1,9 +1,10 @@
 use chrono::Utc;
+use sqlx::mysql::{MySqlConnectOptions, MySqlPoolOptions};
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::{Column, Row, TypeInfo, ValueRef};
 use std::path::Path;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use unfour_core::models::{
     DatabaseBrowseInput, DatabaseBrowseResult, DatabaseConnection, DatabaseConnectionConfig,
     DatabaseConnectionInput, DatabaseQueryInput, DatabaseQueryResult, DatabaseQuerySafety,
@@ -183,14 +184,19 @@ impl DatabaseService {
                     server_version: Some(row.0),
                 })
             }
-            "mysql" => Ok(DatabaseTestResult {
-                ok: false,
-                message: format!(
-                    "{} metadata is saved; MySQL live connections are reserved for a future phase.",
-                    display_driver(&connection.driver)
-                ),
-                server_version: None,
-            }),
+            "mysql" => {
+                let pool = self.mysql_pool(&connection).await?;
+                let row: (String,) = sqlx::query_as("SELECT VERSION()")
+                    .fetch_one(&pool)
+                    .await
+                    .map_err(sanitize_mysql_error)?;
+
+                Ok(DatabaseTestResult {
+                    ok: true,
+                    message: "MySQL connection OK".to_string(),
+                    server_version: Some(row.0),
+                })
+            }
             driver => Err(AppError::Unsupported(format!(
                 "database driver is not supported: {}",
                 driver
@@ -225,6 +231,7 @@ impl DatabaseService {
                     let kind: String = row.try_get("type")?;
                     let columns = sqlite_columns(&pool, &name).await?;
                     tables.push(DatabaseTable {
+                        schema: None,
                         name,
                         kind,
                         columns,
@@ -264,10 +271,43 @@ impl DatabaseService {
                         .await
                         .map_err(sanitize_pg_app_error)?;
                     tables.push(DatabaseTable {
+                        schema: None,
                         name,
                         kind,
                         columns,
                     });
+                }
+
+                Ok(DatabaseSchema {
+                    connection_id,
+                    tables,
+                })
+            }
+            "mysql" => {
+                let pool = self.mysql_pool(&connection).await?;
+                let table_rows = sqlx::query(
+                    r#"
+                    SELECT table_schema, table_name, table_type
+                    FROM information_schema.tables
+                    WHERE table_schema NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
+                    ORDER BY table_schema, table_name
+                    "#,
+                )
+                .fetch_all(&pool)
+                .await
+                .map_err(sanitize_mysql_error)?;
+
+                let mut tables = Vec::with_capacity(table_rows.len());
+                for row in table_rows {
+                    let schema: String =
+                        row.try_get("table_schema").map_err(sanitize_mysql_error)?;
+                    let name: String = row.try_get("table_name").map_err(sanitize_mysql_error)?;
+                    let table_type: String =
+                        row.try_get("table_type").map_err(sanitize_mysql_error)?;
+                    let columns = mysql_columns(&pool, &schema, &name)
+                        .await
+                        .map_err(sanitize_mysql_app_error)?;
+                    tables.push(mysql_table_from_metadata(schema, name, table_type, columns));
                 }
 
                 Ok(DatabaseSchema {
@@ -379,6 +419,48 @@ impl DatabaseService {
                     .execute(&pool)
                     .await
                     .map_err(sanitize_pg_error)?;
+                Ok(DatabaseQueryResult {
+                    columns: Vec::new(),
+                    rows: Vec::new(),
+                    affected_rows: result.rows_affected(),
+                    duration_ms: started.elapsed().as_millis(),
+                    safety: DatabaseQuerySafety {
+                        confirmed: input.confirm_mutation == Some(true),
+                        ..safety
+                    },
+                })
+            }
+            "mysql" => {
+                let pool = self.mysql_pool(&connection).await?;
+                let limit = input.limit.unwrap_or(100).clamp(1, 1_000);
+                let started = Instant::now();
+
+                if returns_rows(sql) {
+                    let query_sql = sql_with_limit(sql, limit);
+                    let rows = sqlx::query(&query_sql)
+                        .fetch_all(&pool)
+                        .await
+                        .map_err(sanitize_mysql_error)?;
+                    let columns = rows.first().map(mysql_result_columns).unwrap_or_default();
+                    let values = rows
+                        .iter()
+                        .take(limit as usize)
+                        .map(mysql_row_values)
+                        .collect::<AppResult<Vec<_>>>()?;
+
+                    return Ok(DatabaseQueryResult {
+                        columns,
+                        rows: values,
+                        affected_rows: 0,
+                        duration_ms: started.elapsed().as_millis(),
+                        safety,
+                    });
+                }
+
+                let result = sqlx::query(sql)
+                    .execute(&pool)
+                    .await
+                    .map_err(sanitize_mysql_error)?;
                 Ok(DatabaseQueryResult {
                     columns: Vec::new(),
                     rows: Vec::new(),
@@ -516,6 +598,65 @@ impl DatabaseService {
                     },
                 })
             }
+            "mysql" => {
+                let pool = self.mysql_pool(&connection).await?;
+                let schema = input
+                    .schema
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .or(connection.database.as_deref())
+                    .ok_or_else(|| {
+                        AppError::Validation("MySQL database name is required".to_string())
+                    })?;
+                ensure_mysql_table_exists(&pool, schema, table_name)
+                    .await
+                    .map_err(sanitize_mysql_app_error)?;
+
+                let limit = input.limit.unwrap_or(100).clamp(1, 1_000);
+                let offset = input.offset.unwrap_or(0);
+                let total_rows = mysql_table_row_count(&pool, schema, table_name)
+                    .await
+                    .map_err(sanitize_mysql_app_error)?;
+                let sql = mysql_browse_sql(schema, table_name, limit, offset);
+                let started = Instant::now();
+                let rows = sqlx::query(&sql)
+                    .fetch_all(&pool)
+                    .await
+                    .map_err(sanitize_mysql_error)?;
+                let columns = if let Some(row) = rows.first() {
+                    mysql_result_columns(row)
+                } else {
+                    mysql_table_result_columns(&pool, schema, table_name)
+                        .await
+                        .map_err(sanitize_mysql_app_error)?
+                };
+                let values = rows
+                    .iter()
+                    .map(mysql_row_values)
+                    .collect::<AppResult<Vec<_>>>()?;
+
+                Ok(DatabaseBrowseResult {
+                    table_name: table_name.to_string(),
+                    sql,
+                    limit,
+                    offset,
+                    total_rows,
+                    read_only: true,
+                    result: DatabaseQueryResult {
+                        columns,
+                        rows: values,
+                        affected_rows: 0,
+                        duration_ms: started.elapsed().as_millis(),
+                        safety: DatabaseQuerySafety {
+                            classification: "read".to_string(),
+                            requires_confirmation: false,
+                            confirmed: true,
+                            message: None,
+                        },
+                    },
+                })
+            }
             driver => Err(AppError::Unsupported(format!(
                 "{} table browsing is not yet supported",
                 display_driver(driver)
@@ -527,8 +668,8 @@ impl DatabaseService {
         serde_json::json!({
             "status": "mvp",
             "backend": "sqlx",
-            "activeDrivers": ["sqlite", "postgres"],
-            "reservedDrivers": ["mysql"],
+            "activeDrivers": ["sqlite", "postgres", "mysql"],
+            "reservedDrivers": [],
             "features": [
                 "connection-metadata-crud",
                 "sqlite-connection-test",
@@ -539,6 +680,10 @@ impl DatabaseService {
                 "postgres-schema-browser",
                 "postgres-sql-editor",
                 "postgres-read-only-table-data",
+                "mysql-connection-test",
+                "mysql-schema-browser",
+                "mysql-sql-editor",
+                "mysql-read-only-table-data",
                 "paged-query-results",
                 "credential-backed-auth"
             ]
@@ -582,6 +727,18 @@ impl DatabaseService {
             .await
             .map_err(|e| sanitize_pg_error(e))
     }
+
+    /// Create a MySQL connection pool, loading the password from SecretStore
+    /// if a credential reference is present on the connection.
+    async fn mysql_pool(&self, connection: &DatabaseConnection) -> AppResult<sqlx::MySqlPool> {
+        let options = mysql_connect_options(connection, self.secret_store.as_ref()).await?;
+        MySqlPoolOptions::new()
+            .max_connections(4)
+            .acquire_timeout(Duration::from_secs(5))
+            .connect_with(options)
+            .await
+            .map_err(sanitize_mysql_error)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -612,7 +769,7 @@ async fn pg_connect_options(
         .filter(|v| !v.is_empty())
         .ok_or_else(|| AppError::Validation("PostgreSQL username is required".to_string()))?;
 
-    let password = resolve_pg_password(connection, secret_store).await?;
+    let password = resolve_database_password(connection, secret_store).await?;
 
     let mut options = PgConnectOptions::new()
         .host(host)
@@ -627,10 +784,9 @@ async fn pg_connect_options(
     Ok(options)
 }
 
-/// Load the PostgreSQL password from SecretStore if a credential reference is
-/// present.  Returns `None` when no credential_ref is configured (passwordless
-/// / peer auth).
-async fn resolve_pg_password(
+/// Load a database password from SecretStore if a credential reference is
+/// present. Returns `None` when no credential_ref is configured.
+async fn resolve_database_password(
     connection: &DatabaseConnection,
     secret_store: Option<&SecretStore>,
 ) -> AppResult<Option<String>> {
@@ -820,6 +976,234 @@ fn sanitize_pg_app_error(error: AppError) -> AppError {
             }
         }
         _ => error,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// MySQL helpers
+// ---------------------------------------------------------------------------
+
+async fn mysql_connect_options(
+    connection: &DatabaseConnection,
+    secret_store: Option<&SecretStore>,
+) -> AppResult<MySqlConnectOptions> {
+    let host = connection
+        .host
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("127.0.0.1");
+    let port = connection.port.unwrap_or(3306);
+    let database = connection
+        .database
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| AppError::Validation("MySQL database name is required".to_string()))?;
+    let username = connection
+        .username
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| AppError::Validation("MySQL username is required".to_string()))?;
+    let password = resolve_database_password(connection, secret_store).await?;
+
+    let mut options = MySqlConnectOptions::new()
+        .host(host)
+        .port(port)
+        .database(database)
+        .username(username);
+    if let Some(password) = password {
+        options = options.password(&password);
+    }
+    Ok(options)
+}
+
+async fn mysql_columns(
+    pool: &sqlx::MySqlPool,
+    schema: &str,
+    table_name: &str,
+) -> Result<Vec<DatabaseTableColumn>, AppError> {
+    let rows = sqlx::query(
+        r#"
+        SELECT column_name, column_type, is_nullable, column_key
+        FROM information_schema.columns
+        WHERE table_schema = ? AND table_name = ?
+        ORDER BY ordinal_position
+        "#,
+    )
+    .bind(schema)
+    .bind(table_name)
+    .fetch_all(pool)
+    .await?;
+
+    rows.into_iter()
+        .map(|row| {
+            let name: String = row.try_get("column_name")?;
+            let data_type: String = row.try_get("column_type")?;
+            let is_nullable: String = row.try_get("is_nullable")?;
+            let column_key: String = row.try_get("column_key")?;
+            Ok(DatabaseTableColumn {
+                name,
+                data_type,
+                nullable: is_nullable == "YES",
+                primary_key: column_key == "PRI",
+            })
+        })
+        .collect()
+}
+
+async fn ensure_mysql_table_exists(
+    pool: &sqlx::MySqlPool,
+    schema: &str,
+    table_name: &str,
+) -> Result<(), AppError> {
+    let row: Option<(String,)> = sqlx::query_as(
+        r#"
+        SELECT table_name
+        FROM information_schema.tables
+        WHERE table_schema = ? AND table_name = ?
+        LIMIT 1
+        "#,
+    )
+    .bind(schema)
+    .bind(table_name)
+    .fetch_optional(pool)
+    .await?;
+
+    row.map(|_| ())
+        .ok_or_else(|| AppError::NotFound("database table".to_string()))
+}
+
+async fn mysql_table_row_count(
+    pool: &sqlx::MySqlPool,
+    schema: &str,
+    table_name: &str,
+) -> Result<u64, AppError> {
+    let sql = format!(
+        "SELECT COUNT(*) AS total_rows FROM {}",
+        quote_mysql_qualified_identifier(schema, table_name)
+    );
+    let row = sqlx::query(&sql).fetch_one(pool).await?;
+    row.try_get("total_rows").map_err(AppError::from)
+}
+
+async fn mysql_table_result_columns(
+    pool: &sqlx::MySqlPool,
+    schema: &str,
+    table_name: &str,
+) -> Result<Vec<DatabaseResultColumn>, AppError> {
+    Ok(mysql_columns(pool, schema, table_name)
+        .await?
+        .into_iter()
+        .map(|column| DatabaseResultColumn {
+            name: column.name,
+            data_type: column.data_type,
+        })
+        .collect())
+}
+
+fn mysql_result_columns(row: &sqlx::mysql::MySqlRow) -> Vec<DatabaseResultColumn> {
+    row.columns()
+        .iter()
+        .map(|column| DatabaseResultColumn {
+            name: column.name().to_string(),
+            data_type: column.type_info().name().to_string(),
+        })
+        .collect()
+}
+
+fn mysql_table_from_metadata(
+    schema: String,
+    name: String,
+    table_type: String,
+    columns: Vec<DatabaseTableColumn>,
+) -> DatabaseTable {
+    DatabaseTable {
+        schema: Some(schema),
+        name,
+        kind: if table_type == "VIEW" {
+            "view".to_string()
+        } else {
+            "table".to_string()
+        },
+        columns,
+    }
+}
+
+fn mysql_row_values(row: &sqlx::mysql::MySqlRow) -> AppResult<Vec<Option<String>>> {
+    (0..row.columns().len())
+        .map(|index| {
+            let raw = row.try_get_raw(index)?;
+            if raw.is_null() {
+                return Ok(None);
+            }
+
+            if let Ok(value) = row.try_get::<String, _>(index) {
+                return Ok(Some(value));
+            }
+            if let Ok(value) = row.try_get::<i64, _>(index) {
+                return Ok(Some(value.to_string()));
+            }
+            if let Ok(value) = row.try_get::<u64, _>(index) {
+                return Ok(Some(value.to_string()));
+            }
+            if let Ok(value) = row.try_get::<i32, _>(index) {
+                return Ok(Some(value.to_string()));
+            }
+            if let Ok(value) = row.try_get::<u32, _>(index) {
+                return Ok(Some(value.to_string()));
+            }
+            if let Ok(value) = row.try_get::<f64, _>(index) {
+                return Ok(Some(value.to_string()));
+            }
+            if let Ok(value) = row.try_get::<f32, _>(index) {
+                return Ok(Some(value.to_string()));
+            }
+            if let Ok(value) = row.try_get::<bool, _>(index) {
+                return Ok(Some(value.to_string()));
+            }
+            if let Ok(value) = row.try_get::<chrono::NaiveDateTime, _>(index) {
+                return Ok(Some(value.to_string()));
+            }
+            if let Ok(value) = row.try_get::<chrono::NaiveDate, _>(index) {
+                return Ok(Some(value.to_string()));
+            }
+            if let Ok(value) = row.try_get::<chrono::NaiveTime, _>(index) {
+                return Ok(Some(value.to_string()));
+            }
+            if let Ok(value) = row.try_get::<Vec<u8>, _>(index) {
+                return Ok(Some(format!("<binary {} bytes>", value.len())));
+            }
+            if let Ok(value) = row.try_get::<serde_json::Value, _>(index) {
+                return Ok(Some(value.to_string()));
+            }
+
+            Ok(Some("<unsupported>".to_string()))
+        })
+        .collect()
+}
+
+fn sanitize_mysql_error(error: sqlx::Error) -> AppError {
+    let message = error.to_string();
+    let lower = message.to_ascii_lowercase();
+    if lower.contains("password")
+        || lower.contains("access denied")
+        || lower.contains("userinfo")
+        || lower.contains("mysql://")
+    {
+        AppError::Database(sqlx::Error::Protocol(
+            "MySQL connection error (details redacted)".to_string(),
+        ))
+    } else {
+        AppError::Database(error)
+    }
+}
+
+fn sanitize_mysql_app_error(error: AppError) -> AppError {
+    match error {
+        AppError::Database(sqlx_error) => sanitize_mysql_error(sqlx_error),
+        other => other,
     }
 }
 
@@ -1063,6 +1447,27 @@ fn quote_identifier(value: &str) -> String {
     format!("\"{}\"", value.replace('"', "\"\""))
 }
 
+fn quote_mysql_identifier(value: &str) -> String {
+    format!("`{}`", value.replace('`', "``"))
+}
+
+fn quote_mysql_qualified_identifier(schema: &str, table_name: &str) -> String {
+    format!(
+        "{}.{}",
+        quote_mysql_identifier(schema),
+        quote_mysql_identifier(table_name)
+    )
+}
+
+fn mysql_browse_sql(schema: &str, table_name: &str, limit: u32, offset: u32) -> String {
+    format!(
+        "SELECT * FROM {} LIMIT {} OFFSET {}",
+        quote_mysql_qualified_identifier(schema, table_name),
+        limit,
+        offset
+    )
+}
+
 fn returns_rows(sql: &str) -> bool {
     let keyword = sql
         .split_whitespace()
@@ -1275,6 +1680,21 @@ mod tests {
         }
     }
 
+    fn mysql_input(workspace_id: &str, credential_ref: Option<String>) -> DatabaseConnectionInput {
+        DatabaseConnectionInput {
+            id: None,
+            workspace_id: workspace_id.to_string(),
+            name: "MySQL test".to_string(),
+            driver: "mysql".to_string(),
+            host: Some("127.0.0.1".to_string()),
+            port: Some(9),
+            database: Some("app".to_string()),
+            username: Some("testuser".to_string()),
+            sqlite_path: None,
+            credential_ref,
+        }
+    }
+
     #[tokio::test]
     async fn connection_crud_is_workspace_scoped_and_soft_deletes() {
         let (service, workspace_id) = service_with_workspace().await;
@@ -1368,6 +1788,7 @@ mod tests {
             .browse_table(DatabaseBrowseInput {
                 workspace_id: workspace_id.clone(),
                 connection_id: connection.id.clone(),
+                schema: None,
                 table_name: "deploys".to_string(),
                 limit: Some(2),
                 offset: Some(1),
@@ -1387,6 +1808,7 @@ mod tests {
             .browse_table(DatabaseBrowseInput {
                 workspace_id: workspace_id.clone(),
                 connection_id: connection.id.clone(),
+                schema: None,
                 table_name: "deploys".to_string(),
                 limit: Some(2),
                 offset: None,
@@ -1399,6 +1821,7 @@ mod tests {
             .browse_table(DatabaseBrowseInput {
                 workspace_id: workspace_id.clone(),
                 connection_id: connection.id.clone(),
+                schema: None,
                 table_name: "empty_deploys".to_string(),
                 limit: Some(10),
                 offset: None,
@@ -1414,6 +1837,7 @@ mod tests {
             .browse_table(DatabaseBrowseInput {
                 workspace_id,
                 connection_id: connection.id,
+                schema: None,
                 table_name: "missing".to_string(),
                 limit: Some(10),
                 offset: None,
@@ -1556,7 +1980,7 @@ mod tests {
         };
 
         // No credential_ref → password resolves to None (passwordless / peer auth)
-        let password = resolve_pg_password(&connection, None)
+        let password = resolve_database_password(&connection, None)
             .await
             .expect("resolve password without credential_ref");
         assert!(
@@ -1567,7 +1991,7 @@ mod tests {
         // Empty-string credential_ref should also resolve to None
         let mut empty_ref = connection.clone();
         empty_ref.credential_ref = Some("".to_string());
-        let password = resolve_pg_password(&empty_ref, None)
+        let password = resolve_database_password(&empty_ref, None)
             .await
             .expect("resolve password with empty credential_ref");
         assert!(
@@ -1578,7 +2002,7 @@ mod tests {
         // Whitespace-only credential_ref should also resolve to None
         let mut ws_ref = connection.clone();
         ws_ref.credential_ref = Some("   ".to_string());
-        let password = resolve_pg_password(&ws_ref, None)
+        let password = resolve_database_password(&ws_ref, None)
             .await
             .expect("resolve password with whitespace credential_ref");
         assert!(
@@ -1619,7 +2043,7 @@ mod tests {
             remote_id: None,
         };
 
-        let password = resolve_pg_password(&connection, Some(&secret_store))
+        let password = resolve_database_password(&connection, Some(&secret_store))
             .await
             .expect("resolve password with valid credential_ref");
         assert_eq!(password, Some("s3cret!".to_string()));
@@ -1683,5 +2107,171 @@ mod tests {
         let result = service.schema(workspace_id, connection.id).await;
         // Should fail because there's no live PostgreSQL server
         assert!(result.is_err());
+    }
+
+    // -----------------------------------------------------------------------
+    // MySQL-specific tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn mysql_config_maps_host_port_database_username() {
+        let input = mysql_input(
+            "ws",
+            Some("unfour-workspace:ws:database-password:abc".to_string()),
+        );
+        let config = input_to_config(&input).expect("config");
+
+        assert_eq!(config.driver, "mysql");
+        assert_eq!(config.host.as_deref(), Some("127.0.0.1"));
+        assert_eq!(config.port, Some(9));
+        assert_eq!(config.database.as_deref(), Some("app"));
+        assert_eq!(config.username.as_deref(), Some("testuser"));
+        assert!(config.sqlite_path.is_none());
+    }
+
+    #[tokio::test]
+    async fn mysql_password_loads_from_secret_store_and_is_not_persisted() {
+        let (service, workspace_id) = service_with_workspace().await;
+        let secret = "mysql-super-secret";
+        let credential = service
+            .secret_store
+            .as_ref()
+            .expect("secret store")
+            .create_credential(
+                workspace_id.clone(),
+                "database-password".to_string(),
+                "MySQL password".to_string(),
+                secret.to_string(),
+            )
+            .await
+            .expect("create credential");
+        let connection = service
+            .save_connection(mysql_input(
+                &workspace_id,
+                Some(credential.credential_ref.clone()),
+            ))
+            .await
+            .expect("save mysql connection");
+
+        let password = resolve_database_password(&connection, service.secret_store.as_ref())
+            .await
+            .expect("resolve mysql password");
+        assert_eq!(password.as_deref(), Some(secret));
+
+        let stored: (String, Option<String>) =
+            sqlx::query_as("SELECT config_json, credential_ref FROM connections WHERE id = ?1")
+                .bind(&connection.id)
+                .fetch_one(service.db.pool())
+                .await
+                .expect("load persisted connection");
+        assert!(!stored.0.contains(secret));
+        assert_eq!(
+            stored.1.as_deref(),
+            Some(credential.credential_ref.as_str())
+        );
+    }
+
+    #[test]
+    fn mysql_schema_metadata_maps_database_table_and_columns() {
+        let table = mysql_table_from_metadata(
+            "analytics".to_string(),
+            "events".to_string(),
+            "BASE TABLE".to_string(),
+            vec![DatabaseTableColumn {
+                name: "id".to_string(),
+                data_type: "bigint unsigned".to_string(),
+                nullable: false,
+                primary_key: true,
+            }],
+        );
+
+        assert_eq!(table.schema.as_deref(), Some("analytics"));
+        assert_eq!(table.name, "events");
+        assert_eq!(table.kind, "table");
+        assert!(table.columns[0].primary_key);
+    }
+
+    #[test]
+    fn mysql_table_browse_sql_is_qualified_paginated_and_escaped() {
+        assert_eq!(
+            mysql_browse_sql("app`data", "user`events", 50, 100),
+            "SELECT * FROM `app``data`.`user``events` LIMIT 50 OFFSET 100"
+        );
+    }
+
+    #[test]
+    fn mysql_credential_errors_are_redacted() {
+        let error = sanitize_mysql_error(sqlx::Error::Protocol(
+            "Access denied for user testuser using password mysql-super-secret".to_string(),
+        ));
+        let message = error.to_string();
+
+        assert!(!message.contains("testuser"));
+        assert!(!message.contains("mysql-super-secret"));
+        assert!(message.contains("details redacted"));
+    }
+
+    #[tokio::test]
+    async fn mysql_test_connection_and_read_query_use_live_path_with_sanitized_errors() {
+        let (service, workspace_id) = service_with_workspace().await;
+        let credential = service
+            .secret_store
+            .as_ref()
+            .expect("secret store")
+            .create_credential(
+                workspace_id.clone(),
+                "database-password".to_string(),
+                "MySQL password".to_string(),
+                "mysql-super-secret".to_string(),
+            )
+            .await
+            .expect("create credential");
+        let connection = service
+            .save_connection(mysql_input(&workspace_id, Some(credential.credential_ref)))
+            .await
+            .expect("save mysql connection");
+
+        let test_error = service
+            .test_connection(workspace_id.clone(), connection.id.clone())
+            .await
+            .expect_err("closed local port should reject MySQL connection")
+            .to_string();
+        assert!(!test_error.contains("mysql-super-secret"));
+
+        let query_error = service
+            .execute_query(DatabaseQueryInput {
+                workspace_id,
+                connection_id: connection.id,
+                sql: "SELECT id FROM users".to_string(),
+                limit: Some(25),
+                confirm_mutation: None,
+            })
+            .await
+            .expect_err("closed local port should reject MySQL query");
+        assert!(!matches!(
+            query_error,
+            AppError::ConfirmationRequired { .. }
+        ));
+        assert!(!query_error.to_string().contains("mysql-super-secret"));
+    }
+
+    #[tokio::test]
+    async fn mysql_mutating_query_requires_confirmation_before_connecting() {
+        let (service, workspace_id) = service_with_workspace().await;
+        let connection = service
+            .save_connection(mysql_input(&workspace_id, None))
+            .await
+            .expect("save mysql connection");
+
+        let result = service
+            .execute_query(DatabaseQueryInput {
+                workspace_id,
+                connection_id: connection.id,
+                sql: "UPDATE users SET active = false".to_string(),
+                limit: Some(100),
+                confirm_mutation: None,
+            })
+            .await;
+        assert!(matches!(result, Err(AppError::ConfirmationRequired { .. })));
     }
 }

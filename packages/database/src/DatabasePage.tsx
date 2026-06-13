@@ -205,6 +205,7 @@ export function DatabasePage({ workspaceId }: { workspaceId: string }) {
     browseMutation.mutate({
       pageIndex: Math.max(0, pageIndex),
       pageSize,
+      schema: table.schema,
       tableName: table.name,
     });
   }
