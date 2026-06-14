@@ -2,11 +2,11 @@
 
 ## Scan Metadata
 
-- **Scanned at:** 2026-06-14 (post-fix verification sweep)
+- **Scanned at:** 2026-06-14 (release readiness smoke verification pass)
 - **Branch:** main
 - **Base commit:** `1a542cb` — fix(release): address smoke verification blockers
-- **Working tree:** Clean
-- **Last checkpoint:** Three fix commits landed since the previous checkpoint (`bfedcf8`): lint warning reduction (64 → 53), Windows workspace test stabilization (`STATUS_ENTRYPOINT_NOT_FOUND` resolved), and keyring platform feature flags enabled (production was silently using the non-persistent mock backend). All 98 Rust tests and 60 frontend tests pass. Production build succeeds.
+- **Working tree:** Clean (no source code changes in this pass)
+- **Release status:** Technically stable but **not ready for early basic release**. Live SSH server verification is the current release gate.
 
 ## Tech Stack
 
@@ -18,9 +18,11 @@
 
 ## Current Phase
 
-SSH authentication UX — including private-key authentication, SecretStore-backed key references, host-key fingerprint management, and terminal streaming — is **complete**. SQLite, PostgreSQL, and MySQL/MariaDB database paths are implemented and live-verified. The `keyring` crate now uses platform-native backends: `windows-native` (Windows Credential Manager), `apple-native` (Apple Keychain), and `crypto-rust` + `sync-secret-service` (Linux Secret Service). Windows Credential Manager create/read/delete is runtime-verified for four credential categories. Apple Keychain and Linux Secret Service are configured but not runtime-verified.
+The application is **technically stable**: all automated tests pass (98 Rust, 60 frontend), the production build succeeds, Windows keychain is runtime-verified, and browser UI smoke passes. However, the app is **not ready for early basic release** because live SSH server verification — the core use case for the Terminal module — remains `NOT VERIFIED` against a reachable SSH server.
 
-UI module split is **in progress**. Terminal, Database, Workspace, and Command-Client packages have been extracted from `packages/app-shell`. Workspace dialogs, window controls, and the title bar are extracted into dedicated component files within `apps/desktop/src/components/`. Semantic token replacement is complete. Pure-function extraction (`module-helpers.ts`, `terminal-session-status.ts`) and `useEffect` sync-pattern refactoring reduced lint warnings from 64 to 53. `packages/app-shell` contains only the `AppShell` layout composition wrapper (2 source files). Further workspace UI extraction from desktop components is planned.
+SSH authentication UX — including private-key authentication, SecretStore-backed key references, host-key fingerprint management, and terminal streaming — is **code-complete**. SQLite, PostgreSQL, and MySQL/MariaDB database paths are implemented and were live-verified in a previous checkpoint (not rerun in this smoke pass; see Verification Results). The `keyring` crate now uses platform-native backends: `windows-native` (Windows Credential Manager), `apple-native` (Apple Keychain), and `crypto-rust` + `sync-secret-service` (Linux Secret Service). Windows Credential Manager create/read/delete is runtime-verified for four credential categories. Apple Keychain and Linux Secret Service are configured but not runtime-verified.
+
+UI module split is **in progress**. Terminal, Database, Workspace, and Command-Client packages have been extracted from `packages/app-shell`. Workspace dialogs, window controls, and the title bar are extracted into dedicated component files within `apps/desktop/src/components/`. Semantic token replacement is complete. Lint warnings reduced from 64 to 53. `packages/app-shell` contains only the `AppShell` layout composition wrapper (2 source files).
 
 ## Verified Capabilities
 
@@ -58,13 +60,13 @@ UI module split is **in progress**. Terminal, Database, Workspace, and Command-C
 
 ## Partially Implemented
 
-- **UI module split:** Terminal, Database, Workspace, and Command-Client packages extracted. `packages/app-shell` contains only the `AppShell` layout wrapper (2 files). Desktop app components (AppTitleBar, ModuleSidebar, WorkspaceMenu, WorkspaceDialogs, WindowControls, placeholder components) are extracted into `apps/desktop/src/components/`. Pure-function helpers extracted to `module-helpers.ts`; terminal session status extracted to `model/terminal-session-status.ts`. Semantic token replacement is complete across all desktop source files. Remaining work: potential extraction of placeholder components into feature packages, further workspace state extraction.
+- **UI module split:** Terminal, Database, Workspace, and Command-Client packages extracted. `packages/app-shell` contains only the `AppShell` layout wrapper (2 files). Desktop app components extracted into `apps/desktop/src/components/`. Pure-function helpers extracted to `module-helpers.ts`; terminal session status extracted to `model/terminal-session-status.ts`. Semantic token replacement is complete across all desktop source files. Remaining work: potential extraction of placeholder components into feature packages, further workspace state extraction.
 - **SSH authentication:** Password auth and private-key auth both work under `ssh-native`. Encrypted key passphrase loading has limited support (ssh-key crate format constraints).
 - **Host-key UI:** View trusted fingerprint, reset fingerprint, trust confirmation dialog (first trust + mismatch), and known_hosts import/export all implemented.
 - **Terminal session persistence:** SQLite-backed output history with per-session buffering, periodic flush, secret redaction, and UTF-8-safe truncation (256 KB retention). Hydration on app reopen. Browser mock mode compatible.
 - **API body redaction:** JSON body redaction applied in both Rust persistence paths (save_request, insert_history) and browser mock. Sensitive keys (authorization, cookie, proxy-authorization, x-api-key, x-auth-token) are recursively replaced with `<redacted>` while preserving JSON structure.
-- **SSH live reliability verification:** Keepalive and reconnect policy are automated-test covered, but a live localhost SSH stop/start cycle was not available in this environment.
-- **Database drivers:** SQLite regression coverage passes. PostgreSQL 18 and MariaDB 12.3.2 were live-verified with SecretStore credential references, non-default schemas/databases, tables, columns, reads, pagination, confirmed writes, Unicode rows, empty tables, syntax errors, invalid passwords, and unavailable ports.
+- **SSH live reliability verification:** Keepalive and reconnect policy are automated-test covered, but a live localhost SSH stop/start cycle was not available in this environment. **This is the current release gate.**
+- **Database drivers:** SQLite regression coverage passes. PostgreSQL 18 and MariaDB 12.3.2 were live-verified in a previous checkpoint (SecretStore credential references, non-default schemas/databases, tables, columns, reads, pagination, confirmed writes, Unicode rows, empty tables, syntax errors, invalid passwords, and unavailable ports). Not rerun in this smoke pass.
 
 ## Not Started
 
@@ -76,7 +78,7 @@ UI module split is **in progress**. Terminal, Database, Workspace, and Command-C
 | Command | Result | Notes |
 |---|---|---|
 | `git diff --check` | PASS | No trailing whitespace issues |
-| `pnpm run lint` | PASS (warnings) | 0 errors, 53 warnings |
+| `pnpm run lint` | PASS (warnings) | 0 errors, 53 warnings (reduced from 64) |
 | `pnpm run test` | PASS | 60 tests, 5 files |
 | `pnpm run build` | PASS | Production build succeeds (1996 modules) |
 | `cargo fmt --check` | PASS | No formatting issues |
@@ -89,15 +91,16 @@ UI module split is **in progress**. Terminal, Database, Workspace, and Command-C
 | `cargo test -p unfour-secret-store --test os_keychain_release_smoke -- --ignored` | PASS | Real Windows Credential Manager create/read/delete for four release credential categories |
 | Browser UI smoke | PASS | First viewport, module navigation, workspace menu, SSH dialog, database page, API GET/POST, response headers, and history |
 | API persisted body redaction | PASS | Request editor sent the real `x-api-key`; loaded history displayed `<redacted>` |
-| PostgreSQL live matrix | PASS | PostgreSQL 18; SecretStore auth, `app_data` schema, reads, pagination, writes, Unicode, empty table, syntax/auth/unavailable errors |
-| MySQL live matrix | PASS | MariaDB 12.3.2; SecretStore auth, multiple databases, reads, pagination, writes, Unicode, empty table, syntax/auth/unavailable errors |
+| SQLite regression | PASS | Covered in `cargo test --workspace` |
+| PostgreSQL live matrix | PASS (historical) | PostgreSQL 18 live-verified in a previous checkpoint; **not rerun in this smoke pass** |
+| MySQL live matrix | PASS (historical) | MariaDB 12.3.2 live-verified in a previous checkpoint; **not rerun in this smoke pass** |
 
 ## Known Limitations
 
+- **Release gate — live SSH verification:** Native SSH transport, private-key authentication, passphrase-encrypted key loading, host-key TOFU first-trust, mismatch rejection, fingerprint reset, keepalive, and reconnect are `NOT VERIFIED` against a live SSH server. This is the **sole blocker for early basic release**. Automated tests cover the full code path.
 - **Native visual inspection:** Windows launched a responsive native window, but this environment could not capture or inspect WebView contents. Browser-rendered first viewport and interactions pass.
 - **macOS/Linux release smoke:** App startup and OS keychain behavior remain `NOT VERIFIED` on those platforms. Platform features are configured in Cargo.toml but not runtime-tested.
 - **Lint warnings:** 53 warnings across `packages/api-debugger`, `packages/database`, `packages/terminal`, `packages/ui`, and `apps/desktop`. Predominantly `react-hooks/refs` false positives from TanStack Query destructuring patterns. No errors; none block builds.
-- **Real SSH verification:** Native SSH transport, private-key authentication, passphrase-encrypted key loading, host-key TOFU first-trust, mismatch rejection, and fingerprint reset are `NOT VERIFIED` against a live SSH server in this environment. Automated tests cover the full code path.
 
 ## Repository Structure
 
