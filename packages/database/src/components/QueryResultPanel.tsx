@@ -1,5 +1,5 @@
 import { Clipboard, Download } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { DatabaseQueryResult } from "@unfour/command-client";
 import { Button, EmptyState, ErrorState, LoadingState, Tabs, Toolbar, ToolbarGroup } from "@unfour/ui";
 import { confirmationMessage, formatDatabaseError, serializeDatabaseResult } from "../result-utils";
@@ -21,10 +21,11 @@ export function QueryResultPanel({
   result: DatabaseQueryResult | null;
 }) {
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">("idle");
-
-  useEffect(() => {
+  const [lastResult, setLastResult] = useState(result);
+  if (result !== lastResult) {
+    setLastResult(result);
     setCopyStatus("idle");
-  }, [result]);
+  }
 
   async function copyTsv() {
     if (!result) {

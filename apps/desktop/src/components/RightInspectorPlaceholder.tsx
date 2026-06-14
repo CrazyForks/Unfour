@@ -1,7 +1,7 @@
 import { PanelLeftOpen } from "lucide-react";
 import { IconButton, RightInspector } from "@unfour/ui";
 import type { WorkspaceTab } from "@unfour/command-client";
-import { moduleLabel } from "./utils";
+import { moduleLabel } from "./module-helpers";
 
 export function RightInspectorPlaceholder({
   activeTab,

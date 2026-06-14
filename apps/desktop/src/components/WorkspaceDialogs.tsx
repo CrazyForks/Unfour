@@ -1,6 +1,6 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { Trash2 } from "lucide-react";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   createWorkspace,
@@ -34,12 +34,13 @@ export function WorkspaceDialogs({
   const { setActiveWorkspace } = useWorkspaceStore();
   const [workspaceName, setWorkspaceName] = useState("");
   const [renameDraft, setRenameDraft] = useState(activeWorkspace?.name ?? "");
+  const [lastSyncedWorkspaceId, setLastSyncedWorkspaceId] = useState(activeWorkspace?.id);
+  if (activeWorkspace?.id !== lastSyncedWorkspaceId) {
+    setLastSyncedWorkspaceId(activeWorkspace?.id);
+    setRenameDraft(activeWorkspace?.name ?? "");
+  }
   const canDelete =
     Boolean(activeWorkspace) && !activeWorkspace?.isDefault && workspaces.length > 1;
-
-  useEffect(() => {
-    setRenameDraft(activeWorkspace?.name ?? "");
-  }, [activeWorkspace?.id, activeWorkspace?.name]);
 
   const createWorkspaceMutation = useMutation({
     mutationFn: createWorkspace,

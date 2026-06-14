@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { updateWorkspaceLayout } from "@unfour/command-client";
 import { useWorkspaceStore } from "@unfour/workspace";
@@ -20,13 +20,16 @@ export function useLayoutPersistence(activeWorkspaceId: string | null) {
       updateWorkspaceLayout(workspaceId, snapshotLayout(workspaceId)),
   });
 
+  const mutateRef = useRef(layoutMutation.mutate);
+  mutateRef.current = layoutMutation.mutate;
+
   useEffect(() => {
     if (!activeWorkspaceId || layoutWorkspaceId !== activeWorkspaceId) {
       return;
     }
 
     const timeout = window.setTimeout(() => {
-      layoutMutation.mutate(activeWorkspaceId);
+      mutateRef.current(activeWorkspaceId);
     }, 350);
 
     return () => window.clearTimeout(timeout);

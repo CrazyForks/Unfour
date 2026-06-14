@@ -31,7 +31,7 @@ import {
 import { useSshConnections } from "../hooks/useSshConnections";
 import { useTerminalSessions } from "../hooks/useTerminalSessions";
 import { useTerminalStore } from "../model/terminal-state";
-import { terminalSessionStatus } from "./TerminalSessionTab";
+import { terminalSessionStatus } from "../model/terminal-session-status";
 
 export function SshConnectionTree({
   active,

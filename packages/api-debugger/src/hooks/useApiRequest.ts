@@ -63,11 +63,29 @@ export function useApiRequest({
     queryFn: () => getWorkspaceEnvironment(workspaceId),
   });
 
-  useEffect(() => {
+  function loadRequestDraft(request: ApiRequestInput) {
+    setName(request.name ?? `${request.method} ${request.url}`);
+    setFolderPath(request.folderPath ?? "");
+    setMethod(request.method);
+    setUrl(request.url);
+    setHeaders(request.headers);
+    setQuery(request.query);
+    setBody(request.body ?? "");
+  }
+
+  function loadSavedRequest(saved: ApiSavedRequest) {
+    setSelectedRequestId(saved.id);
+    setLoadedSavedRequestId(saved.id);
+    loadRequestDraft(savedRequestToInput(saved, workspaceId));
+  }
+
+  const [lastEnvData, setLastEnvData] = useState(environmentQuery.data);
+  if (environmentQuery.data !== lastEnvData) {
+    setLastEnvData(environmentQuery.data);
     if (environmentQuery.data) {
       setEnvVariables(environmentQuery.data.variables);
     }
-  }, [environmentQuery.data]);
+  }
 
   useEffect(() => {
     if (!savedQuery.data || !selectedRequestId) {
@@ -84,7 +102,7 @@ export function useApiRequest({
     if (loadedSavedRequestId !== selected.id) {
       loadSavedRequest(selected);
     }
-  }, [loadedSavedRequestId, savedQuery.data, selectedRequestId, setSelectedRequestId]);
+  }, [loadedSavedRequestId, savedQuery.data, selectedRequestId, setSelectedRequestId, loadSavedRequest]);
 
   const input = useMemo<ApiRequestInput>(
     () => ({
@@ -148,22 +166,6 @@ export function useApiRequest({
   function submit(event: FormEvent) {
     event.preventDefault();
     sendMutation.mutate(input);
-  }
-
-  function loadRequestDraft(request: ApiRequestInput) {
-    setName(request.name ?? `${request.method} ${request.url}`);
-    setFolderPath(request.folderPath ?? "");
-    setMethod(request.method);
-    setUrl(request.url);
-    setHeaders(request.headers);
-    setQuery(request.query);
-    setBody(request.body ?? "");
-  }
-
-  function loadSavedRequest(saved: ApiSavedRequest) {
-    setSelectedRequestId(saved.id);
-    setLoadedSavedRequestId(saved.id);
-    loadRequestDraft(savedRequestToInput(saved, workspaceId));
   }
 
   function loadHistoryRequest(history: ApiHistoryDetail) {

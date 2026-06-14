@@ -1,6 +1,6 @@
 import { StatusBar } from "@unfour/ui";
 import type { Workspace, WorkspaceTab } from "@unfour/command-client";
-import { moduleLabel } from "./utils";
+import { moduleLabel } from "./module-helpers";
 
 export function StatusBarPlaceholder({
   activeTab,

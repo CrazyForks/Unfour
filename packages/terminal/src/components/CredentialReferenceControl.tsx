@@ -25,14 +25,15 @@ export function CredentialReferenceControl({
   workspaceId: string;
 }) {
   const [credentialLabel, setCredentialLabel] = useState(label);
+  const [lastSyncedLabel, setLastSyncedLabel] = useState(label);
+  if (label !== lastSyncedLabel) {
+    setLastSyncedLabel(label);
+    setCredentialLabel(label);
+  }
   const [secret, setSecret] = useState("");
   const [metadata, setMetadata] = useState<CredentialMetadata | null>(null);
   const [status, setStatus] = useState("");
   const credentialRef = value?.trim() ?? "";
-
-  useEffect(() => {
-    setCredentialLabel(label);
-  }, [label]);
 
   useEffect(() => {
     setMetadata(null);

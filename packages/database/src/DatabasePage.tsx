@@ -59,7 +59,7 @@ export function DatabasePage({ workspaceId }: { workspaceId: string }) {
   });
 
   const connectionsQuery = useDatabaseConnections(workspaceId);
-  const connections = connectionsQuery.data ?? [];
+  const connections = useMemo(() => connectionsQuery.data ?? [], [connectionsQuery.data]);
   const selectedConnection = useMemo(
     () => connections.find((item) => item.id === selectedConnectionId) ?? null,
     [connections, selectedConnectionId],

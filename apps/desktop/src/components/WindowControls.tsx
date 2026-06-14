@@ -1,7 +1,7 @@
 import { Maximize2, Minus, Square, X } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { cn } from "@unfour/ui";
-import { isTauriRuntime } from "./utils";
+import { isTauriRuntime } from "./module-helpers";
 
 export function WindowControls() {
   if (!isTauriRuntime()) {

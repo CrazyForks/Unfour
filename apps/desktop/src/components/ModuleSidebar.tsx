@@ -25,7 +25,7 @@ import {
   SidebarRow,
   SidebarSection,
 } from "@unfour/ui";
-import { moduleLabel, moduleSubtitle } from "./utils";
+import { moduleLabel, moduleSubtitle } from "./module-helpers";
 
 export function ModuleSidebar({
   activeTab,

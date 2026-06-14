@@ -18,9 +18,13 @@ export function HostKeyFingerprint({
   const trimmedHost = host.trim();
   const validPort = port > 0;
 
+  if (!trimmedHost || !validPort) {
+    if (info !== null) setInfo(null);
+    if (error !== null) setError(null);
+  }
+
   useEffect(() => {
     if (!trimmedHost || !validPort) {
-      setInfo(null);
       return;
     }
     let cancelled = false;

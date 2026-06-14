@@ -18,7 +18,8 @@ import { BottomPanelPlaceholder } from "./components/BottomPanelPlaceholder";
 import { ModuleSidebar } from "./components/ModuleSidebar";
 import { RightInspectorPlaceholder } from "./components/RightInspectorPlaceholder";
 import { StatusBarPlaceholder } from "./components/StatusBarPlaceholder";
-import { CommandPaletteAction, moduleLabel } from "./components/utils";
+import { CommandPaletteAction } from "./components/utils";
+import { moduleLabel } from "./components/module-helpers";
 import { useLayoutPersistence } from "./components/useLayoutPersistence";
 import { useWorkspaceInit } from "./components/useWorkspaceInit";
 

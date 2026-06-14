@@ -11,7 +11,7 @@ import {
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { Workspace } from "@unfour/command-client";
 import { Badge, GlobalToolbar, IconButton } from "@unfour/ui";
-import { isTauriRuntime } from "./utils";
+import { isTauriRuntime } from "./module-helpers";
 import { WindowControls } from "./WindowControls";
 import { WorkspaceMenu } from "./WorkspaceMenu";
 
