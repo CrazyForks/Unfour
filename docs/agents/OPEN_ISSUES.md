@@ -16,7 +16,7 @@ None.
 ## P2 — Medium priority
 
 - **Host-key UI enhancement** (Observed): View/reset fingerprint implemented. Trust confirmation dialog (first trust + mismatch) implemented. known_hosts import/export implemented. Fingerprint change confirmation without full reset is a future enhancement.
-- **Lint warning cleanup** (Observed): 53 warnings across `packages/api-debugger`, `packages/database`, `packages/terminal`, `packages/ui`, and `apps/desktop`. Predominantly `react-hooks/refs` false positives from TanStack Query destructuring. Reduced from 64 in commit `3649a2d` via pure-function extraction and `useEffect` sync-pattern refactoring. No errors; none block builds.
+- **Lint warning cleanup** (Observed): 53 warnings across `packages/api-client`, `packages/database`, `packages/ssh-terminal`, `packages/ui`, and `apps/desktop`. Predominantly `react-hooks/refs` false positives from TanStack Query destructuring. Reduced from 64 in commit `3649a2d` via pure-function extraction and `useEffect` sync-pattern refactoring. No errors; none block builds.
 
 ## P3 — Low priority / Future
 

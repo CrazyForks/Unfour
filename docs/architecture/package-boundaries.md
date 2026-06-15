@@ -47,15 +47,15 @@
 
 ---
 
-## packages/workspace
+## packages/workspace-core
 
 ### Current State
 
-Exports only `useWorkspaceStore` (a Zustand store). It is consumed by:
+Exports `useWorkspaceStore` (a Zustand store) and re-exports the existing shared workspace types from `packages/command-client`. It is consumed by:
 
 - `apps/desktop` for layout and workspace mutations.
 - `packages/database` for `selectedDatabaseConnectionId`.
-- `packages/terminal` for `selectedSshConnectionId`.
+- `packages/ssh-terminal` for `selectedSshConnectionId`.
 
 ### Target Responsibility
 
@@ -63,12 +63,31 @@ Exports only `useWorkspaceStore` (a Zustand store). It is consumed by:
 
 ### Transitional Exceptions
 
-- Direct imports of `useWorkspaceStore` from `packages/database` and `packages/terminal` are allowed during the UI refactor to avoid prop-drilling while module boundaries are still stabilizing.
+- Direct imports of `useWorkspaceStore` from `packages/database` and `packages/ssh-terminal` are allowed during the UI refactor to avoid prop-drilling while module boundaries are still stabilizing.
 
 ### Follow-up Work
 
-- After the UI refactor stabilizes, evaluate whether selected connection state should be passed via props from `apps/desktop` instead of being read directly from `packages/workspace` inside feature packages.
-- New feature-specific dependencies on `packages/workspace` MUST NOT be added without review.
+- After the UI refactor stabilizes, evaluate whether selected connection state should be passed via props from `apps/desktop` instead of being read directly from `packages/workspace-core` inside feature packages.
+- New feature-specific dependencies on `packages/workspace-core` MUST NOT be added without review.
+
+---
+
+## packages/workspace-local
+
+### Current State
+
+- Exists as the frontend boundary for future local workspace persistence, import/export, recent-workspace, and migration implementations.
+- Temporarily re-exports `packages/workspace-core` so the split can land without changing behavior.
+
+### Target Responsibility
+
+- Own frontend implementations that are specific to local workspace storage and lifecycle.
+- Depend on `packages/workspace-core` for shared workspace types and contracts.
+- MUST NOT absorb feature-specific API, database, or SSH state.
+
+### Transitional Exceptions
+
+- The compatibility re-export is allowed until concrete local implementations are migrated into this package.
 
 ---
 
@@ -77,7 +96,7 @@ Exports only `useWorkspaceStore` (a Zustand store). It is consumed by:
 ### Current State
 
 - Owns connection tree, schema tree, SQL editor, query results, and table inspector.
-- Depends on `packages/workspace` for `useWorkspaceStore`.
+- Depends on `packages/workspace-core` for `useWorkspaceStore`.
 - Depends on `@monaco-editor/react` and `@tanstack/react-query`.
 
 ### Target Responsibility
@@ -87,22 +106,22 @@ Exports only `useWorkspaceStore` (a Zustand store). It is consumed by:
 
 ### Transitional Exceptions
 
-- Dependency on `packages/workspace` is temporarily allowed (see `packages/workspace` section).
+- Dependency on `packages/workspace-core` is temporarily allowed (see `packages/workspace-core` section).
 
 ### Follow-up Work
 
 - Remove hardcoded colors and local select/tab styles once shared primitives are available.
-- Re-evaluate `packages/workspace` dependency after the refactor.
+- Re-evaluate `packages/workspace-core` dependency after the refactor.
 
 ---
 
-## packages/terminal
+## packages/ssh-terminal
 
 ### Current State
 
 - Owns SSH connection tree, session tabs, terminal pane, and connection status.
 - Maintains a local Zustand store for terminal events and session state.
-- Depends on `packages/workspace` for `useWorkspaceStore`.
+- Depends on `packages/workspace-core` for `useWorkspaceStore`.
 - Depends on `@xterm/xterm` and `@xterm/addon-fit`.
 
 ### Target Responsibility
@@ -112,12 +131,12 @@ Exports only `useWorkspaceStore` (a Zustand store). It is consumed by:
 
 ### Transitional Exceptions
 
-- Dependency on `packages/workspace` is temporarily allowed (see `packages/workspace` section).
+- Dependency on `packages/workspace-core` is temporarily allowed (see `packages/workspace-core` section).
 
 ### Follow-up Work
 
-- Evaluate whether the local Zustand store should remain in `packages/terminal` or move to a more general state boundary.
-- Re-evaluate `packages/workspace` dependency after the refactor.
+- Evaluate whether the local Zustand store should remain in `packages/ssh-terminal` or move to a more general state boundary.
+- Re-evaluate `packages/workspace-core` dependency after the refactor.
 
 ---
 
@@ -125,7 +144,7 @@ Exports only `useWorkspaceStore` (a Zustand store). It is consumed by:
 
 | Package | Status | Responsibility | Forbidden |
 | --- | --- | --- | --- |
-| `packages/api-debugger` | Existing | Collection tree, request editor, response viewer, request state, history, environment variables | Database logic, SSH logic, top-level sidebar |
+| `packages/api-client` | Existing | Collection tree, request editor, response viewer, request state, history, environment variables | Database logic, SSH logic, top-level sidebar |
 | `packages/command-client` | Existing | Typed Tauri command wrappers, shared frontend types, browser-dev mocks | React components, feature business logic, feature state |
 | `packages/command-bus` | **Does not exist** | — | — |
 | `packages/extension-contracts` | **Does not exist** | — | — |
@@ -146,17 +165,20 @@ Allowed:
 ```text
 apps/*
   -> packages/app-shell
-  -> feature packages (api-debugger, database, terminal)
-  -> packages/workspace
+  -> feature packages (api-client, database, ssh-terminal)
+  -> packages/workspace-core
   -> packages/ui
   -> packages/command-client
+
+packages/workspace-local
+  -> packages/workspace-core
 ```
 
 Feature packages MAY depend on:
 
 - `packages/ui`
 - `packages/command-client`
-- `packages/workspace` (transitionally, during the UI refactor)
+- `packages/workspace-core` (transitionally, during the UI refactor)
 
 Forbidden:
 
@@ -175,8 +197,8 @@ Forbidden:
 2. **`packages/ui` contains shell layout components.**
    `AppShellFrame`, `GlobalToolbar`, `Sidebar`, `TabBar`, `MainWorkspace`, `BottomPanel`, `RightInspector`, and `CommandPalette` live in `packages/ui` rather than `packages/app-shell`. See the `packages/app-shell` and `packages/ui` sections above for the transitional plan.
 
-3. **Feature packages depend on `packages/workspace`.**
-   `packages/database` and `packages/terminal` import `useWorkspaceStore`. This is a transitional exception documented above.
+3. **Feature packages depend on `packages/workspace-core`.**
+   `packages/database` and `packages/ssh-terminal` import `useWorkspaceStore`. This is a transitional exception documented above.
 
-4. **`packages/api-debugger` defines a local `EmptyState`.**
+4. **`packages/api-client` defines a local `EmptyState`.**
    `ResponseTabs.tsx` contains a page-local `EmptyState` component even though `packages/ui` exports one.

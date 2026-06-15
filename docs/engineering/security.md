@@ -89,7 +89,7 @@ Future AI/workflow actions should distinguish local reads, writes, and data egre
 
 **known_hosts interoperability:** Import and export of OpenSSH `known_hosts` format files. Import parses each line, computes SHA-256 fingerprints from raw public key bytes, and stores entries that are valid and not already present. Export generates `known_hosts` format output with comments for entries missing key data. Tauri commands: `ssh_known_hosts_import`, `ssh_known_hosts_export`, `ssh_host_key_list`.
 
-**Frontend:** The `HostKeyFingerprint` component in `packages/terminal` displays the trusted fingerprint and allows resetting it. The `HostKeyTrustDialog` component provides trust confirmation before first connection and shows clear mismatch warnings.
+**Frontend:** The `HostKeyFingerprint` component in `packages/ssh-terminal` displays the trusted fingerprint and allows resetting it. The `HostKeyTrustDialog` component provides trust confirmation before first connection and shows clear mismatch warnings.
 
 **Future extension points:**
 

@@ -8,13 +8,13 @@ import {
 import {
   ApiCollectionTree,
   type ApiOpenIntent,
-} from "@unfour/api-debugger";
+} from "@unfour/api-client";
 import {
   DatabaseConnectionTree,
 } from "@unfour/database";
 import {
   SshConnectionTree,
-} from "@unfour/terminal";
+} from "@unfour/ssh-terminal";
 import type {
   DatabaseConnection,
   WorkspaceTab,

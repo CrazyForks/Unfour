@@ -12,7 +12,7 @@ import {
   type SshConnection,
   type SshSessionSummary,
 } from "@unfour/command-client";
-import { useWorkspaceStore } from "@unfour/workspace";
+import { useWorkspaceStore } from "@unfour/workspace-core";
 import {
   ConnectionStatus,
   ContextMenuItem,

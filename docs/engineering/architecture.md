@@ -45,9 +45,10 @@ The same `CommandBus` shape is reserved for later AI, MCP, CLI, workflow runner,
 - `apps/desktop`: Tauri/Vite desktop application entry. It mounts the composed workspace shell.
 - `packages/app-shell`: workspace shell, title bar, sidebars, tabs, and current panel composition.
 - `packages/command-client`: typed Tauri command adapter, shared frontend command types, and browser-dev mocks.
-- `packages/workspace`: UI state for active workspace/tab/sidebar.
+- `packages/workspace-core`: UI state for active workspace/tab/sidebar.
+- `packages/workspace-local`: compatibility boundary for future local workspace persistence, import/export, recent-workspace, and migration implementations.
 - `packages/ui`: shared shadcn-style primitives and styling helpers.
-- `packages/api-debugger`, `packages/database`, and `packages/terminal`: feature-specific frontend logic that should not depend on each other directly.
+- `packages/api-client`, `packages/database`, and `packages/ssh-terminal`: feature-specific frontend logic that should not depend on each other directly.
 
 ## Workspace Shape
 

@@ -44,10 +44,10 @@ UI module split is **in progress**. Terminal, Database, Workspace, and Command-C
 
 | Capability | Package | Status | Tests |
 |---|---|---|---|
-| Workspace store | `@unfour/workspace` | Complete | 12 pass |
-| API Debugger | `@unfour/api-debugger` | Complete | 20 pass |
+| Workspace store | `@unfour/workspace-core` | Complete | 12 pass |
+| API Debugger | `@unfour/api-client` | Complete | 20 pass |
 | Database (connections + query) | `@unfour/database` | Complete | 16 pass |
-| Terminal state, history, host-key dialog, and command-client mock | `@unfour/terminal`, `@unfour/command-client` | Complete | 6 + 6 pass |
+| Terminal state, history, host-key dialog, and command-client mock | `@unfour/ssh-terminal`, `@unfour/command-client` | Complete | 6 + 6 pass |
 
 ### Build
 
@@ -100,7 +100,7 @@ UI module split is **in progress**. Terminal, Database, Workspace, and Command-C
 - **Release gate — live SSH verification:** Native SSH transport, private-key authentication, passphrase-encrypted key loading, host-key TOFU first-trust, mismatch rejection, fingerprint reset, keepalive, and reconnect are `NOT VERIFIED` against a live SSH server. This is the **sole blocker for early basic release**. Automated tests cover the full code path.
 - **Native visual inspection:** Windows launched a responsive native window, but this environment could not capture or inspect WebView contents. Browser-rendered first viewport and interactions pass.
 - **macOS/Linux release smoke:** App startup and OS keychain behavior remain `NOT VERIFIED` on those platforms. Platform features are configured in Cargo.toml but not runtime-tested.
-- **Lint warnings:** 53 warnings across `packages/api-debugger`, `packages/database`, `packages/terminal`, `packages/ui`, and `apps/desktop`. Predominantly `react-hooks/refs` false positives from TanStack Query destructuring patterns. No errors; none block builds.
+- **Lint warnings:** 53 warnings across `packages/api-client`, `packages/database`, `packages/ssh-terminal`, `packages/ui`, and `apps/desktop`. Predominantly `react-hooks/refs` false positives from TanStack Query destructuring patterns. No errors; none block builds.
 
 ## Repository Structure
 
@@ -109,10 +109,10 @@ UI module split is **in progress**. Terminal, Database, Workspace, and Command-C
 | Package | Purpose |
 |---|---|
 | `@unfour/app-shell` | Global layout composition, module mount points |
-| `@unfour/api-debugger` | API request editor, history, collection management |
+| `@unfour/api-client` | API request editor, history, collection management |
 | `@unfour/database` | Database connections, SQL execution, schema browser |
-| `@unfour/terminal` | SSH connections, terminal panes, session management |
-| `@unfour/workspace` | Zustand workspace state store |
+| `@unfour/ssh-terminal` | SSH connections, terminal panes, session management |
+| `@unfour/workspace-core` | Zustand workspace state store |
 | `@unfour/command-client` | Tauri IPC invocation wrapper |
 | `@unfour/ui` | Shared UI primitives (button, dialog, tabs, tree, etc.) |
 

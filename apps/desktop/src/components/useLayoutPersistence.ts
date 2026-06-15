@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { updateWorkspaceLayout } from "@unfour/command-client";
-import { useWorkspaceStore } from "@unfour/workspace";
+import { useWorkspaceStore } from "@unfour/workspace-core";
 
 export function useLayoutPersistence(activeWorkspaceId: string | null) {
   const {

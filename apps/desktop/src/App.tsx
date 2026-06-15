@@ -1,10 +1,10 @@
 import {
   ApiDebuggerPage,
   type ApiOpenIntent,
-} from "@unfour/api-debugger";
+} from "@unfour/api-client";
 import { AppShell } from "@unfour/app-shell";
 import { DatabasePage } from "@unfour/database";
-import { TerminalLogPanel, TerminalPage, TerminalStatusBar } from "@unfour/terminal";
+import { TerminalLogPanel, TerminalPage, TerminalStatusBar } from "@unfour/ssh-terminal";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CommandPalette, MainWorkspace, TabBar } from "@unfour/ui";
@@ -15,7 +15,7 @@ import {
   listDatabaseConnections,
   setActiveWorkspace as setActiveWorkspaceCommand,
 } from "@unfour/command-client";
-import { useWorkspaceStore } from "@unfour/workspace";
+import { useWorkspaceStore } from "@unfour/workspace-core";
 import { AppTitleBar } from "./components/AppTitleBar";
 import { BottomPanelPlaceholder } from "./components/BottomPanelPlaceholder";
 import { ModuleSidebar } from "./components/ModuleSidebar";

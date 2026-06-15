@@ -51,7 +51,7 @@ Priority order:
 
 4. **Lint warning deep cleanup**
    - Goal: Investigate and reduce the remaining 53 lint warnings, predominantly `react-hooks/refs` false positives from TanStack Query destructuring patterns in `ApiDebuggerPage.tsx`.
-   - Scope: `packages/api-debugger` (primary source of remaining warnings), plus any residual warnings in `packages/database`, `packages/terminal`, `packages/ui`, and `apps/desktop`.
+   - Scope: `packages/api-client` (primary source of remaining warnings), plus any residual warnings in `packages/database`, `packages/ssh-terminal`, `packages/ui`, and `apps/desktop`.
    - Forbidden: Do not add `eslint-disable` comments to suppress TanStack Query false positives without evaluating alternative hook patterns first. Do not change business logic or component behavior.
    - Risk: TanStack Query destructuring patterns are structural; refactoring them may require hook API changes or wrapper abstractions that increase complexity.
    - Prerequisites: Understanding of the `react-hooks/refs` rule's interaction with TanStack Query's `useQuery`/`useMutation` return values.

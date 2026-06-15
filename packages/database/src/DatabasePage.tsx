@@ -12,7 +12,7 @@ import type {
   DatabaseTable,
   DatabaseTestResult,
 } from "@unfour/command-client";
-import { useWorkspaceStore } from "@unfour/workspace";
+import { useWorkspaceStore } from "@unfour/workspace-core";
 import {
   Badge,
   Button,

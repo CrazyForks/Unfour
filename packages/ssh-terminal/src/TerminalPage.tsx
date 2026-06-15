@@ -14,7 +14,7 @@ import {
   type SshHostFingerprintInfo,
   type SshSessionSummary,
 } from "@unfour/command-client";
-import { useWorkspaceStore } from "@unfour/workspace";
+import { useWorkspaceStore } from "@unfour/workspace-core";
 import { LoadingState } from "@unfour/ui";
 import { TerminalModuleToolbar } from "./components/TerminalModuleToolbar";
 import { TerminalWorkspace } from "./components/TerminalWorkspace";

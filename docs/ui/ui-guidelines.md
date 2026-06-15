@@ -83,7 +83,7 @@ Common state checklist:
 
 ## API Debugger Pattern
 
-The current API Debugger (`packages/api-debugger`) implements the following patterns. Use it as a reference for consistent module design.
+The current API Debugger (`packages/api-client`) implements the following patterns. Use it as a reference for consistent module design.
 
 Verified patterns:
 

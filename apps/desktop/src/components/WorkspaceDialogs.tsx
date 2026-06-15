@@ -9,7 +9,7 @@ import {
 } from "@unfour/command-client";
 import type { Workspace } from "@unfour/command-client";
 import { Button, Input } from "@unfour/ui";
-import { useWorkspaceStore } from "@unfour/workspace";
+import { useWorkspaceStore } from "@unfour/workspace-core";
 
 export function WorkspaceDialogs({
   activeWorkspace,

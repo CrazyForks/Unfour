@@ -153,9 +153,9 @@ importers:
       '@tauri-apps/plugin-opener':
         specifier: ^2
         version: 2.5.4
-      '@unfour/api-debugger':
+      '@unfour/api-client':
         specifier: workspace:*
-        version: link:../../packages/api-debugger
+        version: link:../../packages/api-client
       '@unfour/app-shell':
         specifier: workspace:*
         version: link:../../packages/app-shell
@@ -165,15 +165,15 @@ importers:
       '@unfour/database':
         specifier: workspace:*
         version: link:../../packages/database
-      '@unfour/terminal':
+      '@unfour/ssh-terminal':
         specifier: workspace:*
-        version: link:../../packages/terminal
+        version: link:../../packages/ssh-terminal
       '@unfour/ui':
         specifier: workspace:*
         version: link:../../packages/ui
-      '@unfour/workspace':
+      '@unfour/workspace-core':
         specifier: workspace:*
-        version: link:../../packages/workspace
+        version: link:../../packages/workspace-core
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -218,7 +218,7 @@ importers:
         specifier: ^6.3.5
         version: 6.4.3(jiti@2.7.0)(lightningcss@1.32.0)
 
-  packages/api-debugger:
+  packages/api-client:
     dependencies:
       '@monaco-editor/react':
         specifier: ^4.7.0
@@ -274,9 +274,9 @@ importers:
       '@unfour/ui':
         specifier: workspace:*
         version: link:../ui
-      '@unfour/workspace':
+      '@unfour/workspace-core':
         specifier: workspace:*
-        version: link:../workspace
+        version: link:../workspace-core
       lucide-react:
         specifier: ^1.17.0
         version: 1.17.0(react@19.2.7)
@@ -284,20 +284,23 @@ importers:
         specifier: ^19.1.0
         version: 19.2.7
 
-  packages/terminal:
+  packages/ssh-terminal:
     dependencies:
       '@tanstack/react-query':
         specifier: ^5.100.14
         version: 5.100.14(react@19.2.7)
+      '@tauri-apps/api':
+        specifier: ^2
+        version: 2.11.0
       '@unfour/command-client':
         specifier: workspace:*
         version: link:../command-client
       '@unfour/ui':
         specifier: workspace:*
         version: link:../ui
-      '@unfour/workspace':
+      '@unfour/workspace-core':
         specifier: workspace:*
-        version: link:../workspace
+        version: link:../workspace-core
       '@xterm/addon-fit':
         specifier: ^0.11.0
         version: 0.11.0
@@ -344,7 +347,7 @@ importers:
         specifier: ^3.6.0
         version: 3.6.0
 
-  packages/workspace:
+  packages/workspace-core:
     dependencies:
       '@unfour/command-client':
         specifier: workspace:*
@@ -352,6 +355,12 @@ importers:
       zustand:
         specifier: ^5.0.14
         version: 5.0.14(@types/react@19.2.16)(react@19.2.7)
+
+  packages/workspace-local:
+    dependencies:
+      '@unfour/workspace-core':
+        specifier: workspace:*
+        version: link:../workspace-core
 
 packages:
 

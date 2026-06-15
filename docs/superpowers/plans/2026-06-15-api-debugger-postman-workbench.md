@@ -4,7 +4,7 @@
 
 **Goal:** Build a real multi-request API Debugger workbench with Collection/History navigation, request tabs, Postman-like request and response panels, explicit persistence/execution states, and workspace-level split direction without changing existing backend operations.
 
-**Architecture:** Keep deterministic tab lifecycle and dirty-state logic in pure feature-owned model functions, then wrap it with a React hook that routes existing command-client mutations back to the originating tab. Keep the desktop shell thin: it publishes sidebar open intents, while `packages/api-debugger` owns request state, trees, menus, dialogs, and workbench composition.
+**Architecture:** Keep deterministic tab lifecycle and dirty-state logic in pure feature-owned model functions, then wrap it with a React hook that routes existing command-client mutations back to the originating tab. Keep the desktop shell thin: it publishes sidebar open intents, while `packages/api-client` owns request state, trees, menus, dialogs, and workbench composition.
 
 **Tech Stack:** React 19, TypeScript, TanStack Query, Vitest, Monaco Editor, existing `@unfour/ui` primitives, existing `@unfour/command-client` API functions.
 
@@ -12,31 +12,31 @@
 
 ## File Map
 
-- Create `packages/api-debugger/src/model/request-tabs.ts` — pure tab constructors, normalization, reducer-style updates, grouping, and close-selection logic.
-- Create `packages/api-debugger/src/model/request-tabs.test.ts` — TDD coverage for multi-tab state, dirty baselines, save/send isolation, history grouping, and layout changes.
-- Create `packages/api-debugger/src/hooks/useApiRequestTabs.ts` — query/mutation coordination for the pure tab model.
-- Create `packages/api-debugger/src/components/ApiRequestTabs.tsx` — object tab strip and tab status indicators.
-- Create `packages/api-debugger/src/components/ApiRequestBar.tsx` — Method + URL + Send + Save + More.
-- Create `packages/api-debugger/src/components/ApiSaveDialog.tsx` — Name/Folder save flow.
-- Create `packages/api-debugger/src/components/ApiCloseRequestDialog.tsx` — Save / Don't Save / Cancel.
-- Create `packages/api-debugger/src/components/ApiWorkspaceLayoutToggle.tsx` — workspace-level top/bottom vs left/right control.
-- Create `packages/api-debugger/src/components/ApiHistoryTree.tsx` — history grouping and tree item construction.
-- Modify `packages/api-debugger/src/ApiDebuggerPage.tsx` — compose the workbench.
-- Modify `packages/api-debugger/src/components/ApiCollectionTree.tsx` — shared TreeView, Collection and History sections, context menus.
-- Modify `packages/api-debugger/src/components/ApiRequestEditor.tsx` — remove Name/Folder and host request configuration only.
-- Modify `packages/api-debugger/src/components/RequestParamsTabs.tsx` — Params/Auth/Headers/Body order and active-tab state.
-- Modify `packages/api-debugger/src/components/ApiResponseViewer.tsx` and `ResponseTabs.tsx` — response-only states and layout toggle.
-- Modify `packages/api-debugger/src/components/RequestActionsMenu.tsx` — active request secondary actions.
-- Modify `packages/api-debugger/src/model/types.ts`, `request-utils.ts`, `index.ts` — new model types, helpers, exports.
+- Create `packages/api-client/src/model/request-tabs.ts` — pure tab constructors, normalization, reducer-style updates, grouping, and close-selection logic.
+- Create `packages/api-client/src/model/request-tabs.test.ts` — TDD coverage for multi-tab state, dirty baselines, save/send isolation, history grouping, and layout changes.
+- Create `packages/api-client/src/hooks/useApiRequestTabs.ts` — query/mutation coordination for the pure tab model.
+- Create `packages/api-client/src/components/ApiRequestTabs.tsx` — object tab strip and tab status indicators.
+- Create `packages/api-client/src/components/ApiRequestBar.tsx` — Method + URL + Send + Save + More.
+- Create `packages/api-client/src/components/ApiSaveDialog.tsx` — Name/Folder save flow.
+- Create `packages/api-client/src/components/ApiCloseRequestDialog.tsx` — Save / Don't Save / Cancel.
+- Create `packages/api-client/src/components/ApiWorkspaceLayoutToggle.tsx` — workspace-level top/bottom vs left/right control.
+- Create `packages/api-client/src/components/ApiHistoryTree.tsx` — history grouping and tree item construction.
+- Modify `packages/api-client/src/ApiDebuggerPage.tsx` — compose the workbench.
+- Modify `packages/api-client/src/components/ApiCollectionTree.tsx` — shared TreeView, Collection and History sections, context menus.
+- Modify `packages/api-client/src/components/ApiRequestEditor.tsx` — remove Name/Folder and host request configuration only.
+- Modify `packages/api-client/src/components/RequestParamsTabs.tsx` — Params/Auth/Headers/Body order and active-tab state.
+- Modify `packages/api-client/src/components/ApiResponseViewer.tsx` and `ResponseTabs.tsx` — response-only states and layout toggle.
+- Modify `packages/api-client/src/components/RequestActionsMenu.tsx` — active request secondary actions.
+- Modify `packages/api-client/src/model/types.ts`, `request-utils.ts`, `index.ts` — new model types, helpers, exports.
 - Modify `apps/desktop/src/App.tsx` and `apps/desktop/src/components/ModuleSidebar.tsx` — sidebar open intent bridge only.
 
 ### Task 1: Pure Request Tab State Model
 
 **Files:**
-- Create: `packages/api-debugger/src/model/request-tabs.test.ts`
-- Create: `packages/api-debugger/src/model/request-tabs.ts`
-- Modify: `packages/api-debugger/src/model/types.ts`
-- Modify: `packages/api-debugger/src/request-utils.ts`
+- Create: `packages/api-client/src/model/request-tabs.test.ts`
+- Create: `packages/api-client/src/model/request-tabs.ts`
+- Modify: `packages/api-client/src/model/types.ts`
+- Modify: `packages/api-client/src/request-utils.ts`
 
 - [ ] **Step 1: Write failing state-model tests**
 
@@ -70,7 +70,7 @@ expect(horizontal.tabs).toEqual(saved.tabs);
 Run:
 
 ```bash
-pnpm vitest run packages/api-debugger/src/model/request-tabs.test.ts
+pnpm vitest run packages/api-client/src/model/request-tabs.test.ts
 ```
 
 Expected: FAIL because `request-tabs.ts` and its exports do not exist.
@@ -117,7 +117,7 @@ Previous 7 Days, then ISO date groups.
 Run:
 
 ```bash
-pnpm vitest run packages/api-debugger/src/model/request-tabs.test.ts
+pnpm vitest run packages/api-client/src/model/request-tabs.test.ts
 ```
 
 Expected: PASS.
@@ -125,9 +125,9 @@ Expected: PASS.
 ### Task 2: Command Coordination Hook
 
 **Files:**
-- Create: `packages/api-debugger/src/hooks/useApiRequestTabs.ts`
-- Modify: `packages/api-debugger/src/hooks/useApiHistory.ts`
-- Modify: `packages/api-debugger/src/hooks/useApiRequest.ts`
+- Create: `packages/api-client/src/hooks/useApiRequestTabs.ts`
+- Modify: `packages/api-client/src/hooks/useApiHistory.ts`
+- Modify: `packages/api-client/src/hooks/useApiRequest.ts`
 
 - [ ] **Step 1: Add failing tests for any additional pure transition discovered by the hook**
 
@@ -177,7 +177,7 @@ workspace split direction.
 Run:
 
 ```bash
-pnpm vitest run packages/api-debugger/src/model/request-tabs.test.ts
+pnpm vitest run packages/api-client/src/model/request-tabs.test.ts
 pnpm run build
 ```
 
@@ -186,14 +186,14 @@ Expected: PASS.
 ### Task 3: Request Workbench Components
 
 **Files:**
-- Create: `packages/api-debugger/src/components/ApiRequestTabs.tsx`
-- Create: `packages/api-debugger/src/components/ApiRequestBar.tsx`
-- Create: `packages/api-debugger/src/components/ApiSaveDialog.tsx`
-- Create: `packages/api-debugger/src/components/ApiCloseRequestDialog.tsx`
-- Create: `packages/api-debugger/src/components/ApiWorkspaceLayoutToggle.tsx`
-- Modify: `packages/api-debugger/src/components/ApiRequestEditor.tsx`
-- Modify: `packages/api-debugger/src/components/RequestParamsTabs.tsx`
-- Modify: `packages/api-debugger/src/components/RequestActionsMenu.tsx`
+- Create: `packages/api-client/src/components/ApiRequestTabs.tsx`
+- Create: `packages/api-client/src/components/ApiRequestBar.tsx`
+- Create: `packages/api-client/src/components/ApiSaveDialog.tsx`
+- Create: `packages/api-client/src/components/ApiCloseRequestDialog.tsx`
+- Create: `packages/api-client/src/components/ApiWorkspaceLayoutToggle.tsx`
+- Modify: `packages/api-client/src/components/ApiRequestEditor.tsx`
+- Modify: `packages/api-client/src/components/RequestParamsTabs.tsx`
+- Modify: `packages/api-client/src/components/RequestActionsMenu.tsx`
 
 - [ ] **Step 1: Add failing pure tests for tab labels and status derivation**
 
@@ -218,7 +218,7 @@ Params, Auth, Headers, Body.
 Run:
 
 ```bash
-pnpm vitest run packages/api-debugger/src/model/request-tabs.test.ts
+pnpm vitest run packages/api-client/src/model/request-tabs.test.ts
 pnpm run build
 ```
 
@@ -227,9 +227,9 @@ Expected: PASS.
 ### Task 4: Response States and Layout Composition
 
 **Files:**
-- Modify: `packages/api-debugger/src/components/ApiResponseViewer.tsx`
-- Modify: `packages/api-debugger/src/components/ResponseTabs.tsx`
-- Modify: `packages/api-debugger/src/ApiDebuggerPage.tsx`
+- Modify: `packages/api-client/src/components/ApiResponseViewer.tsx`
+- Modify: `packages/api-client/src/components/ResponseTabs.tsx`
+- Modify: `packages/api-client/src/ApiDebuggerPage.tsx`
 
 - [ ] **Step 1: Add failing pure tests for response state derivation**
 
@@ -260,9 +260,9 @@ Run focused tests and `pnpm run build`; expect PASS.
 ### Task 5: Collection/History Tree and Desktop Bridge
 
 **Files:**
-- Create: `packages/api-debugger/src/components/ApiHistoryTree.tsx`
-- Modify: `packages/api-debugger/src/components/ApiCollectionTree.tsx`
-- Modify: `packages/api-debugger/src/index.ts`
+- Create: `packages/api-client/src/components/ApiHistoryTree.tsx`
+- Modify: `packages/api-client/src/components/ApiCollectionTree.tsx`
+- Modify: `packages/api-client/src/index.ts`
 - Modify: `apps/desktop/src/components/ModuleSidebar.tsx`
 - Modify: `apps/desktop/src/App.tsx`
 
@@ -298,7 +298,7 @@ Pass it to `ApiDebuggerPage`; do not move tab state into the shell.
 Run:
 
 ```bash
-pnpm vitest run packages/api-debugger
+pnpm vitest run packages/api-client
 pnpm run build
 ```
 

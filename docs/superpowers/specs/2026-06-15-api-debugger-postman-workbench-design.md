@@ -10,7 +10,7 @@ behavior, and security boundaries.
 ## Scope
 
 This change is a frontend interaction and layout refactor inside
-`packages/api-debugger`, plus the minimum desktop composition changes needed to
+`packages/api-client`, plus the minimum desktop composition changes needed to
 connect the sidebar to the feature-owned tab workspace.
 
 The implementation must not change:
@@ -40,7 +40,7 @@ them.
 
 The desktop sidebar remains a shell mounting surface. API-specific tree
 construction, history loading, context menus, and request actions stay in
-`packages/api-debugger`.
+`packages/api-client`.
 
 ## Request Tab Model
 

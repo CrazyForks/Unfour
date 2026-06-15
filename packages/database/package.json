@@ -11,7 +11,7 @@
     "@tanstack/react-query": "^5.100.14",
     "@unfour/command-client": "workspace:*",
     "@unfour/ui": "workspace:*",
-    "@unfour/workspace": "workspace:*",
+    "@unfour/workspace-core": "workspace:*",
     "lucide-react": "^1.17.0",
     "react": "^19.1.0"
   }

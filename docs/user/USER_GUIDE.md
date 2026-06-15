@@ -71,9 +71,10 @@ The frontend is responsible for what you see and edit:
 - `apps/desktop/src/App.tsx` mounts the composed desktop shell.
 - `packages/app-shell` builds the main workspace window, left resource area, tabs, and current API/SSH/Database panels.
 - `packages/command-client` is the bridge used by React to call Rust commands. It also contains browser-only mocks so the interface can run during frontend development.
-- `packages/workspace` keeps temporary UI state such as the active workspace, active tab, and sidebar state.
+- `packages/workspace-core` keeps temporary UI state such as the active workspace, active tab, and sidebar state.
+- `packages/workspace-local` is the frontend boundary reserved for local workspace persistence and currently provides a compatibility re-export.
 - `packages/ui` contains reusable interface primitives.
-- `packages/api-debugger`, `packages/database`, and `packages/terminal` contain feature-specific frontend logic.
+- `packages/api-client`, `packages/database`, and `packages/ssh-terminal` contain feature-specific frontend logic.
 
 The Rust backend is responsible for actions that should not live only in the browser:
 

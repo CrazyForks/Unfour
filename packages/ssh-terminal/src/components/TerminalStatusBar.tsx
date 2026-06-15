@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { StatusBar } from "@unfour/ui";
-import { useWorkspaceStore } from "@unfour/workspace";
+import { useWorkspaceStore } from "@unfour/workspace-core";
 import { useSshConnections } from "../hooks/useSshConnections";
 import { useTerminalSessions } from "../hooks/useTerminalSessions";
 import { useTerminalStore } from "../model/terminal-state";

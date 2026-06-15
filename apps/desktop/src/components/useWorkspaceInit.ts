@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import type { DatabaseConnection } from "@unfour/command-client";
-import { useWorkspaceStore } from "@unfour/workspace";
+import { useWorkspaceStore } from "@unfour/workspace-core";
 
 type WorkspaceState = ReturnType<typeof useWorkspaceStore.getState>;
 type LayoutData = Parameters<WorkspaceState["hydrateLayout"]>[0];

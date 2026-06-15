@@ -82,7 +82,7 @@ unfour/
 
 **Exports:** `AppShell` -- a single layout component wrapping `AppShellFrame` from `@unfour/ui`. Accepts slots: `globalToolbar`, `sidebar`, `main`, `rightInspector`, `bottomPanel`, `statusBar`.
 
-### `@unfour/workspace` (packages/workspace)
+### `@unfour/workspace-core` (packages/workspace-core)
 
 | Field | Value |
 |---|---|
@@ -91,9 +91,20 @@ unfour/
 | Internal deps | @unfour/command-client |
 | External deps | zustand |
 
-**Exports:** `useWorkspaceStore` -- Zustand store managing workspace layout state: active tab, selected resource IDs (API request, DB connection, SSH connection), sidebar collapsed, tabs list, layout hydration/snapshot.
+**Exports:** `useWorkspaceStore` plus the existing shared workspace types (`Workspace`, `WorkspaceState`, `WorkspaceEnvironment`, `WorkspaceLayout`, and `WorkspaceTab`) re-exported from `@unfour/command-client`.
 
-### `@unfour/api-debugger` (packages/api-debugger)
+### `@unfour/workspace-local` (packages/workspace-local)
+
+| Field | Value |
+|---|---|
+| Entry | `./src/index.ts` |
+| Files | 1 (flat structure) |
+| Internal deps | @unfour/workspace-core |
+| External deps | None |
+
+**Exports:** Transitional compatibility re-export of `@unfour/workspace-core`. Future local persistence, import/export, recent workspace, and migration implementations belong here.
+
+### `@unfour/api-client` (packages/api-client)
 
 | Field | Value |
 |---|---|
@@ -110,18 +121,18 @@ unfour/
 |---|---|
 | Entry | `./src/index.ts` |
 | Files | 22 (3 root + components/ + hooks/ + model/) |
-| Internal deps | @unfour/command-client, @unfour/ui, @unfour/workspace |
+| Internal deps | @unfour/command-client, @unfour/ui, @unfour/workspace-core |
 | External deps | @monaco-editor/react, @tanstack/react-query, lucide-react, react |
 
 **Exports:** `{ DatabasePage, DatabaseConnectionTree, DatabaseSidebarToolbar (as DatabaseModuleToolbar export), TableInspector, databaseKnownGaps }` plus `result-utils`.
 
-### `@unfour/terminal` (packages/terminal)
+### `@unfour/ssh-terminal` (packages/ssh-terminal)
 
 | Field | Value |
 |---|---|
 | Entry | `./src/index.ts` |
 | Files | 25 (3 root + components/ + hooks/ + model/) |
-| Internal deps | @unfour/command-client, @unfour/ui, @unfour/workspace |
+| Internal deps | @unfour/command-client, @unfour/ui, @unfour/workspace-core |
 | External deps | @tanstack/react-query, @xterm/addon-fit, @xterm/xterm, lucide-react, react, zustand |
 
 **Exports:** `{ TerminalPage, SshConnectionTree, TerminalLogPanel, TerminalStatusBar }` plus `session-utils` and `model/types`.
@@ -132,7 +143,7 @@ unfour/
 |---|---|
 | Entry | `src/main.tsx` (Vite HTML entry) |
 | Files | 4 root + assets/ + components/ (empty) |
-| Internal deps | ALL 7 packages above |
+| Internal deps | 7 runtime packages above (excluding the workspace-local compatibility package) |
 | External deps | @monaco-editor/react, @radix-ui/*, @tailwindcss/vite, @tanstack/react-query, @tanstack/react-table, @tauri-apps/api, @tauri-apps/plugin-opener, react/react-dom, tailwindcss, zustand |
 
 **Role:** Composition root. Wires together AppShell, all feature pages, sidebar trees, status bars, workspace management, and window controls.
@@ -144,11 +155,11 @@ unfour/
 @unfour/command-client         (leaf -- no @unfour deps)
 
 @unfour/app-shell             --> ui
-@unfour/workspace             --> command-client
+@unfour/workspace-core             --> command-client
 
-@unfour/api-debugger          --> command-client, ui
+@unfour/api-client          --> command-client, ui
 @unfour/database              --> command-client, ui, workspace
-@unfour/terminal              --> command-client, ui, workspace
+@unfour/ssh-terminal              --> command-client, ui, workspace
 
 @unfour/desktop               --> ALL 7 packages
 ```

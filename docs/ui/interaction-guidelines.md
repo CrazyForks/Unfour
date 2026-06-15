@@ -779,15 +779,15 @@ Result Cell：
 
 **Likely files**
 
-- `packages/api-debugger/src/ApiDebuggerPage.tsx`
-- `packages/api-debugger/src/components/ApiCollectionTree.tsx`
-- `packages/api-debugger/src/components/ApiRequestEditor.tsx`
-- `packages/api-debugger/src/components/ApiRequestToolbar.tsx`
-- `packages/api-debugger/src/components/RequestParamsTabs.tsx`
-- `packages/api-debugger/src/components/ResponseTabs.tsx`
-- `packages/api-debugger/src/hooks/useApiLayout.ts`
-- `packages/api-debugger/src/hooks/useApiRequest.ts`
-- `packages/api-debugger/src/model/*`
+- `packages/api-client/src/ApiDebuggerPage.tsx`
+- `packages/api-client/src/components/ApiCollectionTree.tsx`
+- `packages/api-client/src/components/ApiRequestEditor.tsx`
+- `packages/api-client/src/components/ApiRequestToolbar.tsx`
+- `packages/api-client/src/components/RequestParamsTabs.tsx`
+- `packages/api-client/src/components/ResponseTabs.tsx`
+- `packages/api-client/src/hooks/useApiLayout.ts`
+- `packages/api-client/src/hooks/useApiRequest.ts`
+- `packages/api-client/src/model/*`
 - 必要的 `packages/ui/src/*` 兼容增强
 
 **Risks**
