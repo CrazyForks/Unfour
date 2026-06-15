@@ -1,0 +1,82 @@
+import { Clock3 } from "lucide-react";
+import {
+  ContextMenuItem,
+  TreeView,
+  type TreeViewItem,
+} from "@unfour/ui";
+import type { ApiHistoryItem } from "@unfour/command-client";
+import { groupApiHistory } from "../model/request-tabs";
+import type { ApiOpenIntent } from "../model/types";
+
+export function ApiHistoryTree({
+  items,
+  onOpenIntent,
+}: {
+  items: ApiHistoryItem[];
+  onOpenIntent: (intent: ApiOpenIntent) => void;
+}) {
+  const treeItems: TreeViewItem[] = groupApiHistory(items).map((group) => ({
+    id: group.id,
+    icon: <Clock3 size={13} />,
+    label: group.label,
+    children: group.items.map((item) => ({
+      id: `history-item:${item.id}`,
+      label: item.name || item.url,
+      title: item.url,
+      meta: <MethodMeta method={item.method} />,
+      contextMenu: (
+        <>
+          <ContextMenuItem
+            onSelect={() =>
+              onOpenIntent({ historyId: item.id, kind: "history", nonce: Date.now() })
+            }
+          >
+            Open
+          </ContextMenuItem>
+          <ContextMenuItem disabled>Open in New Tab (unique tab)</ContextMenuItem>
+          <ContextMenuItem
+            onSelect={() =>
+              onOpenIntent({
+                action: "save",
+                historyId: item.id,
+                kind: "history",
+                nonce: Date.now(),
+              })
+            }
+          >
+            Save as Request
+          </ContextMenuItem>
+          <ContextMenuItem
+            onSelect={() => void navigator.clipboard?.writeText(item.url)}
+          >
+            Copy URL
+          </ContextMenuItem>
+          <ContextMenuItem disabled>Delete from History (not supported)</ContextMenuItem>
+        </>
+      ),
+    })),
+  }));
+  return (
+    <TreeView
+      defaultExpandedIds={treeItems.slice(0, 2).map((item) => item.id)}
+      items={treeItems}
+      onSelect={(item) => {
+        if (item.id.startsWith("history-item:")) {
+          onOpenIntent({
+            historyId: item.id.slice("history-item:".length),
+            kind: "history",
+            nonce: Date.now(),
+          });
+        }
+      }}
+    />
+  );
+}
+
+function MethodMeta({ method }: { method: string }) {
+  return (
+    <span className="rounded-[var(--u-radius-sm)] bg-[var(--u-color-surface-muted)] px-1 text-[10px] font-semibold uppercase">
+      {method}
+    </span>
+  );
+}

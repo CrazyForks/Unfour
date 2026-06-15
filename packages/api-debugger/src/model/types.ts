@@ -24,6 +24,10 @@ export type ResponseTab = "body" | "headers" | "cookies" | "timing";
 export type ApiSplitDirection = "vertical" | "horizontal";
 export type ApiTabSource = "new" | "saved" | "history";
 export type ApiTabSaveState = "unsaved" | "saved" | "dirty" | "saving";
+export type ApiOpenIntent =
+  | { kind: "new"; nonce: number }
+  | { action?: "open" | "send"; kind: "saved"; nonce: number; requestId: string }
+  | { action?: "open" | "save"; historyId: string; kind: "history"; nonce: number };
 
 export type RequestDraft = {
   body: string;

@@ -6,15 +6,20 @@ import type {
   ApiSavedRequest,
 } from "@unfour/command-client";
 import {
+  closeApiTab,
   completeTabSave,
   completeTabSend,
   createNewRequestTab,
+  deriveTabResponseState,
   emptyApiTabsState,
   failTabSave,
+  failTabSend,
   getTabSaveState,
   groupApiHistory,
   openHistoryRequest,
   openSavedRequest,
+  requestTabTitle,
+  requestTabVisualState,
   setApiSplitDirection,
   startTabSave,
   startTabSend,
@@ -118,6 +123,40 @@ describe("API request tab state", () => {
 
     expect(horizontal.splitDirection).toBe("horizontal");
     expect(horizontal.tabs).toEqual(opened.tabs);
+  });
+
+  it("selects the nearest remaining tab after closing the active tab", () => {
+    const first = createNewRequestTab(emptyApiTabsState("ws-1"), "new:1");
+    const second = createNewRequestTab(first, "new:2");
+    const third = createNewRequestTab(second, "new:3");
+    const closed = closeApiTab(third, "new:2");
+
+    expect(closed.activeTabId).toBe("new:3");
+    expect(closed.tabs.map((tab) => tab.id)).toEqual(["new:1", "new:3"]);
+  });
+
+  it("derives tab title and visual state independently", () => {
+    const opened = createNewRequestTab(emptyApiTabsState("ws-1"), "new:1");
+    const renamed = updateTabDraft(opened, "new:1", { name: "Create user" });
+    const sending = startTabSend(renamed, "new:1");
+    const failed = failTabSend(sending, "new:1", "Network unavailable");
+
+    expect(requestTabTitle(opened.tabs[0])).toBe("Untitled Request");
+    expect(requestTabTitle(renamed.tabs[0])).toBe("Create user");
+    expect(requestTabVisualState(sending.tabs[0])).toBe("sending");
+    expect(requestTabVisualState(failed.tabs[0])).toBe("failed");
+  });
+
+  it("derives response states including empty success and timeout", () => {
+    const opened = createNewRequestTab(emptyApiTabsState("ws-1"), "new:1");
+    const sending = startTabSend(opened, "new:1");
+    const empty = completeTabSend(sending, "new:1", { ...response(), body: "" });
+    const timeout = failTabSend(sending, "new:1", "Request timed out");
+
+    expect(deriveTabResponseState(opened.tabs[0])).toBe("idle");
+    expect(deriveTabResponseState(sending.tabs[0])).toBe("sending");
+    expect(deriveTabResponseState(empty.tabs[0])).toBe("empty");
+    expect(deriveTabResponseState(timeout.tabs[0])).toBe("timeout");
   });
 });
 

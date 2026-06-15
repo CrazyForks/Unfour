@@ -1,7 +1,6 @@
 export { ApiDebuggerPage } from "./ApiDebuggerPage";
 export { ApiCollectionTree } from "./components/ApiCollectionTree";
 export { ApiRequestEditor } from "./components/ApiRequestEditor";
-export { ApiRequestToolbar } from "./components/ApiRequestToolbar";
 export { ApiResponseViewer } from "./components/ApiResponseViewer";
 export { RequestActionsMenu } from "./components/RequestActionsMenu";
 export { RequestParamsTabs } from "./components/RequestParamsTabs";
@@ -9,6 +8,8 @@ export { ResponseTabs } from "./components/ResponseTabs";
 export { useApiHistory } from "./hooks/useApiHistory";
 export { useApiLayout } from "./hooks/useApiLayout";
 export { useApiRequest } from "./hooks/useApiRequest";
+export { useApiRequestTabs } from "./hooks/useApiRequestTabs";
+export * from "./model/request-tabs";
 export * from "./model/api-request-state";
 export * from "./model/types";
 export * from "./request-utils";

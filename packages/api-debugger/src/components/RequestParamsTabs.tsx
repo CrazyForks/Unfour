@@ -41,10 +41,10 @@ export function RequestParamsTabs({
       <CompactTabs
         active={tab}
         items={[
-          { id: "query", label: "Query", meta: enabledCount(query) },
+          { id: "query", label: "Params", meta: enabledCount(query) },
+          { id: "auth", label: "Auth", meta: envVariables.length },
           { id: "headers", label: "Headers", meta: enabledCount(headers) },
           { id: "body", label: "Body", meta: body.trim() ? 1 : 0 },
-          { id: "auth", label: "Auth", meta: envVariables.length },
         ]}
         onChange={onTabChange}
       />

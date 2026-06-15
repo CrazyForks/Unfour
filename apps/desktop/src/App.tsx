@@ -1,4 +1,7 @@
-import { ApiDebuggerPage } from "@unfour/api-debugger";
+import {
+  ApiDebuggerPage,
+  type ApiOpenIntent,
+} from "@unfour/api-debugger";
 import { AppShell } from "@unfour/app-shell";
 import { DatabasePage } from "@unfour/database";
 import { TerminalLogPanel, TerminalPage, TerminalStatusBar } from "@unfour/terminal";
@@ -30,6 +33,7 @@ function App() {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [rightInspectorCollapsed, setRightInspectorCollapsed] = useState(true);
   const [rightInspectorWidth] = useState(300);
+  const [apiOpenIntent, setApiOpenIntent] = useState<ApiOpenIntent | null>(null);
   const {
     activeTabId,
     activeWorkspaceId,
@@ -121,6 +125,10 @@ function App() {
               setSelectedApiRequest(requestId);
               setActiveTab("api-main");
             }}
+            onOpenApiIntent={(intent) => {
+              setApiOpenIntent(intent);
+              setActiveTab("api-main");
+            }}
             onSelectDatabaseConnection={(connection) => {
               setSelectedDatabaseConnection(connection.id);
               setActiveTab("database-main");
@@ -161,12 +169,15 @@ function App() {
               />
             }
           >
-            {activeTab.kind === "api" && activeWorkspace && (
-              <ApiDebuggerPage
-                selectedRequestId={selectedApiRequestId}
-                setSelectedRequestId={setSelectedApiRequest}
-                workspaceId={activeWorkspace.id}
-              />
+            {activeWorkspace && (
+              <div className={activeTab.kind === "api" ? "h-full" : "hidden"}>
+                <ApiDebuggerPage
+                  key={activeWorkspace.id}
+                  onActiveSavedRequestChange={setSelectedApiRequest}
+                  openIntent={apiOpenIntent}
+                  workspaceId={activeWorkspace.id}
+                />
+              </div>
             )}
             {activeTab.kind === "ssh" && activeWorkspace && (
               <TerminalPage workspaceId={activeWorkspace.id} />

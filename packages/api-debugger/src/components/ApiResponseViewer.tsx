@@ -1,39 +1,24 @@
-import type { ApiHistoryItem, ApiResponse } from "@unfour/command-client";
-import type { ResponsePanelTab, ResponseTab } from "../model/types";
+import type { ApiRequestTab } from "../model/request-tabs";
+import type { ApiSplitDirection, ResponseTab } from "../model/types";
 import { ResponseTabs } from "./ResponseTabs";
 
 export function ApiResponseViewer({
-  historyItems,
-  loadingReplay,
-  onReplay,
+  layoutDirection,
+  onLayoutDirectionChange,
   onResponseTabChange,
-  onResultTabChange,
-  response,
-  responseTab,
-  resultTab,
-  sending,
+  tab,
 }: {
-  historyItems: ApiHistoryItem[];
-  loadingReplay: boolean;
-  onReplay: (item: ApiHistoryItem) => void;
+  layoutDirection: ApiSplitDirection;
+  onLayoutDirectionChange: (direction: ApiSplitDirection) => void;
   onResponseTabChange: (tab: ResponseTab) => void;
-  onResultTabChange: (tab: ResponsePanelTab) => void;
-  response: ApiResponse | null;
-  responseTab: ResponseTab;
-  resultTab: ResponsePanelTab;
-  sending: boolean;
+  tab: ApiRequestTab;
 }) {
   return (
     <ResponseTabs
-      historyItems={historyItems}
-      loadingReplay={loadingReplay}
-      onReplay={onReplay}
+      layoutDirection={layoutDirection}
+      onLayoutDirectionChange={onLayoutDirectionChange}
       onResponseTabChange={onResponseTabChange}
-      onResultTabChange={onResultTabChange}
-      response={response}
-      responseTab={responseTab}
-      resultTab={resultTab}
-      sending={sending}
+      tab={tab}
     />
   );
 }

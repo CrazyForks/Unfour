@@ -6,6 +6,7 @@ import type {
 } from "@unfour/command-client";
 import {
   historyDetailToInput,
+  parseKeyValues,
   savedRequestToInput,
 } from "../request-utils";
 import type {
@@ -45,6 +46,25 @@ export type ApiHistoryGroup = {
   items: ApiHistoryItem[];
   label: string;
 };
+
+export type ApiTabVisualState =
+  | "saved"
+  | "dirty"
+  | "unsaved"
+  | "saving"
+  | "sending"
+  | "success"
+  | "failed";
+
+export type ApiTabResponseState =
+  | "idle"
+  | "sending"
+  | "success"
+  | "empty"
+  | "http-error"
+  | "network"
+  | "timeout"
+  | "failed";
 
 export function emptyApiTabsState(workspaceId: string): ApiTabsState {
   return {
@@ -291,6 +311,53 @@ export function getTabSaveState(tab: ApiRequestTab): ApiTabSaveState {
   return normalizeRequestDraft(tab.draft) === tab.baseline ? "saved" : "dirty";
 }
 
+export function requestTabTitle(tab: ApiRequestTab) {
+  return tab.draft.name.trim() || "Untitled Request";
+}
+
+export function requestTabVisualState(tab: ApiRequestTab): ApiTabVisualState {
+  if (tab.sending) {
+    return "sending";
+  }
+  if (tab.sendError || (tab.response && tab.response.status >= 400)) {
+    return "failed";
+  }
+  if (tab.response) {
+    return "success";
+  }
+  return getTabSaveState(tab);
+}
+
+export function deriveTabResponseState(
+  tab: ApiRequestTab,
+): ApiTabResponseState {
+  if (tab.sending) {
+    return "sending";
+  }
+  if (tab.sendError) {
+    const message = tab.sendError.toLowerCase();
+    if (message.includes("timeout") || message.includes("timed out")) {
+      return "timeout";
+    }
+    if (
+      message.includes("network") ||
+      message.includes("connection") ||
+      message.includes("dns") ||
+      message.includes("fetch")
+    ) {
+      return "network";
+    }
+    return "failed";
+  }
+  if (!tab.response) {
+    return "idle";
+  }
+  if (tab.response.status >= 400) {
+    return "http-error";
+  }
+  return tab.response.body.trim() ? "success" : "empty";
+}
+
 export function closeApiTab(
   state: ApiTabsState,
   tabId: string,
@@ -405,7 +472,7 @@ function historyResponse(history: ApiHistoryDetail): ApiResponse | null {
     historyId: history.id,
     status: history.status,
     statusText: "",
-    headers: JSON.parse(history.responseHeadersJson || "[]"),
+    headers: parseKeyValues(history.responseHeadersJson),
     body: history.responseBodyPreview ?? "",
     durationMs: history.durationMs ?? 0,
   };

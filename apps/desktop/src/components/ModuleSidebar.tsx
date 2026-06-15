@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import {
   ApiCollectionTree,
+  type ApiOpenIntent,
 } from "@unfour/api-debugger";
 import {
   DatabaseConnectionTree,
@@ -34,6 +35,7 @@ export function ModuleSidebar({
   collapsed,
   databaseConnections,
   onSelectApiRequest,
+  onOpenApiIntent,
   onSelectDatabaseConnection,
   onToggle,
   selectedApiRequestId,
@@ -47,6 +49,7 @@ export function ModuleSidebar({
   collapsed: boolean;
   databaseConnections: DatabaseConnection[];
   onSelectApiRequest: (requestId: string) => void;
+  onOpenApiIntent: (intent: ApiOpenIntent) => void;
   onSelectDatabaseConnection: (connection: DatabaseConnection) => void;
   onToggle: () => void;
   selectedApiRequestId: string | null;
@@ -87,9 +90,15 @@ export function ModuleSidebar({
           collapsed={collapsed}
           onOpenClient={() => {
             setSelectedApiRequest(null);
+            onOpenApiIntent({ kind: "new", nonce: Date.now() });
             setActiveTab("api-main");
           }}
-          onSelectRequest={onSelectApiRequest}
+          onOpenIntent={(intent) => {
+            if (intent.kind === "saved") {
+              onSelectApiRequest(intent.requestId);
+            }
+            onOpenApiIntent(intent);
+          }}
           selectedId={selectedApiRequestId}
           workspaceId={activeWorkspaceId}
         />

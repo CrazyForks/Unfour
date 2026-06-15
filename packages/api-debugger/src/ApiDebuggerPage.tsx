@@ -1,115 +1,342 @@
-import { SplitPane } from "@unfour/ui";
-import type { ApiHistoryItem } from "@unfour/command-client";
-import { useApiHistory } from "./hooks/useApiHistory";
-import { useApiLayout } from "./hooks/useApiLayout";
-import { useApiRequest } from "./hooks/useApiRequest";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Button, EmptyState, SplitPane } from "@unfour/ui";
+import { useApiRequestTabs } from "./hooks/useApiRequestTabs";
+import {
+  getTabSaveState,
+  requestTabTitle,
+  type ApiRequestTab,
+} from "./model/request-tabs";
+import type { ApiOpenIntent } from "./model/types";
+import { formatError } from "./model/api-request-state";
+import { parseCollectionImport, parseKeyValues } from "./request-utils";
+import { ApiRequestTabs } from "./components/ApiRequestTabs";
+import { ApiRequestBar } from "./components/ApiRequestBar";
 import { ApiRequestEditor } from "./components/ApiRequestEditor";
-import { ApiRequestToolbar } from "./components/ApiRequestToolbar";
 import { ApiResponseViewer } from "./components/ApiResponseViewer";
+import { ApiSaveDialog } from "./components/ApiSaveDialog";
+import { ApiCloseRequestDialog } from "./components/ApiCloseRequestDialog";
 
 export function ApiDebuggerPage({
-  selectedRequestId,
-  setSelectedRequestId,
+  onActiveSavedRequestChange,
+  openIntent,
   workspaceId,
 }: {
-  selectedRequestId: string | null;
-  setSelectedRequestId: (requestId: string | null) => void;
+  onActiveSavedRequestChange?: (requestId: string | null) => void;
+  openIntent: ApiOpenIntent | null;
   workspaceId: string;
 }) {
-  const layout = useApiLayout();
-  const request = useApiRequest({
-    selectedRequestId,
-    setSelectedRequestId,
-    workspaceId,
-  });
-  const history = useApiHistory({
-    onReplayLoaded: (detail) => {
-      setSelectedRequestId(null);
-      request.loadHistoryRequest(detail);
-      layout.setResultTab("response");
-    },
-    workspaceId,
-  });
+  const {
+    activeTab,
+    closeTab,
+    collectionStatus,
+    deleteMutation,
+    duplicateMutation,
+    envVariables,
+    importCollectionMutation,
+    importInputRef,
+    newRequest,
+    openHistory,
+    openSaved,
+    saveEnvironment,
+    saveEnvironmentMutation,
+    saveTab,
+    savedRequests,
+    selectTab,
+    sendTab,
+    setCollectionStatus,
+    setRequestTab,
+    setResponseTab,
+    setSplitDirection,
+    state,
+    updateDraft,
+  } = useApiRequestTabs(workspaceId);
+  const [envDraftOverride, setEnvDraftOverride] = useState<
+    typeof envVariables | null
+  >(null);
+  const [saveDialogTabId, setSaveDialogTabId] = useState<string | null>(null);
+  const [closeDialogTabId, setCloseDialogTabId] = useState<string | null>(null);
+  const closeAfterSaveRef = useRef<string | null>(null);
+  const pendingIntentAction = useRef<{
+    action: "save" | "send";
+    tabId: string;
+  } | null>(null);
+  const envDraft = envDraftOverride ?? envVariables;
 
-  const title =
-    request.selectedSavedRequest?.name ??
-    (selectedRequestId ? "Request not found" : "New request");
+  const requestSave = useCallback(
+    (tab: ApiRequestTab) => {
+      if (tab.savedRequestId) {
+        void saveTab(tab);
+      } else {
+        setSaveDialogTabId(tab.id);
+      }
+    },
+    [saveTab],
+  );
+
+  useEffect(
+    () => onActiveSavedRequestChange?.(activeTab?.savedRequestId ?? null),
+    [activeTab?.savedRequestId, onActiveSavedRequestChange],
+  );
+
+  useEffect(() => {
+    if (!openIntent) {
+      return;
+    }
+    if (openIntent.kind === "new") {
+      newRequest();
+      return;
+    }
+    if (openIntent.kind === "saved") {
+      if (openIntent.action === "send") {
+        pendingIntentAction.current = {
+          action: "send",
+          tabId: `saved:${openIntent.requestId}`,
+        };
+      }
+      openSaved(openIntent.requestId);
+      return;
+    }
+    if (openIntent.action === "save") {
+      pendingIntentAction.current = {
+        action: "save",
+        tabId: `history:${openIntent.historyId}`,
+      };
+    }
+    void openHistory(openIntent.historyId);
+  }, [newRequest, openHistory, openIntent, openSaved]);
+
+  useEffect(() => {
+    const pending = pendingIntentAction.current;
+    if (!pending || activeTab?.id !== pending.tabId) {
+      return;
+    }
+    pendingIntentAction.current = null;
+    if (pending.action === "send") {
+      sendTab(activeTab);
+    } else {
+      setSaveDialogTabId(activeTab.id);
+    }
+  }, [activeTab, sendTab]);
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (!(event.ctrlKey || event.metaKey) || !activeTab) {
+        return;
+      }
+      if (event.key === "Enter") {
+        event.preventDefault();
+        sendTab(activeTab);
+      }
+      if (event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        requestSave(activeTab);
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [activeTab, requestSave, sendTab]);
+
+  const saveDialogTab =
+    state.tabs.find((tab) => tab.id === saveDialogTabId) ?? null;
+  const closeDialogTab =
+    state.tabs.find((tab) => tab.id === closeDialogTabId) ?? null;
+
+  function requestClose(tab: ApiRequestTab) {
+    if (getTabSaveState(tab) === "saved") {
+      closeTab(tab.id);
+    } else {
+      setCloseDialogTabId(tab.id);
+    }
+  }
+
+  async function saveWithIdentity(identity: { folderPath: string; name: string }) {
+    if (!saveDialogTab) {
+      return;
+    }
+    const originalId = saveDialogTab.id;
+    const savedRequestId = await saveTab(saveDialogTab, identity);
+    if (savedRequestId) {
+      setSaveDialogTabId(null);
+      if (closeAfterSaveRef.current === originalId) {
+        closeAfterSaveRef.current = null;
+        closeTab(`saved:${savedRequestId}`);
+      }
+    }
+  }
+
+  async function saveThenClose(tab: ApiRequestTab) {
+    setCloseDialogTabId(null);
+    if (!tab.savedRequestId) {
+      closeAfterSaveRef.current = tab.id;
+      setSaveDialogTabId(tab.id);
+      return;
+    }
+    if (await saveTab(tab)) {
+      closeTab(tab.id);
+    }
+  }
+
+  function exportCollection() {
+    const payload = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      workspaceId,
+      savedRequests: savedRequests.map((item) => ({
+        name: item.name,
+        folderPath: item.folderPath,
+        method: item.method,
+        url: item.url,
+        headers: parseKeyValues(item.headersJson),
+        query: parseKeyValues(item.queryJson),
+        body: item.body,
+        bodyKind: item.bodyKind,
+      })),
+    };
+    downloadJson(
+      `unfour-api-collection-${new Date().toISOString().slice(0, 10)}.json`,
+      payload,
+    );
+    setCollectionStatus(`Exported ${payload.savedRequests.length} requests`);
+  }
+
+  async function importCollection(file: File | undefined) {
+    if (!file) {
+      return;
+    }
+    try {
+      const requests = parseCollectionImport(JSON.parse(await file.text()), workspaceId);
+      if (!requests.length) {
+        setCollectionStatus("No importable requests found");
+        return;
+      }
+      importCollectionMutation.mutate(requests);
+    } catch (error) {
+      setCollectionStatus(formatError(error));
+    }
+  }
 
   return (
-    <form
-      className="flex h-full min-h-0 flex-col bg-[var(--u-color-surface)]"
-      onSubmit={request.submit}
-    >
+    <div className="flex h-full min-h-0 flex-col bg-[var(--u-color-surface)]">
       <input
         accept="application/json"
         className="sr-only"
-        disabled={request.importCollectionMutation.isPending}
         onChange={(event) => {
-          void request.importCollection(event.target.files?.[0]);
+          void importCollection(event.target.files?.[0]);
           event.target.value = "";
         }}
-        ref={request.importInputRef}
+        ref={importInputRef}
         type="file"
       />
-      <ApiRequestToolbar
-        canDelete={Boolean(selectedRequestId)}
-        canDuplicate={Boolean(selectedRequestId)}
-        canExport={request.savedRequests.length > 0}
-        collectionStatus={request.collectionStatus}
-        deleting={request.deleteSavedMutation.isPending}
-        duplicating={request.duplicateSavedMutation.isPending}
-        importing={request.importCollectionMutation.isPending}
-        input={request.input}
-        onDelete={request.deleteSelectedRequest}
-        onDuplicate={request.duplicateSelectedRequest}
-        onExport={request.exportCollection}
-        onImport={() => request.importInputRef.current?.click()}
-        onNewRequest={request.newRequest}
-        onSave={() => request.saveMutation.mutate(request.input)}
-        requestState={request.requestState}
-        saving={request.saveMutation.isPending}
-        selectedUrl={request.selectedSavedRequest?.url ?? ""}
-        sending={request.sendMutation.isPending}
-        title={title}
+      <ApiRequestTabs
+        activeId={state.activeTabId}
+        onClose={requestClose}
+        onNew={newRequest}
+        onSelect={selectTab}
+        tabs={state.tabs}
       />
-      <SplitPane className="min-h-0 flex-1 flex-col xl:flex-row">
-        <ApiRequestEditor
-          body={request.body}
-          envVariables={request.envVariables}
-          folderPath={request.folderPath}
-          headers={request.headers}
-          method={request.method}
-          name={request.name}
-          onBodyChange={request.setBody}
-          onEnvVariablesChange={request.setEnvVariables}
-          onFolderPathChange={request.setFolderPath}
-          onHeadersChange={request.setHeaders}
-          onMethodChange={request.setMethod}
-          onNameChange={request.setName}
-          onQueryChange={request.setQuery}
-          onSaveEnvironment={request.saveEnvironment}
-          onTabChange={layout.setRequestTab}
-          onUrlChange={request.setUrl}
-          query={request.query}
-          savingEnvironment={request.saveEnvironmentMutation.isPending}
-          tab={layout.requestTab}
-          url={request.url}
-        />
-        <ApiResponseViewer
-          historyItems={history.historyQuery.data ?? []}
-          loadingReplay={history.replayHistoryMutation.isPending}
-          onReplay={(item: ApiHistoryItem) => {
-            layout.setResultTab("response");
-            history.replayHistoryMutation.mutate(item.id);
+      {!activeTab ? (
+        <EmptyState className="m-3 flex-1">
+          <div className="space-y-2">
+            <div>No request is open</div>
+            <Button onClick={newRequest} type="button">
+              New Request
+            </Button>
+          </div>
+        </EmptyState>
+      ) : (
+        <>
+          <ApiRequestBar
+            onDelete={() =>
+              activeTab.savedRequestId &&
+              deleteMutation.mutate(activeTab.savedRequestId)
+            }
+            onDuplicate={() =>
+              activeTab.savedRequestId &&
+              duplicateMutation.mutate(activeTab.savedRequestId)
+            }
+            onExport={exportCollection}
+            onImport={() => importInputRef.current?.click()}
+            onSave={() => requestSave(activeTab)}
+            onSend={() => sendTab(activeTab)}
+            onUpdate={(patch) => updateDraft(activeTab.id, patch)}
+            tab={activeTab}
+          />
+          {collectionStatus && (
+            <div className="shrink-0 border-b border-[var(--u-color-border)] px-2 py-1 text-[12px] text-[var(--u-color-text-muted)]">
+              {collectionStatus}
+            </div>
+          )}
+          <SplitPane
+            className="min-h-0 flex-1"
+            defaultRatio={56}
+            minPaneSize={220}
+            orientation={state.splitDirection}
+            resizable
+          >
+            <ApiRequestEditor
+              body={activeTab.draft.body}
+              envVariables={envDraft}
+              headers={activeTab.draft.headers}
+              onBodyChange={(body) => updateDraft(activeTab.id, { body })}
+              onEnvVariablesChange={setEnvDraftOverride}
+              onHeadersChange={(headers) => updateDraft(activeTab.id, { headers })}
+              onQueryChange={(query) => updateDraft(activeTab.id, { query })}
+              onSaveEnvironment={() => saveEnvironment(envDraft)}
+              onTabChange={(tab) => setRequestTab(activeTab.id, tab)}
+              query={activeTab.draft.query}
+              savingEnvironment={saveEnvironmentMutation.isPending}
+              tab={activeTab.requestTab}
+            />
+            <ApiResponseViewer
+              layoutDirection={state.splitDirection}
+              onLayoutDirectionChange={setSplitDirection}
+              onResponseTabChange={(tab) => setResponseTab(activeTab.id, tab)}
+              tab={activeTab}
+            />
+          </SplitPane>
+        </>
+      )}
+      {saveDialogTab && (
+        <ApiSaveDialog
+          defaultFolder={saveDialogTab.draft.folderPath}
+          defaultName={saveDialogTab.draft.name}
+          key={saveDialogTab.id}
+          onCancel={() => {
+            closeAfterSaveRef.current = null;
+            setSaveDialogTabId(null);
           }}
-          onResponseTabChange={layout.setResponseTab}
-          onResultTabChange={layout.setResultTab}
-          response={request.response}
-          responseTab={layout.responseTab}
-          resultTab={layout.resultTab}
-          sending={request.sendMutation.isPending}
+          onSave={(identity) => void saveWithIdentity(identity)}
+          open
+          saving={saveDialogTab.saving}
         />
-      </SplitPane>
-    </form>
+      )}
+      <ApiCloseRequestDialog
+        onCancel={() => setCloseDialogTabId(null)}
+        onDiscard={() => {
+          if (closeDialogTab) {
+            closeTab(closeDialogTab.id);
+          }
+          setCloseDialogTabId(null);
+        }}
+        onSave={() => closeDialogTab && void saveThenClose(closeDialogTab)}
+        open={Boolean(closeDialogTab)}
+        title={closeDialogTab ? requestTabTitle(closeDialogTab) : ""}
+      />
+    </div>
   );
+}
+
+function downloadJson(filename: string, value: unknown) {
+  const href = URL.createObjectURL(
+    new Blob([JSON.stringify(value, null, 2)], {
+      type: "application/json;charset=utf-8",
+    }),
+  );
+  const link = document.createElement("a");
+  link.href = href;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(href);
 }
