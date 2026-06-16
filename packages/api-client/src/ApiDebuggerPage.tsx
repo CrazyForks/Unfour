@@ -268,9 +268,9 @@ export function ApiDebuggerPage({
           )}
           <SplitPane
             className="min-h-0 flex-1"
-            defaultRatio={56}
-            minPaneSize={220}
-            orientation={state.splitDirection}
+            defaultRatio={52}
+            minPaneSize={180}
+            orientation="vertical"
             resizable
           >
             <ApiRequestEditor
@@ -288,7 +288,7 @@ export function ApiDebuggerPage({
               tab={activeTab.requestTab}
             />
             <ApiResponseViewer
-              layoutDirection={state.splitDirection}
+              layoutDirection="vertical"
               onLayoutDirectionChange={setSplitDirection}
               onResponseTabChange={(tab) => setResponseTab(activeTab.id, tab)}
               tab={activeTab}

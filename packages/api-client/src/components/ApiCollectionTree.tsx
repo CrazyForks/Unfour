@@ -1,4 +1,5 @@
-import { Braces, Folder, Send } from "lucide-react";
+import { useState } from "react";
+import { Folder, Search, Send } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ContextMenuItem,
@@ -15,6 +16,7 @@ import {
   type ApiSavedRequest,
 } from "@unfour/command-client";
 import { groupSavedRequests, parseKeyValues } from "../request-utils";
+import { methodBadgeLabel, methodToneClass } from "../model/request-tabs";
 import type { ApiOpenIntent } from "../model/types";
 import { ApiHistoryTree } from "./ApiHistoryTree";
 
@@ -33,6 +35,7 @@ export function ApiCollectionTree({
   selectedId: string | null;
   workspaceId: string;
 }) {
+  const [search, setSearch] = useState("");
   const queryClient = useQueryClient();
   const savedQuery = useQuery({
     enabled: Boolean(workspaceId),
@@ -54,9 +57,24 @@ export function ApiCollectionTree({
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: ["api-saved", workspaceId] }),
   });
-  const collectionItems: TreeViewItem[] = groupSavedRequests(
-    savedQuery.data ?? [],
-  ).map((group) => ({
+  const searchText = search.trim().toLowerCase();
+  const savedRequests = (savedQuery.data ?? []).filter((request) =>
+    searchText
+      ? [
+          request.name,
+          request.url,
+          request.method,
+          request.folderPath ?? "",
+        ].some((value) => value.toLowerCase().includes(searchText))
+      : true,
+  );
+  const historyItems = (historyQuery.data ?? []).filter((item) =>
+    searchText
+      ? [item.name ?? "", item.url, item.method, String(item.status ?? "")]
+          .some((value) => value.toLowerCase().includes(searchText))
+      : true,
+  );
+  const collectionItems: TreeViewItem[] = groupSavedRequests(savedRequests).map((group) => ({
     id: `folder:${group.folder}`,
     icon: <Folder size={13} />,
     label: group.folder,
@@ -79,8 +97,20 @@ export function ApiCollectionTree({
   }
 
   return (
-    <div className="space-y-3">
-      <SidebarSection title="Collections">
+    <div className="flex h-full min-h-0 flex-col gap-3">
+      <div className="px-1">
+        <label className="flex h-[var(--u-size-input)] items-center gap-2 rounded-[var(--u-radius-sm)] border border-[var(--u-color-border)] bg-[var(--u-color-bg)] px-2 text-[12px] text-[var(--u-color-text-muted)]">
+          <Search size={14} />
+          <input
+            aria-label="Search API requests"
+            className="min-w-0 flex-1 bg-transparent text-[12px] text-[var(--u-color-text)] outline-none placeholder:text-[var(--u-color-text-soft)]"
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search requests"
+            value={search}
+          />
+        </label>
+      </div>
+      <SidebarSection className="min-h-0 flex-1 overflow-y-auto" title="Collections">
         <SidebarRow active={active && !selectedId} onClick={onOpenClient}>
           <Send size={14} />
           <span>New Request</span>
@@ -104,13 +134,13 @@ export function ApiCollectionTree({
           <SidebarEmpty>No saved requests</SidebarEmpty>
         )}
       </SidebarSection>
-      <SidebarSection title="Environments">
-        <SidebarEmpty>Workspace environment</SidebarEmpty>
-      </SidebarSection>
-      <SidebarSection title="History">
-        {(historyQuery.data?.length ?? 0) > 0 ? (
+      <SidebarSection
+        className="max-h-[220px] shrink-0 overflow-y-auto border-t border-[var(--u-color-border)] pt-2"
+        title="History"
+      >
+        {historyItems.length > 0 ? (
           <ApiHistoryTree
-            items={historyQuery.data ?? []}
+            items={historyItems}
             onOpenIntent={onOpenIntent}
           />
         ) : (
@@ -136,10 +166,9 @@ function requestTreeItem(
     });
   return {
     id: `request:${request.id}`,
-    icon: <Braces size={13} />,
+    icon: <MethodMeta method={request.method} />,
     label: request.name,
     title: request.url,
-    meta: <MethodMeta method={request.method} />,
     contextMenu: (
       <>
         <ContextMenuItem onSelect={() => open()}>Open</ContextMenuItem>
@@ -168,8 +197,10 @@ function requestTreeItem(
 
 function MethodMeta({ method }: { method: string }) {
   return (
-    <span className="rounded-[var(--u-radius-sm)] bg-[var(--u-color-surface-muted)] px-1 text-[10px] font-semibold uppercase">
-      {method}
+    <span
+      className={`w-9 shrink-0 text-left text-[10px] font-bold uppercase tabular-nums ${methodToneClass(method)}`}
+    >
+      {methodBadgeLabel(method)}
     </span>
   );
 }

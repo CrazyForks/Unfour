@@ -7,7 +7,7 @@ import { DatabasePage } from "@unfour/database";
 import { TerminalLogPanel, TerminalPage, TerminalStatusBar } from "@unfour/ssh-terminal";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CommandPalette, MainWorkspace, TabBar } from "@unfour/ui";
+import { CommandPalette, MainWorkspace } from "@unfour/ui";
 import {
   getSystemHealth,
   getWorkspaceLayout,
@@ -22,7 +22,6 @@ import { ModuleSidebar } from "./components/ModuleSidebar";
 import { RightInspectorPlaceholder } from "./components/RightInspectorPlaceholder";
 import { StatusBarPlaceholder } from "./components/StatusBarPlaceholder";
 import { CommandPaletteAction } from "./components/utils";
-import { moduleLabel } from "./components/module-helpers";
 import { useLayoutPersistence } from "./components/useLayoutPersistence";
 import { useWorkspaceInit } from "./components/useWorkspaceInit";
 
@@ -157,17 +156,8 @@ function App() {
         }
         main={
           <MainWorkspace
-            tabBar={
-              <TabBar
-                activeTabId={activeTabId}
-                onSelectTab={setActiveTab}
-                tabs={tabs.map((tab) => ({
-                  id: tab.id,
-                  meta: tab.kind,
-                  title: moduleLabel(tab),
-                }))}
-              />
-            }
+            className="[&>section]:p-0"
+            tabBar={null}
           >
             {activeWorkspace && (
               <div className={activeTab.kind === "api" ? "h-full" : "hidden"}>

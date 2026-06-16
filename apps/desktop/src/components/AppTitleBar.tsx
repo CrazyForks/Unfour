@@ -1,16 +1,11 @@
 import {
   Activity,
-  ChevronLeft,
-  ChevronRight,
-  Home,
-  Maximize2,
   MoreHorizontal,
-  PanelLeftClose,
-  Search,
+  Settings,
 } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { Workspace } from "@unfour/command-client";
-import { Badge, GlobalToolbar, IconButton } from "@unfour/ui";
+import { GlobalToolbar, IconButton } from "@unfour/ui";
 import { isTauriRuntime } from "./module-helpers";
 import { WindowControls } from "./WindowControls";
 import { WorkspaceMenu } from "./WorkspaceMenu";
@@ -20,8 +15,6 @@ export function AppTitleBar({
   healthReady,
   onActivateWorkspace,
   onOpenCommandPalette,
-  onToggleBottomPanel,
-  onToggleInspector,
   syncStrategy,
   workspaces,
 }: {
@@ -44,32 +37,28 @@ export function AppTitleBar({
 
   return (
     <GlobalToolbar
-      center={
-        <button
-          className="flex h-[var(--u-size-input)] w-full max-w-[520px] items-center gap-2 rounded-[var(--u-radius-sm)] border border-[var(--u-color-border)] bg-[var(--u-color-surface-subtle)] px-2 text-[12px] text-[var(--u-color-text-muted)] transition-colors hover:bg-[var(--u-color-surface-hover)]"
-          onClick={onOpenCommandPalette}
-          onMouseDown={(event) => event.stopPropagation()}
-          type="button"
-        >
-          <Search size={15} />
-          <span className="truncate">Search or run command</span>
-        </button>
-      }
+      center={<div className="h-full min-w-0 flex-1" />}
+      className="bg-[var(--u-color-surface-subtle)]"
       left={
         <>
-          <IconButton disabled label="Back">
-            <ChevronLeft size={16} />
-          </IconButton>
-          <IconButton disabled label="Forward">
-            <ChevronRight size={16} />
-          </IconButton>
-          <IconButton label="Home">
-            <Home size={16} />
-          </IconButton>
-          <div className="mx-1 h-5 w-px bg-[var(--u-color-border)]" />
           <div className="flex h-[26px] w-[26px] items-center justify-center rounded-[var(--u-radius-sm)] bg-[var(--u-color-primary)] text-[var(--u-color-primary-foreground)]">
             <Activity size={15} />
           </div>
+          <span className="mr-3 text-[13px] font-semibold text-[var(--u-color-text)]">
+            Unfour
+          </span>
+          <nav className="flex items-center gap-1 text-[12px] text-[var(--u-color-text-muted)]">
+            {["File", "Edit", "View", "Help"].map((item) => (
+              <button
+                className="rounded-[var(--u-radius-sm)] px-2 py-1 hover:bg-[var(--u-color-surface-hover)] hover:text-[var(--u-color-text)]"
+                key={item}
+                type="button"
+              >
+                {item}
+              </button>
+            ))}
+          </nav>
+          <div className="mx-2 h-5 w-px bg-[var(--u-color-border)]" />
           <WorkspaceMenu
             activeWorkspace={activeWorkspace}
             onActivateWorkspace={onActivateWorkspace}
@@ -80,17 +69,22 @@ export function AppTitleBar({
       onDragRegionMouseDown={dragWindow}
       right={
         <>
-          <Badge tone={healthReady ? "green" : "amber"}>
-            {healthReady ? "local storage" : "checking"}
-          </Badge>
-          <Badge tone="neutral">{syncStrategy}</Badge>
-          <IconButton label="Toggle inspector" onClick={onToggleInspector}>
-            <PanelLeftClose size={16} />
+          <span
+            className="rounded-[var(--u-radius-sm)] border border-[var(--u-color-border)] px-2 py-0.5 font-mono text-[11px] text-[var(--u-color-text-muted)]"
+            title={`${healthReady ? "Storage ready" : "Checking storage"} · ${syncStrategy}`}
+          >
+            v0.1.0
+          </span>
+          <button
+            className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--u-color-surface-muted)] text-[11px] font-semibold text-[var(--u-color-text)]"
+            type="button"
+          >
+            UF
+          </button>
+          <IconButton label="Settings" onClick={onOpenCommandPalette}>
+            <Settings size={15} />
           </IconButton>
-          <IconButton label="Toggle bottom panel" onClick={onToggleBottomPanel}>
-            <Maximize2 size={15} />
-          </IconButton>
-          <IconButton label="More actions">
+          <IconButton label="More actions" onClick={onOpenCommandPalette}>
             <MoreHorizontal size={16} />
           </IconButton>
           <WindowControls />

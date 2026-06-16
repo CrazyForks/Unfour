@@ -1,12 +1,13 @@
 import type * as React from "react";
 import Editor from "@monaco-editor/react";
-import { Plus, Save } from "lucide-react";
+import { Info, Plus, Save } from "lucide-react";
 import { Button, Input, cn } from "@unfour/ui";
 import type { KeyValue } from "@unfour/command-client";
 import {
   duplicateEnvironmentKeys,
   isSensitiveKey,
 } from "../request-utils";
+import { requestConfigTabs } from "../model/request-tabs";
 import type { RequestParamsTab } from "../model/types";
 
 export function RequestParamsTabs({
@@ -40,22 +41,35 @@ export function RequestParamsTabs({
     <>
       <CompactTabs
         active={tab}
-        items={[
-          { id: "query", label: "Params", meta: enabledCount(query) },
-          { id: "auth", label: "Auth", meta: envVariables.length },
-          { id: "headers", label: "Headers", meta: enabledCount(headers) },
-          { id: "body", label: "Body", meta: body.trim() ? 1 : 0 },
-        ]}
+        items={requestConfigTabs.map((item) => ({
+          ...item,
+          meta:
+            item.id === "query"
+              ? enabledCount(query)
+              : item.id === "auth"
+                ? envVariables.length
+                : item.id === "headers"
+                  ? enabledCount(headers)
+                  : item.id === "body" && body.trim()
+                    ? 1
+                    : 0,
+        }))}
         onChange={onTabChange}
       />
       <div className="min-h-0 flex-1 overflow-hidden">
         {tab === "query" && (
           <PaneScroll>
+            <p className="mb-2 text-[11px] text-[var(--u-color-text-muted)]">
+              Query parameters appended to the request URL.
+            </p>
             <KeyValueEditor items={query} onChange={onQueryChange} title="Query params" />
           </PaneScroll>
         )}
         {tab === "headers" && (
           <PaneScroll>
+            <p className="mb-2 text-[11px] text-[var(--u-color-text-muted)]">
+              Request headers sent with this call.
+            </p>
             <KeyValueEditor items={headers} onChange={onHeadersChange} title="Headers" />
           </PaneScroll>
         )}
@@ -71,7 +85,7 @@ export function RequestParamsTabs({
                 scrollBeyondLastLine: false,
                 wordWrap: "on",
               }}
-              theme="vs-light"
+              theme="vs-dark"
               value={body}
             />
           </div>
@@ -102,6 +116,11 @@ export function RequestParamsTabs({
             <EnvironmentHints variables={envVariables} />
           </PaneScroll>
         )}
+        {tab === "settings" && (
+          <PaneScroll>
+            <SettingsPanel />
+          </PaneScroll>
+        )}
       </div>
     </>
   );
@@ -109,15 +128,22 @@ export function RequestParamsTabs({
 
 export function CompactTabs<T extends string>({
   active,
+  className,
   items,
   onChange,
 }: {
   active: T;
+  className?: string;
   items: Array<{ id: T; label: string; meta?: number }>;
   onChange: (tab: T) => void;
 }) {
   return (
-    <div className="flex h-[var(--u-size-tabbar)] shrink-0 items-end gap-1 border-b border-[var(--u-color-border)] bg-[var(--u-color-surface-subtle)] px-2">
+    <div
+      className={cn(
+        "flex h-[var(--u-size-tabbar)] shrink-0 items-end gap-1 border-b border-[var(--u-color-border)] bg-[var(--u-color-surface-subtle)] px-2",
+        className,
+      )}
+    >
       {items.map((item) => (
         <button
           className={cn(
@@ -177,28 +203,77 @@ function KeyValueEditor({
           Add
         </Button>
       </div>
-      <div className="space-y-2">
-        {items.map((item, index) => (
-          <div className="grid grid-cols-[20px_1fr_1fr] gap-2" key={`${title}-${index}`}>
+      <div className="overflow-hidden rounded-[var(--u-radius-sm)] border border-[var(--u-color-border)]">
+        <div className="grid min-h-[28px] grid-cols-[28px_minmax(120px,1fr)_minmax(120px,1fr)_minmax(140px,1.1fr)] items-center border-b border-[var(--u-color-border)] bg-[var(--u-color-surface-subtle)] px-2 text-[11px] font-semibold uppercase text-[var(--u-color-text-soft)]">
+          <span />
+          <span>Key</span>
+          <span>Value</span>
+          <span>Description</span>
+        </div>
+        {(items.length ? items : [{ key: "", value: "", enabled: false }]).map((item, index) => (
+          <div
+            className="grid min-h-[34px] grid-cols-[28px_minmax(120px,1fr)_minmax(120px,1fr)_minmax(140px,1.1fr)] items-center gap-2 border-b border-[var(--u-color-border)] px-2 last:border-b-0"
+            key={`${title}-${index}`}
+          >
             <input
               checked={item.enabled}
-              className="mt-2 h-4 w-4"
+              className="h-4 w-4"
+              disabled={!items.length}
               onChange={(event) => update(index, { enabled: event.target.checked })}
               type="checkbox"
             />
             <Input
+              disabled={!items.length}
               onChange={(event) => update(index, { key: event.target.value })}
               placeholder="Key"
               value={item.key}
             />
             <Input
+              disabled={!items.length}
               onChange={(event) => update(index, { value: event.target.value })}
               placeholder="Value"
               type={maskSensitiveValues && isSensitiveKey(item.key) ? "password" : "text"}
               value={item.value}
             />
+            <Input disabled placeholder="Description" value="" />
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function SettingsPanel() {
+  return (
+    <div className="max-w-xl overflow-hidden rounded-[var(--u-radius-sm)] border border-[var(--u-color-border)]">
+      {[
+        ["Follow redirects", "Handled by the current request execution defaults."],
+        ["Verify TLS certificates", "Controlled by the backend execution boundary."],
+        ["Request timeout", "Uses the existing Command Bus request timeout behavior."],
+      ].map(([label, description]) => (
+        <div
+          className="flex min-h-[52px] items-center justify-between gap-4 border-b border-[var(--u-color-border)] p-3 last:border-b-0"
+          key={label}
+        >
+          <div className="min-w-0">
+            <div className="text-[13px] font-medium text-[var(--u-color-text)]">
+              {label}
+            </div>
+            <div className="text-[12px] text-[var(--u-color-text-muted)]">
+              {description}
+            </div>
+          </div>
+          <span className="rounded-[var(--u-radius-sm)] border border-[var(--u-color-border)] bg-[var(--u-color-surface-subtle)] px-2 py-1 text-[11px] text-[var(--u-color-text-soft)]">
+            Current
+          </span>
+        </div>
+      ))}
+      <div className="flex items-start gap-2 border-t border-[var(--u-color-border)] bg-[var(--u-color-surface-subtle)] p-3 text-[12px] text-[var(--u-color-text-muted)]">
+        <Info className="mt-0.5 shrink-0 text-[var(--u-color-primary)]" size={14} />
+        <span>
+          Settings are shown for layout parity. Changing request execution policy
+          requires a separate backend contract update.
+        </span>
       </div>
     </div>
   );

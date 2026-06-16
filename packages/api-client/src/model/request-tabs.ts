@@ -66,6 +66,36 @@ export type ApiTabResponseState =
   | "timeout"
   | "failed";
 
+export const requestConfigTabs: Array<{ id: RequestParamsTab; label: string }> = [
+  { id: "query", label: "Params" },
+  { id: "auth", label: "Auth" },
+  { id: "headers", label: "Headers" },
+  { id: "body", label: "Body" },
+  { id: "settings", label: "Settings" },
+];
+
+export function methodBadgeLabel(method: string) {
+  const normalized = method.trim().toUpperCase();
+  return normalized === "DELETE" ? "DEL" : normalized;
+}
+
+export function methodToneClass(method: string) {
+  switch (method.trim().toUpperCase()) {
+    case "GET":
+      return "text-[var(--u-color-success)]";
+    case "POST":
+      return "text-[var(--u-color-warning)]";
+    case "PUT":
+      return "text-[var(--u-color-info)]";
+    case "PATCH":
+      return "text-[var(--u-color-primary)]";
+    case "DELETE":
+      return "text-[var(--u-color-danger)]";
+    default:
+      return "text-[var(--u-color-text-muted)]";
+  }
+}
+
 export function emptyApiTabsState(workspaceId: string): ApiTabsState {
   return {
     activeTabId: null,

@@ -16,8 +16,11 @@ import {
   failTabSend,
   getTabSaveState,
   groupApiHistory,
+  methodBadgeLabel,
+  methodToneClass,
   openHistoryRequest,
   openSavedRequest,
+  requestConfigTabs,
   requestTabTitle,
   requestTabVisualState,
   setApiSplitDirection,
@@ -27,6 +30,30 @@ import {
 } from "./request-tabs";
 
 describe("API request tab state", () => {
+  it("provides request config tabs in workbench order", () => {
+    expect(requestConfigTabs.map((tab) => tab.id)).toEqual([
+      "query",
+      "auth",
+      "headers",
+      "body",
+      "settings",
+    ]);
+    expect(requestConfigTabs.map((tab) => tab.label)).toEqual([
+      "Params",
+      "Auth",
+      "Headers",
+      "Body",
+      "Settings",
+    ]);
+  });
+
+  it("derives stable method badge labels and tones", () => {
+    expect(methodBadgeLabel("DELETE")).toBe("DEL");
+    expect(methodBadgeLabel("patch")).toBe("PATCH");
+    expect(methodToneClass("POST")).toContain("warning");
+    expect(methodToneClass("GET")).toContain("success");
+  });
+
   it("opens or activates one tab per saved request", () => {
     const first = openSavedRequest(emptyApiTabsState("ws-1"), savedRequest("req-1"));
     const second = openSavedRequest(first, savedRequest("req-1"));

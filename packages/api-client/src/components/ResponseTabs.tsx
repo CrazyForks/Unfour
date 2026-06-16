@@ -1,5 +1,6 @@
 import Editor from "@monaco-editor/react";
-import { Badge, EmptyState, ErrorState, LoadingState } from "@unfour/ui";
+import { Loader2 } from "lucide-react";
+import { Badge, EmptyState, ErrorState } from "@unfour/ui";
 import type { ApiResponse, KeyValue } from "@unfour/command-client";
 import { formatByteSize } from "../request-utils";
 import { formatResponseBody, looksLikeJson } from "../model/api-request-state";
@@ -9,11 +10,8 @@ import {
 } from "../model/request-tabs";
 import type { ResponseTab } from "../model/types";
 import { CompactTabs } from "./RequestParamsTabs";
-import { ApiWorkspaceLayoutToggle } from "./ApiWorkspaceLayoutToggle";
 
 export function ResponseTabs({
-  layoutDirection,
-  onLayoutDirectionChange,
   onResponseTabChange,
   tab,
 }: {
@@ -25,29 +23,32 @@ export function ResponseTabs({
   const responseState = deriveTabResponseState(tab);
   return (
     <section className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-      <div className="flex h-[var(--u-size-section-toolbar)] shrink-0 items-center justify-between border-b border-[var(--u-color-border)] bg-[var(--u-color-surface-subtle)] px-2">
-        <span className="text-[12px] font-semibold">Response</span>
-        <ResponseStatus response={tab.response} state={responseState} />
+      <div className="flex h-[var(--u-size-tabbar)] shrink-0 items-end justify-between border-b border-[var(--u-color-border)] bg-[var(--u-color-surface-subtle)]">
+        <CompactTabs
+          active={tab.responseTab}
+          className="border-b-0 bg-transparent"
+          items={[
+            { id: "body", label: "Body" },
+            { id: "headers", label: "Headers", meta: tab.response?.headers.length ?? 0 },
+            {
+              id: "cookies",
+              label: "Cookies",
+              meta: responseCookies(tab.response).length,
+            },
+            { id: "timing", label: "Timing" },
+          ]}
+          onChange={onResponseTabChange}
+        />
+        <div className="flex h-full shrink-0 items-center px-2">
+          <ResponseStatus response={tab.response} state={responseState} />
+        </div>
       </div>
-      <CompactTabs
-        active={tab.responseTab}
-        items={[
-          { id: "body", label: "Body" },
-          { id: "headers", label: "Headers", meta: tab.response?.headers.length ?? 0 },
-          {
-            id: "cookies",
-            label: "Cookies",
-            meta: responseCookies(tab.response).length,
-          },
-          { id: "timing", label: "Timing" },
-        ]}
-        onChange={onResponseTabChange}
-      />
       <div className="min-h-0 flex-1 overflow-hidden pb-9">
         {responseState === "sending" && (
-          <LoadingState className="m-3 h-[calc(100%-24px)]">
-            Sending request...
-          </LoadingState>
+          <div className="flex h-full flex-col items-center justify-center gap-3 text-[var(--u-color-text-muted)]">
+            <Loader2 className="animate-spin text-[var(--u-color-primary)]" size={24} />
+            <span className="text-[13px]">Sending request...</span>
+          </div>
         )}
         {(responseState === "network" ||
           responseState === "timeout" ||
@@ -74,12 +75,6 @@ export function ResponseTabs({
         {!tab.sendError && tab.responseTab === "timing" && (
           <ResponseTiming response={tab.response} />
         )}
-      </div>
-      <div className="absolute bottom-1 right-2">
-        <ApiWorkspaceLayoutToggle
-          direction={layoutDirection}
-          onChange={onLayoutDirectionChange}
-        />
       </div>
     </section>
   );
@@ -111,9 +106,9 @@ function ResponseStatus({
 function ResponseBodyView({ response }: { response: ApiResponse | null }) {
   if (!response) {
     return (
-      <EmptyState className="m-3 h-[calc(100%-24px)]">
+      <div className="flex h-full items-center justify-center text-[13px] text-[var(--u-color-text-muted)]">
         Send a request to inspect the response
-      </EmptyState>
+      </div>
     );
   }
   if (!response.body.trim()) {
@@ -141,7 +136,7 @@ function ResponseBodyView({ response }: { response: ApiResponse | null }) {
             scrollBeyondLastLine: false,
             wordWrap: "on",
           }}
-          theme="vs-light"
+          theme="vs-dark"
           value={formatResponseBody(response.body)}
         />
       </div>

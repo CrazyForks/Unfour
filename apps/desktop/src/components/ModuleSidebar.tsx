@@ -1,9 +1,5 @@
 import {
   Database,
-  Globe2,
-  PanelLeftClose,
-  PanelLeftOpen,
-  TerminalSquare,
 } from "lucide-react";
 import {
   ApiCollectionTree,
@@ -20,13 +16,12 @@ import type {
   WorkspaceTab,
 } from "@unfour/command-client";
 import {
-  IconButton,
   Sidebar,
   SidebarHeader,
   SidebarRow,
   SidebarSection,
 } from "@unfour/ui";
-import { moduleLabel, moduleSubtitle } from "./module-helpers";
+import { ModuleSwitcher } from "./ModuleSwitcher";
 
 export function ModuleSidebar({
   activeTab,
@@ -60,30 +55,18 @@ export function ModuleSidebar({
   return (
     <Sidebar
       collapsed={collapsed}
+      className="bg-[var(--u-color-surface-subtle)]"
       header={
-        <SidebarHeader>
-          <div className="flex h-[26px] w-[26px] items-center justify-center rounded-[var(--u-radius-sm)] border border-[var(--u-color-border)] bg-[var(--u-color-surface)] text-[var(--u-color-text-muted)]">
-            {activeTab.kind === "api" && <Globe2 size={15} />}
-            {activeTab.kind === "ssh" && <TerminalSquare size={15} />}
-            {activeTab.kind === "database" && <Database size={15} />}
-          </div>
-          {!collapsed && (
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-[13px] font-semibold text-[var(--u-color-text)]">
-                {moduleLabel(activeTab)}
-              </div>
-              <div className="truncate text-[12px] text-[var(--u-color-text-muted)]">
-                {moduleSubtitle(activeTab)}
-              </div>
-            </div>
-          )}
-          <IconButton className="ml-auto" label="Toggle sidebar" onClick={onToggle}>
-            {collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
-          </IconButton>
+        <SidebarHeader className="h-auto p-2">
+          <ModuleSwitcher
+            activeKind={activeTab.kind}
+            collapsed={collapsed}
+            onSelect={(tabId) => setActiveTab(tabId)}
+            onToggle={onToggle}
+          />
         </SidebarHeader>
       }
     >
-
       {activeTab.kind === "api" && (
         <ApiCollectionTree
           active={activeTabId === "api-main"}
