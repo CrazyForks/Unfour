@@ -89,7 +89,7 @@ impl McpServer {
                 "title": "Unfour MCP",
                 "version": env!("CARGO_PKG_VERSION"),
             },
-            "instructions": "Read-only Unfour workspace and connection metadata is available through the command bus. API requests, database queries, and SSH execution are not available.",
+            "instructions": "Read-only Unfour workspace metadata, database schema browsing, and read-only SQL queries are available through the command bus. Database mutations and SSH execution are not available.",
         }))
     }
 
@@ -123,7 +123,7 @@ where
     R: BufRead,
     W: Write,
 {
-    let command_bus = LocalCommandBusAdapter::ephemeral()
+    let command_bus = LocalCommandBusAdapter::send_app_data()
         .map_err(|error| io::Error::other(format!("{}: {}", error.code, error.message)))?;
     let server = McpServer::new(command_bus);
 
@@ -149,7 +149,12 @@ mod tests {
 
     use serde_json::{json, Value};
     use unfour_command_bus::{
+        ApiCollectionListResult, ApiRequestDetailResult, ApiRequestListResult,
         ConnectionListResult, CurrentWorkspaceResult, ReadCommand, ReadCommandResult,
+    };
+    use unfour_core::models::{
+        ApiResponse, ApiSavedRequest, DatabaseConnection, DatabaseQueryInput, DatabaseQueryResult,
+        DatabaseQuerySafety, DatabaseSchema,
     };
 
     use super::{run_stdio, McpServer, SUPPORTED_PROTOCOL_VERSION};
@@ -179,6 +184,94 @@ mod tests {
                         source: "command-bus".to_string(),
                     })
                 }
+                ReadCommand::ApiListCollections { .. } => {
+                    ReadCommandResult::ApiCollections(ApiCollectionListResult {
+                        collections: vec![],
+                        count: 0,
+                        source: "command-bus".to_string(),
+                    })
+                }
+                ReadCommand::ApiListRequests { .. } => {
+                    ReadCommandResult::ApiRequests(ApiRequestListResult {
+                        requests: vec![],
+                        count: 0,
+                        source: "command-bus".to_string(),
+                    })
+                }
+                ReadCommand::ApiGetRequest { request_id } => {
+                    ReadCommandResult::ApiRequest(ApiRequestDetailResult {
+                        request: ApiSavedRequest {
+                            id: request_id,
+                            workspace_id: "workspace-1".to_string(),
+                            name: "Test".to_string(),
+                            folder_path: None,
+                            method: "GET".to_string(),
+                            url: "https://example.com".to_string(),
+                            headers_json: "[]".to_string(),
+                            query_json: "[]".to_string(),
+                            body: None,
+                            body_kind: "json".to_string(),
+                            created_at: String::new(),
+                            updated_at: String::new(),
+                            deleted_at: None,
+                            revision: 1,
+                            sync_status: "local".to_string(),
+                            remote_id: None,
+                        },
+                        source: "command-bus".to_string(),
+                    })
+                }
+            })
+        }
+
+        fn execute_saved_api_request(
+            &self,
+            _request_id: &str,
+            _timeout_ms: Option<u64>,
+        ) -> Result<ApiResponse, CommandBusAdapterError> {
+            Ok(ApiResponse {
+                history_id: "h-1".to_string(),
+                status: 200,
+                status_text: "OK".to_string(),
+                headers: vec![],
+                body: "{}".to_string(),
+                duration_ms: 10,
+            })
+        }
+
+        fn list_db_connections(
+            &self,
+            _workspace_id: &str,
+        ) -> Result<Vec<DatabaseConnection>, CommandBusAdapterError> {
+            Ok(vec![])
+        }
+
+        fn get_db_schema(
+            &self,
+            _workspace_id: &str,
+            _connection_id: &str,
+        ) -> Result<DatabaseSchema, CommandBusAdapterError> {
+            Ok(DatabaseSchema {
+                connection_id: String::new(),
+                tables: vec![],
+            })
+        }
+
+        fn execute_db_query(
+            &self,
+            _input: DatabaseQueryInput,
+        ) -> Result<DatabaseQueryResult, CommandBusAdapterError> {
+            Ok(DatabaseQueryResult {
+                columns: vec![],
+                rows: vec![],
+                affected_rows: 0,
+                duration_ms: 0,
+                safety: DatabaseQuerySafety {
+                    classification: "read".to_string(),
+                    requires_confirmation: false,
+                    confirmed: true,
+                    message: None,
+                },
             })
         }
     }
@@ -268,7 +361,7 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(responses.len(), 3);
-        assert_eq!(responses[1]["result"]["tools"].as_array().unwrap().len(), 5);
+        assert_eq!(responses[1]["result"]["tools"].as_array().unwrap().len(), 13);
         assert_eq!(
             responses[2]["result"]["structuredContent"],
             json!({
