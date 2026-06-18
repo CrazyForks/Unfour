@@ -8,6 +8,8 @@ const README_FILE = 'ds-bundle/README.md';
 const INTERNAL_VAR = /^--(?:tw-[\w-]+|animate-[\w-]+|default-transition-[\w-]+)$/;
 const CSS_DECLARATION =
   /(?<![\w-])(--[A-Za-z][\w-]*)(\s*:\s*)((?:[^;"'{}]|\([^)]*\)|"[^"]*"|'[^']*')*);(\s*\/\*\s*@kind\s+other\s*\*\/)?/g;
+const CSS_PROPERTY_REGISTRATION =
+  /(@property\s+)(--[A-Za-z][\w-]*)(\s*\{)(\s*\/\*\s*@kind\s+other\s*\*\/)?/g;
 
 function markDeclarations(css) {
   let marked = 0;
@@ -27,12 +29,12 @@ function markDeclarations(css) {
 function markPropertyRegistrations(css) {
   let marked = 0;
   const nextCss = css.replace(
-    /(@property\s+(--tw-[\w-]+)\{)(\s*\/\*\s*@kind\s+other\s*\*\/)?/g,
-    (match, prefix, _name, existingKind) => {
-      if (existingKind) return match;
+    CSS_PROPERTY_REGISTRATION,
+    (match, prefix, name, openingBrace, existingKind) => {
+      if (!INTERNAL_VAR.test(name) || existingKind) return match;
 
       marked += 1;
-      return `${prefix}${KIND_OTHER}`;
+      return `${prefix}${name}${openingBrace}${KIND_OTHER}`;
     },
   );
 
