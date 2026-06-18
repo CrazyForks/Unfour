@@ -213,6 +213,7 @@
     "confirmClose": "Close SSH session {label}?",
     "empty": {
       "connectionsFailed": "Connections failed to load",
+      "noInteractiveSession": "The selected SSH session is not connected",
       "noConnectionsShort": "No SSH connections",
       "noConnections": "No SSH connections are configured for this workspace.",
       "noSessionOpen": "No SSH session is open",

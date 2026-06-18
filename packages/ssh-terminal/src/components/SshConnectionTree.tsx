@@ -117,6 +117,7 @@ export function SshConnectionTree({
   });
 
   function connect(connection: SshConnection, split = false) {
+    connectMutation.reset();
     setSelectedSshConnection(connection.id);
     connectMutation.mutate({ connectionId: connection.id, split });
   }

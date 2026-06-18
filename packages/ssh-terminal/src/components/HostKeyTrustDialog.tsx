@@ -148,10 +148,12 @@ export function HostKeyTrustDialog({
             </Button>
           </DialogClose>
           {isMismatch ? null : (
-            <Button disabled={pending} onClick={onConfirm} type="button">
-              <ShieldCheck size={14} />
-              {isFirstTrust ? "Trust & Connect" : "Connect"}
-            </Button>
+            <DialogClose asChild>
+              <Button disabled={pending} onClick={onConfirm} type="button">
+                <ShieldCheck size={14} />
+                {isFirstTrust ? "Trust & Connect" : "Connect"}
+              </Button>
+            </DialogClose>
           )}
         </DialogFooter>
       </DialogContent>

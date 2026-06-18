@@ -17,6 +17,7 @@ import type { TerminalSplitMode, TerminalSessionTabState } from "../model/types"
 import { formatTerminalError } from "../model/errors";
 import { sshEndpointLabel } from "../model/ssh-connection-state";
 import {
+  shouldRenderTerminalPane,
   terminalSessionStatus,
   terminalSessionStatusLabel,
 } from "../model/terminal-session-status";
@@ -66,6 +67,20 @@ export function TerminalWorkspace({
     )?.session ??
     sessions.find((item) => item.session.sessionId !== activeSessionId)?.session ??
     null;
+  const activeEvents = events.filter(
+    (event) => event.sessionId === activeSession?.sessionId,
+  );
+  const secondaryEvents = events.filter(
+    (event) => event.sessionId === secondarySession?.sessionId,
+  );
+  const renderTerminalPane = shouldRenderTerminalPane(
+    activeSession,
+    activeEvents.length,
+  );
+  const emptyTitle =
+    activeSession && !renderTerminalPane
+      ? t("ssh.empty.noInteractiveSession")
+      : t("ssh.empty.noSessionOpen");
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
@@ -97,15 +112,11 @@ export function TerminalWorkspace({
           <ErrorState className="h-full min-h-0 flex-1 rounded-none border-0">
             {formatTerminalError(error)}
           </ErrorState>
-        ) : hasSessions || activeSession ? (
+        ) : renderTerminalPane ? (
           <TerminalSplitView
             activeSession={activeSession}
-            activeEvents={events.filter(
-              (event) => event.sessionId === activeSession?.sessionId,
-            )}
-            secondaryEvents={events.filter(
-              (event) => event.sessionId === secondarySession?.sessionId,
-            )}
+            activeEvents={activeEvents}
+            secondaryEvents={secondaryEvents}
             secondarySession={secondarySession}
             splitMode={splitMode}
           />
@@ -114,7 +125,7 @@ export function TerminalWorkspace({
             <div className="flex max-w-[520px] flex-col items-center gap-3">
               <div className="space-y-1">
                 <div className="text-[13px] font-semibold text-[var(--u-color-text)]">
-                  {t("ssh.empty.noSessionOpen")}
+                  {emptyTitle}
                 </div>
                 <div>{emptyMessage}</div>
               </div>

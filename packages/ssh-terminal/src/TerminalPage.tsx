@@ -328,17 +328,25 @@ export function TerminalPage({ workspaceId }: { workspaceId: string }) {
   }
 
   function newConnection() {
+    connectMutation.reset();
+    deleteMutation.reset();
+    saveMutation.reset();
     setSelectedSshConnection(null);
     setForm(defaultSshConnectionInput(workspaceId));
+    setTrustDialogState((prev) => ({ ...prev, open: false }));
     setDialogOpen(true);
   }
 
   function openConnectionSettings() {
+    connectMutation.reset();
+    deleteMutation.reset();
+    saveMutation.reset();
     if (selectedConnection) {
       setForm(sshConnectionToInput(selectedConnection, workspaceId));
     } else {
       setForm(defaultSshConnectionInput(workspaceId));
     }
+    setTrustDialogState((prev) => ({ ...prev, open: false }));
     setDialogOpen(true);
   }
 
@@ -352,6 +360,7 @@ export function TerminalPage({ workspaceId }: { workspaceId: string }) {
   }
 
   function connectSelectedConnection() {
+    connectMutation.reset();
     if (!selectedConnectionId || !selectedConnection) {
       newConnection();
       return;
@@ -387,7 +396,7 @@ export function TerminalPage({ workspaceId }: { workspaceId: string }) {
 
   function confirmTrustAndConnect() {
     if (!trustDialogState.connectionId) return;
-    setTrustDialogState((prev) => ({ ...prev, open: false }));
+    connectMutation.reset();
     connectMutation.mutate(trustDialogState.connectionId);
   }
 

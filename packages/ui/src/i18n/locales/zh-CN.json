@@ -212,6 +212,7 @@
     "confirmClose": "关闭 SSH 会话 {label}？",
     "empty": {
       "connectionsFailed": "连接加载失败",
+      "noInteractiveSession": "选中的 SSH 会话未连接",
       "noConnectionsShort": "暂无 SSH 连接",
       "noConnections": "当前工作区尚未配置 SSH 连接。",
       "noSessionOpen": "当前没有打开的 SSH 会话",

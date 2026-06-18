@@ -28,3 +28,16 @@ export function terminalSessionStatusLabel(
   }
   return session.status;
 }
+
+export function shouldRenderTerminalPane(
+  session: SshSessionSummary | null | undefined,
+  eventCount = 0,
+) {
+  if (!session) {
+    return false;
+  }
+  if (eventCount > 0) {
+    return true;
+  }
+  return ["connected", "degraded", "reconnecting"].includes(session.status);
+}
