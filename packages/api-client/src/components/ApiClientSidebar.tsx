@@ -7,17 +7,17 @@ import {
   type ApiHistoryItem,
   type KeyValue,
 } from "@unfour/command-client";
-import { cn } from "@unfour/ui";
+import { cn, useI18n } from "@unfour/ui";
 import type { ApiOpenIntent } from "../model/types";
 import { ApiCollectionTree } from "./ApiCollectionTree";
 import { ApiHistoryTree } from "./ApiHistoryTree";
 
 type SidebarTab = "collections" | "history" | "environments";
 
-const sidebarTabs: Array<{ id: SidebarTab; icon: React.ReactNode; label: string }> = [
-  { id: "collections", icon: <FolderOpen size={14} />, label: "Collections" },
-  { id: "history", icon: <Clock size={14} />, label: "History" },
-  { id: "environments", icon: <Settings2 size={14} />, label: "Environments" },
+const sidebarTabs: Array<{ id: SidebarTab; icon: React.ReactNode; labelKey: string }> = [
+  { id: "collections", icon: <FolderOpen size={14} />, labelKey: "api.sidebar.collections" },
+  { id: "history", icon: <Clock size={14} />, labelKey: "api.sidebar.history" },
+  { id: "environments", icon: <Settings2 size={14} />, labelKey: "api.sidebar.environments" },
 ];
 
 export function ApiClientSidebar({
@@ -31,6 +31,7 @@ export function ApiClientSidebar({
   selectedId: string | null;
   workspaceId: string;
 }) {
+  const { t } = useI18n();
   const [activeTab, setActiveTab] = useState<SidebarTab>("collections");
 
   const historyQuery = useQuery({
@@ -60,7 +61,7 @@ export function ApiClientSidebar({
             type="button"
           >
             {tab.icon}
-            <span>{tab.label}</span>
+            <span>{t(tab.labelKey)}</span>
           </button>
         ))}
       </div>
@@ -97,10 +98,12 @@ function HistoryPanel({
   items: ApiHistoryItem[];
   onOpenIntent: (intent: ApiOpenIntent) => void;
 }) {
+  const { t } = useI18n();
+
   if (!items.length) {
     return (
       <div className="p-3 text-[12px] text-[var(--u-color-text-muted)]">
-        Send a request to build history.
+        {t("api.sidebar.historyEmpty")}
       </div>
     );
   }
@@ -112,13 +115,13 @@ function HistoryPanel({
 }
 
 function EnvironmentsPanel({ variables }: { variables: KeyValue[] }) {
+  const { t } = useI18n();
   const enabledVariables = variables.filter((variable) => variable.enabled);
 
   if (!enabledVariables.length) {
     return (
       <div className="p-3 text-[12px] text-[var(--u-color-text-muted)]">
-        No environment variables configured. Use the Auth tab in the request
-        editor to add variables.
+        {t("api.environment.noneConfigured")}
       </div>
     );
   }
@@ -126,7 +129,7 @@ function EnvironmentsPanel({ variables }: { variables: KeyValue[] }) {
   return (
     <div className="h-full min-h-0 overflow-y-auto p-3 text-[12px]">
       <div className="mb-2 text-[11px] font-semibold uppercase text-[var(--u-color-text-soft)]">
-        Workspace variables ({enabledVariables.length})
+        {t("api.environment.workspaceVariables", { count: enabledVariables.length })}
       </div>
       <div className="space-y-1">
         {enabledVariables.map((variable) => (

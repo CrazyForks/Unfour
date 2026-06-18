@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import type { Workspace } from "@unfour/command-client";
-import { Badge, Button, cn } from "@unfour/ui";
+import { Badge, Button, cn, useI18n } from "@unfour/ui";
 import { WorkspaceDialogs } from "./WorkspaceDialogs";
 
 export function WorkspaceMenu({
@@ -22,6 +22,7 @@ export function WorkspaceMenu({
   onActivateWorkspace: (workspaceId: string) => void;
   workspaces: Workspace[];
 }) {
+  const { t } = useI18n();
   const [createOpen, setCreateOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -40,7 +41,7 @@ export function WorkspaceMenu({
             variant="outline"
           >
             <span className="min-w-0 truncate">
-              {activeWorkspace?.name ?? "No workspace"}
+              {activeWorkspace?.name ?? t("app.workspace.none")}
             </span>
             <ChevronDown className="shrink-0 text-[var(--u-color-text-muted)]" size={14} />
           </Button>
@@ -52,7 +53,7 @@ export function WorkspaceMenu({
             sideOffset={6}
           >
             <DropdownMenu.Label className="px-2 py-1.5 text-xs font-semibold uppercase text-[var(--u-color-text-muted)]">
-              Workspaces
+              {t("app.workspace.label")}
             </DropdownMenu.Label>
             {workspaces.map((workspace) => (
               <DropdownMenu.Item
@@ -65,12 +66,12 @@ export function WorkspaceMenu({
               >
                 <Folder size={14} />
                 <span className="min-w-0 flex-1 truncate">{workspace.name}</span>
-                {workspace.isDefault && <Badge tone="teal">default</Badge>}
+                {workspace.isDefault && <Badge tone="teal">{t("app.workspace.defaultBadge")}</Badge>}
               </DropdownMenu.Item>
             ))}
             {workspaces.length === 0 && (
               <div className="px-2 py-4 text-center text-xs text-[var(--u-color-text-muted)]">
-                No workspaces
+                {t("app.workspace.noneAvailable")}
               </div>
             )}
             <DropdownMenu.Separator className="my-1 h-px bg-[var(--u-color-border)]" />
@@ -79,7 +80,7 @@ export function WorkspaceMenu({
               onSelect={() => setCreateOpen(true)}
             >
               <Plus size={14} />
-              New workspace
+              {t("app.workspace.new")}
             </DropdownMenu.Item>
             <DropdownMenu.Item
               className="flex h-8 cursor-pointer items-center gap-2 rounded px-2 outline-none hover:bg-[var(--u-color-surface-hover)] focus:bg-[var(--u-color-surface-hover)] disabled:pointer-events-none disabled:opacity-50"
@@ -87,7 +88,7 @@ export function WorkspaceMenu({
               onSelect={() => setRenameOpen(true)}
             >
               <Pencil size={14} />
-              Rename current
+              {t("app.workspace.renameCurrent")}
             </DropdownMenu.Item>
             <DropdownMenu.Item
               className="flex h-8 cursor-pointer items-center gap-2 rounded px-2 text-[var(--u-color-danger-text)] outline-none hover:bg-[var(--u-color-danger-soft)] focus:bg-[var(--u-color-danger-soft)] disabled:pointer-events-none disabled:opacity-50"
@@ -95,7 +96,7 @@ export function WorkspaceMenu({
               onSelect={() => setDeleteOpen(true)}
             >
               <Trash2 size={14} />
-              Delete current
+              {t("app.workspace.deleteCurrent")}
             </DropdownMenu.Item>
           </DropdownMenu.Content>
         </DropdownMenu.Portal>

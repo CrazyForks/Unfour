@@ -6,6 +6,7 @@ import {
   SidebarRow,
   SidebarSection,
   TreeView,
+  useI18n,
   type TreeViewItem,
 } from "@unfour/ui";
 import {
@@ -35,6 +36,7 @@ export function ApiCollectionTree({
   selectedId: string | null;
   workspaceId: string;
 }) {
+  const { t } = useI18n();
   const [search, setSearch] = useState("");
   const queryClient = useQueryClient();
   const savedQuery = useQuery({
@@ -90,7 +92,7 @@ export function ApiCollectionTree({
 
   if (collapsed) {
     return (
-      <SidebarRow active={active} onClick={onOpenClient} title="REST Client">
+      <SidebarRow active={active} onClick={onOpenClient} title={t("api.sidebar.restClient")}>
         <Send size={14} />
       </SidebarRow>
     );
@@ -102,18 +104,18 @@ export function ApiCollectionTree({
         <label className="flex h-[var(--u-size-input)] items-center gap-2 rounded-[var(--u-radius-sm)] border border-[var(--u-color-border)] bg-[var(--u-color-bg)] px-2 text-[12px] text-[var(--u-color-text-muted)]">
           <Search size={14} />
           <input
-            aria-label="Search API requests"
+            aria-label={t("api.sidebar.searchAria")}
             className="min-w-0 flex-1 bg-transparent text-[12px] text-[var(--u-color-text)] outline-none placeholder:text-[var(--u-color-text-soft)]"
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search requests"
+            placeholder={t("api.sidebar.searchPlaceholder")}
             value={search}
           />
         </label>
       </div>
-      <SidebarSection className="min-h-0 flex-1 overflow-y-auto" title="Collections">
+      <SidebarSection className="min-h-0 flex-1 overflow-y-auto" title={t("api.sidebar.collections")}>
         <SidebarRow active={active && !selectedId} onClick={onOpenClient}>
           <Send size={14} />
-          <span>New Request</span>
+          <span>{t("common.actions.newRequest")}</span>
         </SidebarRow>
         {collectionItems.length ? (
           <TreeView
@@ -131,12 +133,12 @@ export function ApiCollectionTree({
             selectedId={selectedId ? `request:${selectedId}` : null}
           />
         ) : (
-          <SidebarEmpty>No saved requests</SidebarEmpty>
+          <SidebarEmpty>{t("api.sidebar.noSavedRequests")}</SidebarEmpty>
         )}
       </SidebarSection>
       <SidebarSection
         className="max-h-[220px] shrink-0 overflow-y-auto border-t border-[var(--u-color-border)] pt-2"
-        title="History"
+        title={t("api.sidebar.history")}
       >
         {historyItems.length > 0 ? (
           <ApiHistoryTree
@@ -144,7 +146,7 @@ export function ApiCollectionTree({
             onOpenIntent={onOpenIntent}
           />
         ) : (
-          <SidebarEmpty>Send a request to build history</SidebarEmpty>
+          <SidebarEmpty>{t("api.sidebar.historyEmptyCompact")}</SidebarEmpty>
         )}
       </SidebarSection>
     </div>

@@ -22,6 +22,8 @@ preview, and local query history UI.
 - High-risk SQL operations must keep clear confirmation and safety behavior.
 - Database behavior that touches real engines should be manually verified when
   automated tests cannot cover it.
+- New user-visible Database UI copy must use shared i18n keys. Do not localize
+  database command keys, SQL safety codes, schema keys, or engine error codes.
 
 ## Required Output
 

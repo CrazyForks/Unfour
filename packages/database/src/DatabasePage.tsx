@@ -24,6 +24,7 @@ import {
   StatusBadge,
   Toolbar,
   ToolbarGroup,
+  useI18n,
 } from "@unfour/ui";
 import { DatabaseConnectionTree } from "./components/DatabaseConnectionTree";
 import { DatabaseErrorDetails } from "./components/DatabaseErrorDetails";
@@ -49,6 +50,7 @@ const DEFAULT_PREVIEW_PAGE_SIZE = 100;
 const MAX_HISTORY_ENTRIES = 25;
 
 export function DatabasePage({ workspaceId }: { workspaceId: string }) {
+  const { t } = useI18n();
   const queryClient = useQueryClient();
   const {
     selectedDatabaseConnectionId: selectedConnectionId,
@@ -142,10 +144,12 @@ export function DatabasePage({ workspaceId }: { workspaceId: string }) {
     }
 
     setConnectionState(selectedConnectionId, {
-      message: `${schemaQuery.data.tables.length} tables loaded`,
+      message: t("database.connection.tableCountLoaded", {
+        count: schemaQuery.data.tables.length,
+      }),
       status: "connected",
     });
-  }, [schemaEnabled, schemaQuery.data, selectedConnectionId]);
+  }, [schemaEnabled, schemaQuery.data, selectedConnectionId, t]);
 
   useEffect(() => {
     if (!selectedConnectionId || !schemaEnabled || !schemaQuery.error) {
@@ -163,7 +167,7 @@ export function DatabasePage({ workspaceId }: { workspaceId: string }) {
     onSuccess: (connection) => {
       setSelectedDatabaseConnection(connection.id);
       setConnectionState(connection.id, {
-        message: "Saved. Connect to browse schema.",
+        message: t("database.connection.savedBrowseSchema"),
         status: "disconnected",
       });
       queryClient.invalidateQueries({ queryKey: ["database-connections", workspaceId] });
@@ -195,7 +199,7 @@ export function DatabasePage({ workspaceId }: { workspaceId: string }) {
     mutationFn: (connectionId: string) => testDatabaseConnection(workspaceId, connectionId),
     onMutate: (connectionId) => {
       setConnectionState(connectionId, {
-        message: "Connecting...",
+        message: t("common.actions.connecting"),
         status: "connecting",
       });
     },
@@ -249,7 +253,9 @@ export function DatabasePage({ workspaceId }: { workspaceId: string }) {
       layout.setResultTab("results");
       if (selectedConnectionId) {
         setConnectionState(selectedConnectionId, {
-          message: `Query completed in ${result.durationMs}ms`,
+          message: t("database.query.completed", {
+            durationMs: result.durationMs,
+          }),
           status: "connected",
         });
       }
@@ -279,7 +285,9 @@ export function DatabasePage({ workspaceId }: { workspaceId: string }) {
       });
       if (selectedConnectionId) {
         setConnectionState(selectedConnectionId, {
-          message: `Preview loaded: ${browse.result.rows.length} rows`,
+          message: t("database.query.previewLoaded", {
+            count: browse.result.rows.length,
+          }),
           status: "connected",
         });
       }
@@ -354,7 +362,7 @@ export function DatabasePage({ workspaceId }: { workspaceId: string }) {
 
   function disconnectConnection(connection: DatabaseConnection) {
     setConnectionState(connection.id, {
-      message: "Disconnected",
+      message: t("database.connection.disconnected"),
       status: "disconnected",
     });
     if (connection.id === selectedConnectionId) {
@@ -387,7 +395,7 @@ export function DatabasePage({ workspaceId }: { workspaceId: string }) {
     if (status === "disconnected") {
       setClientError({
         code: "VALIDATION_ERROR",
-        message: "Connect to the database before refreshing schema.",
+        message: t("database.connection.connectBeforeRefresh"),
       });
       layout.setResultTab("results");
       return;
@@ -413,7 +421,7 @@ export function DatabasePage({ workspaceId }: { workspaceId: string }) {
     if (!selectedConnectionId) {
       setClientError({
         code: "VALIDATION_ERROR",
-        message: "Select a database connection before opening table preview.",
+        message: t("database.errors.selectBeforePreview"),
       });
       layout.setResultTab("results");
       return;
@@ -447,7 +455,7 @@ export function DatabasePage({ workspaceId }: { workspaceId: string }) {
       setQueryResult(null);
       setClientError({
         code: "VALIDATION_ERROR",
-        message: "Select a database connection before running SQL.",
+        message: t("database.errors.selectBeforeRun"),
       });
       layout.setResultTab("results");
       return;
@@ -457,7 +465,7 @@ export function DatabasePage({ workspaceId }: { workspaceId: string }) {
       setQueryResult(null);
       setClientError({
         code: "VALIDATION_ERROR",
-        message: "SQL cannot be empty.",
+        message: t("database.errors.sqlEmpty"),
       });
       layout.setResultTab("results");
       return;
@@ -486,7 +494,7 @@ export function DatabasePage({ workspaceId }: { workspaceId: string }) {
       affectedRows: result.affectedRows,
       classification: result.safety.classification,
       connectionId: selectedConnectionId,
-      connectionName: selectedConnection?.name ?? "Unknown connection",
+      connectionName: selectedConnection?.name ?? t("database.query.unknownConnection"),
       durationMs: result.durationMs,
       rowCount: result.rows.length,
       sql,
@@ -497,7 +505,7 @@ export function DatabasePage({ workspaceId }: { workspaceId: string }) {
   function recordFailedHistory(error: unknown) {
     appendHistory({
       connectionId: selectedConnectionId,
-      connectionName: selectedConnection?.name ?? "Unknown connection",
+      connectionName: selectedConnection?.name ?? t("database.query.unknownConnection"),
       error: formatDatabaseError(error),
       sql,
       status: "failed",
@@ -550,14 +558,16 @@ export function DatabasePage({ workspaceId }: { workspaceId: string }) {
           <Toolbar className="h-8">
             <ToolbarGroup>
               <Database size={14} />
-              <span className="text-[12px] font-semibold text-[var(--u-color-text)]">Connections</span>
+              <span className="text-[12px] font-semibold text-[var(--u-color-text)]">
+                {t("database.sidebar.connections")}
+              </span>
               <Badge tone="neutral">{connections.length}</Badge>
             </ToolbarGroup>
             <ToolbarGroup>
-              <IconButton label="New database connection" onClick={newConnection}>
+              <IconButton label={t("database.connection.newLabel")} onClick={newConnection}>
                 <Plus size={13} />
               </IconButton>
-              <IconButton label="Refresh database connections" onClick={refreshConnectionsAndSchema}>
+              <IconButton label={t("database.connection.refreshLabel")} onClick={refreshConnectionsAndSchema}>
                 <RefreshCw size={13} />
               </IconButton>
             </ToolbarGroup>
@@ -654,23 +664,27 @@ function ConnectionEditor({
   selectedConnectionId: string | null;
   testPending: boolean;
 }) {
+  const { t } = useI18n();
+
   return (
     <form className="max-h-[46%] shrink-0 space-y-2 overflow-auto border-t border-[var(--u-color-border)] p-2" onSubmit={onSubmit}>
       <Toolbar className="h-8 border border-[var(--u-color-border)]">
         <ToolbarGroup>
           <Table2 size={14} />
-          <span className="text-[12px] font-semibold text-[var(--u-color-text)]">Connection Settings</span>
+          <span className="text-[12px] font-semibold text-[var(--u-color-text)]">
+            {t("database.connection.settings")}
+          </span>
         </ToolbarGroup>
         <ToolbarGroup>
-          <IconButton label="New database connection" onClick={onNew}>
+          <IconButton label={t("database.connection.newLabel")} onClick={onNew}>
             <Plus size={13} />
           </IconButton>
         </ToolbarGroup>
       </Toolbar>
-      <Field title="Name">
+      <Field title={t("database.fields.name")}>
         <Input onChange={(event) => onUpdate({ name: event.target.value })} value={form.name} />
       </Field>
-      <Field title="Driver">
+      <Field title={t("database.fields.driver")}>
         <Select
           onChange={(event) =>
             onUpdate({
@@ -680,24 +694,24 @@ function ConnectionEditor({
             })
           }
           options={[
-            { label: "SQLite", value: "sqlite" },
-            { label: "PostgreSQL", value: "postgres" },
-            { label: "MySQL / MariaDB", value: "mysql" },
+            { label: t("database.driver.sqlite"), value: "sqlite" },
+            { label: t("database.driver.postgres"), value: "postgres" },
+            { label: t("database.driver.mysql"), value: "mysql" },
           ]}
           value={form.driver}
         />
       </Field>
       {form.driver === "sqlite" ? (
-        <Field title="SQLite Path">
+        <Field title={t("database.fields.sqlitePath")}>
           <Input onChange={(event) => onUpdate({ sqlitePath: event.target.value })} placeholder="E:\\data\\app.sqlite" value={form.sqlitePath ?? ""} />
         </Field>
       ) : (
         <>
           <div className="grid grid-cols-[1fr_76px] gap-2">
-            <Field title="Host">
+            <Field title={t("database.fields.host")}>
               <Input onChange={(event) => onUpdate({ host: event.target.value })} placeholder="127.0.0.1" value={form.host ?? ""} />
             </Field>
-            <Field title="Port">
+            <Field title={t("database.fields.port")}>
               <Input
                 onChange={(event) => onUpdate({ port: event.target.value ? Number(event.target.value) : null })}
                 placeholder={form.driver === "postgres" ? "5432" : "3306"}
@@ -706,13 +720,13 @@ function ConnectionEditor({
               />
             </Field>
           </div>
-          <Field title="Database">
+          <Field title={t("database.fields.database")}>
             <Input onChange={(event) => onUpdate({ database: event.target.value })} value={form.database ?? ""} />
           </Field>
-          <Field title="Username">
+          <Field title={t("database.fields.username")}>
             <Input onChange={(event) => onUpdate({ username: event.target.value })} value={form.username ?? ""} />
           </Field>
-          <Field title="Credential Ref">
+          <Field title={t("database.fields.credentialRef")}>
             <Input onChange={(event) => onUpdate({ credentialRef: event.target.value })} value={form.credentialRef ?? ""} />
           </Field>
         </>
@@ -720,13 +734,13 @@ function ConnectionEditor({
       <div className="flex items-center gap-1">
         <Button disabled={savePending} size="sm" type="submit">
           <Save size={13} />
-          Save
+          {t("common.actions.save")}
         </Button>
         <Button disabled={!selectedConnectionId || testPending} onClick={onTest} size="sm" type="button" variant="outline">
           <CheckCircle2 size={13} />
-          {testPending ? "Connecting" : "Connect"}
+          {testPending ? t("common.actions.connecting") : t("common.actions.connect")}
         </Button>
-        <IconButton disabled={!selectedConnectionId} label="Delete database connection" onClick={onDelete}>
+        <IconButton disabled={!selectedConnectionId} label={t("database.connection.deleteLabel", "Delete database connection")} onClick={onDelete}>
           <Trash2 size={13} />
         </IconButton>
       </div>
@@ -739,7 +753,9 @@ function ConnectionEditor({
         <div className="flex items-center gap-2 text-[12px] text-[var(--u-color-text-muted)]">
           {result.ok ? <CheckCircle2 size={13} /> : <XCircle size={13} />}
           <span className="min-w-0 flex-1 truncate">{String(result.message)}</span>
-          <StatusBadge tone={result.ok ? "success" : "warning"}>{result.ok ? "connected" : "failed"}</StatusBadge>
+          <StatusBadge tone={result.ok ? "success" : "warning"}>
+            {result.ok ? t("database.connection.connected") : t("database.connection.failed")}
+          </StatusBadge>
         </div>
       )}
     </form>

@@ -61,6 +61,12 @@ project-state or issue files unless the task explicitly asks for them.
 - Do not add dependencies unless the task explicitly requires it.
 - Do not write feature logic into `packages/app-shell`.
 - Do not write business logic into `packages/ui`.
+- Route new user-visible frontend UI text through the shared i18n helper and
+  locale keys; do not create package-local i18n variants.
+- Keep MCP tool names, command keys, schemas, and stable error codes in English.
+  Localize only UI-facing messages.
+- Internal development and architecture docs are not required to be
+  multilingual.
 - Keep package progress centralized in `docs/project/PACKAGE_STATUS.md`; do not
   create per-package `PROGRESS.md`, `NEXT_STEPS.md`, or `OPEN_ISSUES.md` files.
 

@@ -1,0 +1,239 @@
+{
+  "app": {
+    "commandPalette": {
+      "openApiClient": "打开 API 调试器",
+      "openDatabase": "打开数据库",
+      "openSshTerminal": "打开 SSH 终端"
+    },
+    "language": {
+      "label": "语言",
+      "english": "English",
+      "simplifiedChinese": "简体中文"
+    },
+    "nav": {
+      "apiClient": "API 客户端",
+      "apiClientShort": "API",
+      "database": "数据库",
+      "databaseShort": "DB",
+      "sshTerminal": "SSH 终端",
+      "sshTerminalShort": "SSH"
+    },
+    "sidebar": {
+      "collapse": "收起侧边栏",
+      "expand": "展开侧边栏",
+      "modules": "模块",
+      "sqlWorkspace": "SQL 工作区"
+    },
+    "status": {
+      "checkingStorage": "正在检查存储",
+      "connected": "已连接",
+      "ready": "就绪",
+      "storageReady": "存储就绪"
+    },
+    "titlebar": {
+      "moreActions": "更多操作",
+      "settings": "设置"
+    },
+    "workspace": {
+      "deleteCurrent": "删除当前工作区",
+      "defaultBadge": "默认",
+      "dialog": {
+        "cancel": "取消",
+        "create": "创建",
+        "createDescription": "为一组独立的 API 请求、SSH 连接和数据库资源创建工作区。",
+        "createTitle": "新建工作区",
+        "delete": "删除",
+        "deleteDescription": "在本地删除 {name}。应用会切换到另一个可用工作区。",
+        "deleteTitle": "删除工作区",
+        "namePlaceholder": "工作区名称",
+        "rename": "重命名",
+        "renameDescription": "重命名当前工作区。已有的工作区记录会继续关联到它。",
+        "renameTitle": "重命名工作区",
+        "thisWorkspace": "此工作区"
+      },
+      "label": "工作区",
+      "new": "新建工作区",
+      "none": "未选择工作区",
+      "noneAvailable": "暂无工作区",
+      "renameCurrent": "重命名当前工作区"
+    },
+    "inspector": {
+      "collapse": "收起检查器",
+      "description": "{module} 的详情和属性会显示在这里。",
+      "title": "检查器"
+    },
+    "bottomPanel": {
+      "collapse": "收起底部面板",
+      "description": "本地活动和模块诊断信息会显示在这里。",
+      "title": "诊断"
+    }
+  },
+  "api": {
+    "actions": {
+      "deleteRequest": "删除请求",
+      "duplicate": "复制",
+      "export": "导出",
+      "exportCollection": "导出集合",
+      "import": "导入",
+      "importCollection": "导入集合",
+      "requestActions": "请求操作",
+      "save": "保存",
+      "saving": "保存中",
+      "send": "发送",
+      "sending": "发送中"
+    },
+    "empty": {
+      "noRequestOpen": "当前没有打开的请求"
+    },
+    "environment": {
+      "none": "无环境",
+      "noneConfigured": "尚未配置环境变量。可在请求编辑器的 Auth 标签中添加变量。",
+      "workspaceVariables": "工作区变量（{count}）"
+    },
+    "import": {
+      "empty": "没有可导入的请求",
+      "exported": "已导出 {count} 个请求"
+    },
+    "sidebar": {
+      "collections": "集合",
+      "historyEmptyCompact": "发送请求后会生成历史记录",
+      "history": "历史",
+      "historyEmpty": "发送请求后会生成历史记录。",
+      "environments": "环境",
+      "noSavedRequests": "暂无已保存请求",
+      "restClient": "REST 客户端",
+      "searchAria": "搜索 API 请求",
+      "searchPlaceholder": "搜索请求"
+    },
+    "title": "API 调试器"
+  },
+  "common": {
+    "actions": {
+      "connect": "连接",
+      "connecting": "连接中",
+      "disconnect": "断开连接",
+      "delete": "删除",
+      "newRequest": "新建请求",
+      "refresh": "刷新",
+      "save": "保存"
+    },
+    "state": {
+      "loading": "加载中..."
+    }
+  },
+  "database": {
+    "actions": {
+      "clearSql": "清空 SQL",
+      "confirmRun": "确认运行",
+      "newQuery": "新建查询",
+      "newQueryLabel": "新建数据库查询",
+      "refreshConnections": "刷新连接",
+      "refreshModule": "刷新数据库模块",
+      "refreshSchema": "刷新 Schema",
+      "run": "运行",
+      "stopSql": "停止 SQL 执行"
+    },
+    "editor": {
+      "connectionAria": "SQL 编辑器连接",
+      "empty": "创建或选择数据库连接后开始编写 SQL。",
+      "noConnectionSelected": "未选择连接",
+      "sqlEditor": "SQL 编辑器",
+      "tableData": "表数据",
+      "tableStructure": "表结构"
+    },
+    "connection": {
+      "connectBeforeRefresh": "刷新 schema 前请先连接数据库。",
+      "connected": "已连接",
+      "deleteLabel": "删除数据库连接",
+      "disconnected": "已断开",
+      "failed": "失败",
+      "newLabel": "新建数据库连接",
+      "none": "暂无连接",
+      "refreshLabel": "刷新数据库连接",
+      "savedBrowseSchema": "已保存。连接后可浏览 schema。",
+      "select": "选择连接",
+      "selectAria": "数据库连接",
+      "settings": "连接设置",
+      "tableCountLoaded": "已加载 {count} 张表"
+    },
+    "driver": {
+      "mysql": "MySQL / MariaDB",
+      "postgres": "PostgreSQL",
+      "sqlite": "SQLite"
+    },
+    "errors": {
+      "noConnections": "暂无数据库连接。创建连接后可浏览 schema 或运行 SQL。",
+      "selectBeforePreview": "打开表预览前请先选择数据库连接。",
+      "selectBeforeRun": "运行 SQL 前请先选择数据库连接。",
+      "sqlEmpty": "SQL 不能为空。"
+    },
+    "fields": {
+      "credentialRef": "凭据引用",
+      "database": "数据库",
+      "driver": "驱动",
+      "host": "主机",
+      "name": "名称",
+      "port": "端口",
+      "sqlitePath": "SQLite 路径",
+      "username": "用户名"
+    },
+    "query": {
+      "completed": "查询完成，用时 {durationMs}ms",
+      "previewLoaded": "预览已加载：{count} 行",
+      "unknownConnection": "未知连接"
+    },
+    "sidebar": {
+      "connections": "连接"
+    },
+    "title": "数据库"
+  },
+  "ssh": {
+    "actions": {
+      "cancelReconnect": "取消重连",
+      "clearTerminal": "清空终端",
+      "closeSession": "关闭会话",
+      "copySessionLog": "复制会话日志",
+      "exportLogs": "导出日志",
+      "newConnection": "新建连接",
+      "newConnectionAria": "新建 SSH 连接",
+      "newSession": "新建会话",
+      "newSessionAria": "新建终端会话",
+      "openSession": "打开会话",
+      "preferences": "终端偏好设置",
+      "reconnect": "重连 SSH 会话",
+      "resizePty": "调整 PTY 尺寸",
+      "searchOutput": "搜索终端输出",
+      "singlePane": "单窗格",
+      "splitDown": "向下拆分",
+      "splitPane": "拆分窗格",
+      "splitRight": "向右拆分",
+      "terminalActions": "终端操作"
+    },
+    "confirmClose": "关闭 SSH 会话 {label}？",
+    "empty": {
+      "connectionsFailed": "连接加载失败",
+      "noConnectionsShort": "暂无 SSH 连接",
+      "noConnections": "当前工作区尚未配置 SSH 连接。",
+      "noSessionOpen": "当前没有打开的 SSH 会话",
+      "selectConnection": "选择 SSH 连接并启动会话。"
+    },
+    "session": {
+      "closed": "SSH 会话已关闭。",
+      "disconnectConfirm": "断开 SSH 会话 {label}？",
+      "connected": "已连接到 {username}@{host}，已分配 PTY {cols}x{rows}。"
+    },
+    "status": {
+      "noAuth": "无认证",
+      "noConnectionSelected": "未选择连接",
+      "sessionCount": "{count} 个会话",
+      "sessions": "会话",
+      "sshConnections": "SSH 连接",
+      "sshSessions": "SSH 会话",
+      "terminalSsh": "终端 / SSH"
+    },
+    "state": {
+      "loadingWorkspace": "正在加载终端工作区..."
+    },
+    "title": "SSH 终端"
+  }
+}

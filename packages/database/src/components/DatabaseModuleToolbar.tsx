@@ -1,6 +1,14 @@
 import { Eraser, Play, Plug, RefreshCw, Square, Unplug } from "lucide-react";
 import type { DatabaseConnection } from "@unfour/command-client";
-import { Button, ConnectionStatus, IconButton, Select, Toolbar, ToolbarGroup } from "@unfour/ui";
+import {
+  Button,
+  ConnectionStatus,
+  IconButton,
+  Select,
+  Toolbar,
+  ToolbarGroup,
+  useI18n,
+} from "@unfour/ui";
 import type { DatabaseConnectionStatus } from "../model/types";
 
 export function DatabaseModuleToolbar({
@@ -34,6 +42,7 @@ export function DatabaseModuleToolbar({
   selectedConnectionId: string | null;
   sqlDirty: boolean;
 }) {
+  const { t } = useI18n();
   const selected = connections.find((connection) => connection.id === selectedConnectionId);
   const connected = connectionStatus === "connected" || connectionStatus === "connecting";
 
@@ -41,26 +50,26 @@ export function DatabaseModuleToolbar({
     <Toolbar>
       <ToolbarGroup>
         <Button onClick={onNewQuery} size="sm" type="button" variant="outline">
-          New Query
+          {t("database.actions.newQuery")}
         </Button>
         <Button disabled={!selectedConnectionId || executePending} onClick={onRun} size="sm" type="button">
           <Play size={14} />
-          {pendingConfirmation ? "Confirm run" : "Run"}
+          {pendingConfirmation ? t("database.actions.confirmRun") : t("database.actions.run")}
         </Button>
-        <IconButton disabled={!executePending} label="Stop SQL execution" onClick={onStop}>
+        <IconButton disabled={!executePending} label={t("database.actions.stopSql")} onClick={onStop}>
           <Square size={14} />
         </IconButton>
-        <IconButton disabled={!sqlDirty || executePending} label="Clear SQL" onClick={onClearSql}>
+        <IconButton disabled={!sqlDirty || executePending} label={t("database.actions.clearSql")} onClick={onClearSql}>
           <Eraser size={14} />
         </IconButton>
-        <IconButton label="Refresh database module" onClick={onRefresh}>
+        <IconButton label={t("database.actions.refreshModule")} onClick={onRefresh}>
           <RefreshCw size={14} />
         </IconButton>
       </ToolbarGroup>
       <ToolbarGroup className="max-w-[560px]">
         <ConnectionStatus label={connectionStatus} status={connectionStatus === "failed" ? "error" : connectionStatus} />
         <Select
-          aria-label="Database connection"
+          aria-label={t("database.connection.selectAria")}
           className="w-[220px]"
           onChange={(event) => onSelectConnection(event.target.value)}
           options={connections.map((connection) => ({
@@ -69,18 +78,18 @@ export function DatabaseModuleToolbar({
           }))}
           value={selectedConnectionId ?? ""}
         >
-          {!selectedConnectionId && <option value="">Select connection</option>}
-          {!connections.length && <option value="">No connections</option>}
+          {!selectedConnectionId && <option value="">{t("database.connection.select")}</option>}
+          {!connections.length && <option value="">{t("database.connection.none")}</option>}
         </Select>
         {connected ? (
           <Button disabled={!selected || executePending} onClick={onDisconnect} size="sm" type="button" variant="outline">
             <Unplug size={13} />
-            Disconnect
+            {t("common.actions.disconnect")}
           </Button>
         ) : (
           <Button disabled={!selected || executePending} onClick={onConnect} size="sm" type="button" variant="outline">
             <Plug size={13} />
-            Connect
+            {t("common.actions.connect")}
           </Button>
         )}
       </ToolbarGroup>

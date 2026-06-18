@@ -5,7 +5,14 @@ import {
 } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { Workspace } from "@unfour/command-client";
-import { GlobalToolbar, IconButton } from "@unfour/ui";
+import {
+  GlobalToolbar,
+  IconButton,
+  Select,
+  getLocaleLabel,
+  useI18n,
+  type Locale,
+} from "@unfour/ui";
 import { isTauriRuntime } from "./module-helpers";
 import { WindowControls } from "./WindowControls";
 import { WorkspaceMenu } from "./WorkspaceMenu";
@@ -27,6 +34,8 @@ export function AppTitleBar({
   syncStrategy: string;
   workspaces: Workspace[];
 }) {
+  const { locale, locales, setLocale, t } = useI18n();
+
   async function dragWindow(event: React.MouseEvent<HTMLDivElement>) {
     if (event.button !== 0 || !isTauriRuntime()) {
       return;
@@ -61,20 +70,30 @@ export function AppTitleBar({
         <>
           <span
             className="rounded-[var(--u-radius-sm)] border border-[var(--u-color-border)] px-2 py-0.5 font-mono text-[11px] text-[var(--u-color-text-muted)]"
-            title={`${healthReady ? "Storage ready" : "Checking storage"} · ${syncStrategy}`}
+            title={`${healthReady ? t("app.status.storageReady") : t("app.status.checkingStorage")} · ${syncStrategy}`}
           >
             v0.1.0
           </span>
+          <Select
+            aria-label={t("app.language.label")}
+            className="h-7 w-[116px] px-1 text-[11px]"
+            onChange={(event) => setLocale(event.target.value as Locale)}
+            options={locales.map((item) => ({
+              label: getLocaleLabel(item),
+              value: item,
+            }))}
+            value={locale}
+          />
           <button
             className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--u-color-surface-muted)] text-[11px] font-semibold text-[var(--u-color-text)]"
             type="button"
           >
             UF
           </button>
-          <IconButton label="Settings" onClick={onOpenCommandPalette}>
+          <IconButton label={t("app.titlebar.settings")} onClick={onOpenCommandPalette}>
             <Settings size={15} />
           </IconButton>
-          <IconButton label="More actions" onClick={onOpenCommandPalette}>
+          <IconButton label={t("app.titlebar.moreActions")} onClick={onOpenCommandPalette}>
             <MoreHorizontal size={16} />
           </IconButton>
           <WindowControls />

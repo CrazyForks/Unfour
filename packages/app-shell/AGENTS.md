@@ -22,6 +22,8 @@ container surfaces.
 - Do not move feature behavior into this package to simplify wiring.
 - Keep this package thin unless a task explicitly expands shell-level
   orchestration.
+- Use the shared i18n provider/hook for user-visible shell copy. Feature
+  packages must not depend on `packages/app-shell` to translate their own UI.
 
 ## Required Output
 

@@ -15,7 +15,7 @@ import {
   type SshSessionSummary,
 } from "@unfour/command-client";
 import { useWorkspaceStore } from "@unfour/workspace-core";
-import { LoadingState } from "@unfour/ui";
+import { LoadingState, useI18n } from "@unfour/ui";
 import { TerminalModuleToolbar } from "./components/TerminalModuleToolbar";
 import { TerminalWorkspace } from "./components/TerminalWorkspace";
 import { SshConnectionDialog } from "./components/SshConnectionDialog";
@@ -34,6 +34,7 @@ import {
 import { buildTerminalSessionTabs } from "./model/terminal-tabs";
 
 export function TerminalPage({ workspaceId }: { workspaceId: string }) {
+  const { t } = useI18n();
   const queryClient = useQueryClient();
   const {
     selectedSshConnectionId: selectedConnectionId,
@@ -255,7 +256,12 @@ export function TerminalPage({ workspaceId }: { workspaceId: string }) {
         {
           sessionId: session.sessionId,
           kind: "output",
-          data: `Connected to ${session.username}@${session.host}. PTY ${session.cols}x${session.rows} allocated.\r\n`,
+          data: `${t("ssh.session.connected", {
+            cols: session.cols,
+            host: session.host,
+            rows: session.rows,
+            username: session.username,
+          })}\r\n`,
           createdAt: session.createdAt,
         },
       ]);
@@ -292,7 +298,7 @@ export function TerminalPage({ workspaceId }: { workspaceId: string }) {
         {
           sessionId: session.sessionId,
           kind: "close",
-          data: "SSH session closed.\r\n",
+          data: `${t("ssh.session.closed")}\r\n`,
           createdAt: session.updatedAt,
         },
       ]);
@@ -391,7 +397,7 @@ export function TerminalPage({ workspaceId }: { workspaceId: string }) {
       session && !["disconnected", "failed"].includes(session.status);
     if (needsConfirmation) {
       const label = `${session.username}@${session.host}`;
-      const confirmed = window.confirm(`Close SSH session ${label}?`);
+      const confirmed = window.confirm(t("ssh.confirmClose", { label }));
       if (!confirmed) {
         return;
       }
@@ -471,7 +477,7 @@ export function TerminalPage({ workspaceId }: { workspaceId: string }) {
       />
       {connectionsQuery.isLoading || sessionsQuery.isLoading ? (
         <LoadingState className="min-h-0 flex-1 rounded-none border-0">
-          Loading terminal workspace...
+          {t("ssh.state.loadingWorkspace")}
         </LoadingState>
       ) : (
         <TerminalWorkspace
@@ -483,8 +489,8 @@ export function TerminalPage({ workspaceId }: { workspaceId: string }) {
           events={terminalEvents}
           emptyMessage={
             connections.length
-              ? "Select an SSH connection and start a session."
-              : "No SSH connections are configured for this workspace."
+              ? t("ssh.empty.selectConnection")
+              : t("ssh.empty.noConnections")
           }
           onCloseSession={requestCloseSession}
           onNewConnection={newConnection}

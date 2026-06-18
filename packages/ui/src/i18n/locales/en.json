@@ -1,0 +1,240 @@
+{
+  "app": {
+    "commandPalette": {
+      "openApiClient": "Open API Debugger",
+      "openDatabase": "Open Database",
+      "openSshTerminal": "Open SSH Terminal"
+    },
+    "language": {
+      "label": "Language",
+      "english": "English",
+      "simplifiedChinese": "Simplified Chinese"
+    },
+    "nav": {
+      "apiClient": "API Client",
+      "apiClientShort": "API",
+      "database": "Database",
+      "databaseShort": "DB",
+      "sshTerminal": "SSH Terminal",
+      "sshTerminalShort": "SSH"
+    },
+    "sidebar": {
+      "collapse": "Collapse sidebar",
+      "expand": "Expand sidebar",
+      "modules": "Modules",
+      "sqlWorkspace": "SQL Workspace"
+    },
+    "status": {
+      "checkingStorage": "Checking storage",
+      "connected": "Connected",
+      "ready": "Ready",
+      "storageReady": "Storage ready"
+    },
+    "titlebar": {
+      "moreActions": "More actions",
+      "settings": "Settings"
+    },
+    "workspace": {
+      "deleteCurrent": "Delete current",
+      "defaultBadge": "default",
+      "dialog": {
+        "cancel": "Cancel",
+        "create": "Create",
+        "createDescription": "Create a workspace for a separate set of API requests, SSH connections, and database resources.",
+        "createTitle": "New workspace",
+        "delete": "Delete",
+        "deleteDescription": "Delete {name} locally. The app will switch to another available workspace.",
+        "deleteTitle": "Delete workspace",
+        "namePlaceholder": "Workspace name",
+        "rename": "Rename",
+        "renameDescription": "Rename the active workspace. Existing workspace-scoped records stay attached to it.",
+        "renameTitle": "Rename workspace",
+        "thisWorkspace": "this workspace"
+      },
+      "label": "Workspaces",
+      "new": "New workspace",
+      "none": "No workspace",
+      "noneAvailable": "No workspaces",
+      "renameCurrent": "Rename current"
+    },
+    "inspector": {
+      "collapse": "Collapse inspector",
+      "description": "{module} details and properties will use this space.",
+      "title": "Inspector"
+    },
+    "bottomPanel": {
+      "collapse": "Collapse bottom panel",
+      "description": "Local activity and module diagnostics will appear here.",
+      "title": "Diagnostics"
+    }
+  },
+  "api": {
+    "actions": {
+      "deleteRequest": "Delete request",
+      "duplicate": "Duplicate",
+      "export": "Export",
+      "exportCollection": "Export collection",
+      "import": "Import",
+      "importCollection": "Import collection",
+      "requestActions": "Request actions",
+      "save": "Save",
+      "saving": "Saving",
+      "send": "Send",
+      "sending": "Sending"
+    },
+    "empty": {
+      "noRequestOpen": "No request is open"
+    },
+    "environment": {
+      "none": "No Environment",
+      "noneConfigured": "No environment variables configured. Use the Auth tab in the request editor to add variables.",
+      "workspaceVariables": "Workspace variables ({count})"
+    },
+    "import": {
+      "empty": "No importable requests found",
+      "exported": "Exported {count} requests"
+    },
+    "sidebar": {
+      "collections": "Collections",
+      "historyEmptyCompact": "Send a request to build history",
+      "history": "History",
+      "historyEmpty": "Send a request to build history.",
+      "environments": "Environments",
+      "noSavedRequests": "No saved requests",
+      "restClient": "REST Client",
+      "searchAria": "Search API requests",
+      "searchPlaceholder": "Search requests"
+    },
+    "title": "API Debugger"
+  },
+  "common": {
+    "actions": {
+      "connect": "Connect",
+      "connecting": "Connecting",
+      "disconnect": "Disconnect",
+      "delete": "Delete",
+      "newRequest": "New Request",
+      "refresh": "Refresh",
+      "save": "Save"
+    },
+    "state": {
+      "loading": "Loading...",
+      "unavailable": "Unavailable"
+    }
+  },
+  "database": {
+    "actions": {
+      "clearSql": "Clear SQL",
+      "confirmRun": "Confirm run",
+      "newQuery": "New Query",
+      "newQueryLabel": "New database query",
+      "refreshConnections": "Refresh Connections",
+      "refreshModule": "Refresh database module",
+      "refreshSchema": "Refresh Schema",
+      "run": "Run",
+      "stopSql": "Stop SQL execution"
+    },
+    "editor": {
+      "connectionAria": "SQL editor connection",
+      "empty": "Create or select a database connection to start writing SQL.",
+      "noConnectionSelected": "No connection selected",
+      "sqlEditor": "SQL Editor",
+      "tableData": "Table Data",
+      "tableStructure": "Table Structure"
+    },
+    "connection": {
+      "connectBeforeRefresh": "Connect to the database before refreshing schema.",
+      "connected": "connected",
+      "deleteLabel": "Delete database connection",
+      "disconnected": "Disconnected",
+      "failed": "failed",
+      "newLabel": "New database connection",
+      "none": "No connections",
+      "refreshLabel": "Refresh database connections",
+      "savedBrowseSchema": "Saved. Connect to browse schema.",
+      "select": "Select connection",
+      "selectAria": "Database connection",
+      "settings": "Connection Settings",
+      "tableCountLoaded": "{count} tables loaded"
+    },
+    "driver": {
+      "mysql": "MySQL / MariaDB",
+      "postgres": "PostgreSQL",
+      "sqlite": "SQLite"
+    },
+    "errors": {
+      "noConnections": "No database connections. Create one to browse schema or run SQL.",
+      "selectBeforePreview": "Select a database connection before opening table preview.",
+      "selectBeforeRun": "Select a database connection before running SQL.",
+      "sqlEmpty": "SQL cannot be empty."
+    },
+    "fields": {
+      "credentialRef": "Credential Ref",
+      "database": "Database",
+      "driver": "Driver",
+      "host": "Host",
+      "name": "Name",
+      "port": "Port",
+      "sqlitePath": "SQLite Path",
+      "username": "Username"
+    },
+    "query": {
+      "completed": "Query completed in {durationMs}ms",
+      "previewLoaded": "Preview loaded: {count} rows",
+      "unknownConnection": "Unknown connection"
+    },
+    "sidebar": {
+      "connections": "Connections"
+    },
+    "title": "Database"
+  },
+  "ssh": {
+    "actions": {
+      "cancelReconnect": "Cancel Reconnect",
+      "clearTerminal": "Clear Terminal",
+      "closeSession": "Close Session",
+      "copySessionLog": "Copy Session Log",
+      "exportLogs": "Export Logs",
+      "newConnection": "New Connection",
+      "newConnectionAria": "New SSH connection",
+      "newSession": "New Session",
+      "newSessionAria": "New terminal session",
+      "openSession": "Open Session",
+      "preferences": "Terminal Preferences",
+      "reconnect": "Reconnect SSH session",
+      "resizePty": "Resize PTY",
+      "searchOutput": "Search terminal output",
+      "singlePane": "Single Pane",
+      "splitDown": "Split Down",
+      "splitPane": "Split Pane",
+      "splitRight": "Split Right",
+      "terminalActions": "Terminal actions"
+    },
+    "confirmClose": "Close SSH session {label}?",
+    "empty": {
+      "connectionsFailed": "Connections failed to load",
+      "noConnectionsShort": "No SSH connections",
+      "noConnections": "No SSH connections are configured for this workspace.",
+      "noSessionOpen": "No SSH session is open",
+      "selectConnection": "Select an SSH connection and start a session."
+    },
+    "session": {
+      "closed": "SSH session closed.",
+      "disconnectConfirm": "Disconnect SSH session {label}?",
+      "connected": "Connected to {username}@{host}. PTY {cols}x{rows} allocated."
+    },
+    "status": {
+      "noAuth": "no auth",
+      "noConnectionSelected": "No connection selected",
+      "sessionCount": "{count} sessions",
+      "sessions": "Sessions",
+      "sshConnections": "SSH Connections",
+      "sshSessions": "SSH Sessions",
+      "terminalSsh": "Terminal / SSH"
+    },
+    "state": {
+      "loadingWorkspace": "Loading terminal workspace..."
+    },
+    "title": "SSH Terminal"
+  }
+}

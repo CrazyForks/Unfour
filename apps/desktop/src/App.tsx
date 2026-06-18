@@ -6,7 +6,7 @@ import { DatabasePage } from "@unfour/database";
 import { TerminalLogPanel, TerminalPage, TerminalStatusBar } from "@unfour/ssh-terminal";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CommandPalette, MainWorkspace } from "@unfour/ui";
+import { CommandPalette, MainWorkspace, useI18n } from "@unfour/ui";
 import {
   getSystemHealth,
   getWorkspaceLayout,
@@ -25,6 +25,7 @@ import { useLayoutPersistence } from "./components/useLayoutPersistence";
 import { useWorkspaceInit } from "./components/useWorkspaceInit";
 
 function App() {
+  const { t } = useI18n();
   const queryClient = useQueryClient();
   const [bottomPanelCollapsed, setBottomPanelCollapsed] = useState(true);
   const [bottomPanelHeight, setBottomPanelHeight] = useState(220);
@@ -173,13 +174,13 @@ function App() {
         actions={
           <>
             <CommandPaletteAction onSelect={() => setActiveTab("api-main")}>
-              Open API Debugger
+              {t("app.commandPalette.openApiClient")}
             </CommandPaletteAction>
             <CommandPaletteAction onSelect={() => setActiveTab("database-main")}>
-              Open Database
+              {t("app.commandPalette.openDatabase")}
             </CommandPaletteAction>
             <CommandPaletteAction onSelect={() => setActiveTab("ssh-main")}>
-              Open SSH Terminal
+              {t("app.commandPalette.openSshTerminal")}
             </CommandPaletteAction>
           </>
         }

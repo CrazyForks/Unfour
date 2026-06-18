@@ -22,6 +22,8 @@ host-key trust UI, and terminal-local state.
 - Do not weaken terminal log redaction or host-key trust behavior.
 - Real SSH connection behavior requires explicit manual verification against a
   reachable SSH server.
+- New user-visible SSH Terminal copy must use shared i18n keys. Do not localize
+  SSH command keys, event names, schema keys, or stable error codes.
 
 ## Required Output
 

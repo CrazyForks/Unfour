@@ -32,6 +32,9 @@ React, TypeScript, and Rust.
 - Do not add new dependencies unless the task explicitly requires them and the
   reason is documented.
 - Do not delete code with unconfirmed purpose for cosmetic reasons.
+- New user-visible frontend UI copy must use the shared i18n provider/hook and
+  locale keys instead of hardcoded strings. Do not implement parallel i18n
+  systems inside individual packages.
 
 ## Backend And Command-Bus Rules
 
@@ -43,12 +46,17 @@ React, TypeScript, and Rust.
   surfaces must route through the Rust command bus boundary.
 - Tauri commands and MCP tools are adapters over the command bus, not places
   for duplicated domain logic.
+- MCP tool names, schemas, command names, command keys, and stable error codes
+  must remain English and must not be localized. UI layers may map stable
+  message keys to localized user-facing copy.
 - Every persisted business record must carry `workspace_id` unless it is truly
   global app configuration.
 - Passwords, private-key passphrases, API tokens, and database passwords must
   not be stored in SQLite plaintext. Persist only credential references.
 - `authorization`, `cookie`, `proxy-authorization`, `x-api-key`, and
   `x-auth-token` must be redacted in logs, history, and local activity details.
+- Internal engineering, architecture, and agent documentation does not need
+  multilingual versions unless a task explicitly asks for it.
 
 ## AI Execution Rules
 

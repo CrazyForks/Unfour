@@ -1,5 +1,6 @@
 import * as React from "react";
 import { AlertCircle, Loader2 } from "lucide-react";
+import { useI18n } from "./i18n";
 import { cn } from "./utils";
 
 export function EmptyState({
@@ -22,12 +23,15 @@ export function EmptyState({
 }
 
 export function LoadingState({
-  children = "Loading...",
+  children,
   className,
 }: {
   children?: React.ReactNode;
   className?: string;
 }) {
+  const { t } = useI18n();
+  const content = children ?? t("common.state.loading");
+
   return (
     <div
       className={cn(
@@ -36,7 +40,7 @@ export function LoadingState({
       )}
     >
       <Loader2 className="animate-spin" size={14} />
-      {children}
+      {content}
     </div>
   );
 }

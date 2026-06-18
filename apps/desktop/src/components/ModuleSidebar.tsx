@@ -19,6 +19,7 @@ import {
   SidebarHeader,
   SidebarRow,
   SidebarSection,
+  useI18n,
 } from "@unfour/ui";
 import { ModuleSwitcher } from "./ModuleSwitcher";
 
@@ -47,6 +48,8 @@ export function ModuleSidebar({
   setActiveTab: (tabId: string) => void;
   width: number;
 }) {
+  const { t } = useI18n();
+
   return (
     <Sidebar
       collapsed={collapsed}
@@ -56,7 +59,7 @@ export function ModuleSidebar({
           <div className="flex w-full justify-end">
             <IconButton
               className={collapsed ? "w-full" : "shrink-0"}
-              label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              label={collapsed ? t("app.sidebar.expand") : t("app.sidebar.collapse")}
               onClick={onToggle}
             >
               {collapsed ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />}
@@ -84,11 +87,11 @@ export function ModuleSidebar({
       )}
       {activeTab.kind === "database" && (
         <div className="space-y-3">
-          <ResourceGroup collapsed={collapsed} title="Database">
+          <ResourceGroup collapsed={collapsed} title={t("app.nav.database")}>
             <SidebarAction
               collapsed={collapsed}
               icon={<Database size={14} />}
-              label="SQL Workspace"
+              label={t("app.sidebar.sqlWorkspace")}
               onClick={() => setActiveTab("database-main")}
               selected={activeTabId === "database-main" && (collapsed || !selectedDatabaseConnectionId)}
             />

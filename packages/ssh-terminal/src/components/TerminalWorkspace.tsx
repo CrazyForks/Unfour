@@ -11,6 +11,7 @@ import {
   ErrorState,
   StatusBadge,
   Tabs,
+  useI18n,
 } from "@unfour/ui";
 import type { TerminalSplitMode, TerminalSessionTabState } from "../model/types";
 import { formatTerminalError } from "../model/errors";
@@ -56,6 +57,7 @@ export function TerminalWorkspace({
   sessions: TerminalSessionTabState[];
   splitMode: TerminalSplitMode;
 }) {
+  const { t } = useI18n();
   const hasSessions = sessions.length > 0;
   const secondarySession =
     sessions.find(
@@ -112,14 +114,14 @@ export function TerminalWorkspace({
             <div className="flex max-w-[520px] flex-col items-center gap-3">
               <div className="space-y-1">
                 <div className="text-[13px] font-semibold text-[var(--u-color-text)]">
-                  No SSH session is open
+                  {t("ssh.empty.noSessionOpen")}
                 </div>
                 <div>{emptyMessage}</div>
               </div>
               <div className="flex flex-wrap justify-center gap-2">
                 <Button onClick={onNewConnection} size="sm" type="button" variant="outline">
                   <FilePlus2 size={14} />
-                  New Connection
+                  {t("ssh.actions.newConnection")}
                 </Button>
                 <Button
                   disabled={!canStartSession}
@@ -128,7 +130,7 @@ export function TerminalWorkspace({
                   type="button"
                 >
                   <TerminalSquare size={14} />
-                  Open Session
+                  {t("ssh.actions.openSession")}
                 </Button>
               </div>
             </div>
@@ -150,12 +152,13 @@ function TerminalWorkspaceHeader({
   selectedConnection: SshConnection | null;
   selectedConnectionStatus: "connecting" | SshSessionSummary["status"] | "disconnected";
 }) {
+  const { t } = useI18n();
   const sessionLabel = activeSession
     ? `${activeSession.username}@${activeSession.host}`
     : null;
   const endpoint = selectedConnection
     ? sshEndpointLabel(selectedConnection)
-    : sessionLabel ?? "No connection selected";
+    : sessionLabel ?? t("ssh.status.noConnectionSelected");
   const status =
     selectedConnectionStatus === "connecting"
       ? "connecting"
@@ -178,7 +181,7 @@ function TerminalWorkspaceHeader({
     <div className="flex min-h-[34px] shrink-0 items-center gap-3 border-b border-[var(--u-color-border)] bg-[var(--u-color-surface-subtle)] px-3 text-[12px]">
       <div className="flex min-w-0 flex-1 items-center gap-2">
         <span className="min-w-0 truncate font-semibold text-[var(--u-color-text)]">
-          {selectedConnection?.name ?? sessionLabel ?? "SSH Terminal"}
+          {selectedConnection?.name ?? sessionLabel ?? t("ssh.title")}
         </span>
         <span className="min-w-0 truncate text-[var(--u-color-text-muted)]">
           {endpoint}
@@ -194,7 +197,7 @@ function TerminalWorkspaceHeader({
             {activeSession.cols}x{activeSession.rows}
           </StatusBadge>
         )}
-        <StatusBadge>{selectedConnection?.authKind ?? activeSession?.authKind ?? "no auth"}</StatusBadge>
+        <StatusBadge>{selectedConnection?.authKind ?? activeSession?.authKind ?? t("ssh.status.noAuth")}</StatusBadge>
       </div>
       {Boolean(actionError) && (
         <div className="min-w-0 max-w-[38%] truncate text-[var(--u-color-danger)]">

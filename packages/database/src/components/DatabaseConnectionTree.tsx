@@ -10,6 +10,7 @@ import {
   EmptyState,
   IconButton,
   TreeView,
+  useI18n,
   type TreeViewItem,
 } from "@unfour/ui";
 import { databaseTableTreeId } from "../model/database-tree";
@@ -46,8 +47,10 @@ export function DatabaseConnectionTree({
   selectedConnectionId: string | null;
   selectedTableId?: string | null;
 }) {
+  const { t } = useI18n();
+
   if (!connections.length) {
-    return <EmptyState className="min-h-[72px]">No database connections. Create one to browse schema or run SQL.</EmptyState>;
+    return <EmptyState className="min-h-[72px]">{t("database.errors.noConnections")}</EmptyState>;
   }
 
   const tableLookup = new Map<string, DatabaseTable>();
@@ -289,6 +292,8 @@ function ConnectionActions({
   onRefreshSchema?: (connection: DatabaseConnection) => void;
   status: DatabaseConnectionStatus;
 }) {
+  const { t } = useI18n();
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -297,13 +302,13 @@ function ConnectionActions({
         </IconButton>
       </DropdownMenuTrigger>
       <DropdownMenuContent>
-        <DropdownMenuItem onSelect={() => onConnect?.(connection)}>Connect</DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => onConnect?.(connection)}>{t("common.actions.connect")}</DropdownMenuItem>
         <DropdownMenuItem disabled={status === "disconnected"} onSelect={() => onDisconnect?.(connection)}>
-          Disconnect
+          {t("common.actions.disconnect")}
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={onNewQuery}>New Query</DropdownMenuItem>
-        <DropdownMenuItem onSelect={onRefresh}>Refresh Connections</DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => onRefreshSchema?.(connection)}>Refresh Schema</DropdownMenuItem>
+        <DropdownMenuItem onSelect={onNewQuery}>{t("database.actions.newQuery")}</DropdownMenuItem>
+        <DropdownMenuItem onSelect={onRefresh}>{t("database.actions.refreshConnections")}</DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => onRefreshSchema?.(connection)}>{t("database.actions.refreshSchema")}</DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -349,12 +354,14 @@ export function DatabaseSidebarToolbar({
   onNewQuery?: () => void;
   onRefresh?: () => void;
 }) {
+  const { t } = useI18n();
+
   return (
     <div className="flex items-center gap-1">
-      <IconButton label="New database query" onClick={onNewQuery}>
+      <IconButton label={t("database.actions.newQueryLabel")} onClick={onNewQuery}>
         <Play size={13} />
       </IconButton>
-      <IconButton label="Refresh database connections" onClick={onRefresh}>
+      <IconButton label={t("database.connection.refreshLabel")} onClick={onRefresh}>
         <RefreshCw size={13} />
       </IconButton>
     </div>

@@ -23,6 +23,7 @@ import {
   StatusBadge,
   Toolbar,
   ToolbarGroup,
+  useI18n,
 } from "@unfour/ui";
 import type { TerminalSplitMode } from "../model/types";
 
@@ -67,28 +68,32 @@ export function TerminalModuleToolbar({
   selectedConnectionName?: string;
   splitMode: TerminalSplitMode;
 }) {
+  const { t } = useI18n();
+
   return (
     <Toolbar className="overflow-x-auto">
       <ToolbarGroup className="gap-2">
         <TerminalSquare size={15} />
         <span className="max-w-[220px] truncate text-[12px] font-semibold text-[var(--u-color-text)] max-[900px]:hidden">
-          {selectedConnectionName ?? "Terminal / SSH"}
+          {selectedConnectionName ?? t("ssh.status.terminalSsh")}
         </span>
-        <StatusBadge className="max-[900px]:hidden">{activeSessionCount} sessions</StatusBadge>
+        <StatusBadge className="max-[900px]:hidden">
+          {t("ssh.status.sessionCount", { count: activeSessionCount })}
+        </StatusBadge>
       </ToolbarGroup>
       <ToolbarGroup>
         <Button
-          aria-label="New SSH connection"
+          aria-label={t("ssh.actions.newConnectionAria")}
           onClick={onNewConnection}
           size="sm"
           type="button"
           variant="outline"
         >
           <FilePlus2 size={14} />
-          <span className="max-[900px]:hidden">New Connection</span>
+          <span className="max-[900px]:hidden">{t("ssh.actions.newConnection")}</span>
         </Button>
         <Button
-          aria-label="New terminal session"
+          aria-label={t("ssh.actions.newSessionAria")}
           disabled={!canConnect || connecting}
           onClick={onNewSession}
           size="sm"
@@ -96,12 +101,12 @@ export function TerminalModuleToolbar({
         >
           <TerminalSquare size={14} />
           <span className="max-[900px]:hidden">
-            {connecting ? "Connecting" : "New Session"}
+            {connecting ? t("common.actions.connecting") : t("ssh.actions.newSession")}
           </span>
         </Button>
         <IconButton
           disabled={!canConnect || connecting}
-          label="Reconnect SSH session"
+          label={t("ssh.actions.reconnect")}
           onClick={onNewSession}
         >
           <RotateCw size={14} />
@@ -109,69 +114,71 @@ export function TerminalModuleToolbar({
         {reconnecting && (
           <Button onClick={onCancelReconnect} size="sm" type="button" variant="outline">
             <CircleX size={14} />
-            <span className="max-[900px]:hidden">Cancel Reconnect</span>
+            <span className="max-[900px]:hidden">{t("ssh.actions.cancelReconnect")}</span>
           </Button>
         )}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
-              aria-label="Split terminal pane"
+              aria-label={t("ssh.actions.splitPane")}
               disabled={!canSplit}
               size="sm"
               type="button"
               variant="outline"
             >
               {splitMode === "horizontal" ? <Rows2 size={14} /> : <Columns2 size={14} />}
-              <span className="max-[900px]:hidden">Split Pane</span>
+              <span className="max-[900px]:hidden">{t("ssh.actions.splitPane")}</span>
               <ChevronDown className="max-[900px]:hidden" size={13} />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem onSelect={() => onSplit("single")}>
               <SquareSplitHorizontal size={13} />
-              Single Pane
+              {t("ssh.actions.singlePane")}
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => onSplit("vertical")}>
               <Columns2 size={13} />
-              Split Right
+              {t("ssh.actions.splitRight")}
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => onSplit("horizontal")}>
               <Rows2 size={13} />
-              Split Down
+              {t("ssh.actions.splitDown")}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        <IconButton label="Search terminal output" onClick={onSearch}>
+        <IconButton label={t("ssh.actions.searchOutput")} onClick={onSearch}>
           <Search size={14} />
         </IconButton>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <IconButton label="Terminal actions">
+            <IconButton label={t("ssh.actions.terminalActions")}>
               <MoreHorizontal size={15} />
             </IconButton>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem disabled={!canUseSessionActions} onSelect={onCloseSession}>
               <Trash2 size={13} />
-              Close Session
+              {t("ssh.actions.closeSession")}
             </DropdownMenuItem>
             <DropdownMenuItem disabled={!canUseSessionActions} onSelect={onClear}>
               <CircleX size={13} />
-              Clear Terminal
+              {t("ssh.actions.clearTerminal")}
             </DropdownMenuItem>
             <DropdownMenuItem disabled={!canUseSessionActions} onSelect={onCopyLog}>
               <Copy size={13} />
-              Copy Session Log
+              {t("ssh.actions.copySessionLog")}
             </DropdownMenuItem>
             <DropdownMenuItem disabled={!canUseSessionActions || !onResize} onSelect={onResize}>
               <RotateCw size={13} />
-              Resize PTY
+              {t("ssh.actions.resizePty")}
             </DropdownMenuItem>
             <DropdownMenuItem disabled={!canUseSessionActions} onSelect={onExportLog}>
               <Download size={13} />
-              Export Logs
+              {t("ssh.actions.exportLogs")}
             </DropdownMenuItem>
-            <DropdownMenuItem onSelect={onOpenPreferences}>Terminal Preferences</DropdownMenuItem>
+            <DropdownMenuItem onSelect={onOpenPreferences}>
+              {t("ssh.actions.preferences")}
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </ToolbarGroup>

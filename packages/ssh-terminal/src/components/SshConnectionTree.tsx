@@ -26,6 +26,7 @@ import {
   SidebarSection,
   StatusBadge,
   TreeView,
+  useI18n,
   type TreeViewItem,
 } from "@unfour/ui";
 import { useSshConnections } from "../hooks/useSshConnections";
@@ -52,6 +53,7 @@ export function SshConnectionTree({
   onOpenTerminalSplit?: (connection: SshConnection) => void;
   workspaceId: string;
 }) {
+  const { t } = useI18n();
   const queryClient = useQueryClient();
   const { selectedSshConnectionId, setSelectedSshConnection } = useWorkspaceStore();
   const activeSessionId = useTerminalStore((state) => state.activeSessionId);
@@ -76,7 +78,12 @@ export function SshConnectionTree({
         {
           sessionId: session.sessionId,
           kind: "output",
-          data: `Connected to ${session.username}@${session.host}. PTY ${session.cols}x${session.rows} allocated.\r\n`,
+          data: `${t("ssh.session.connected", {
+            cols: session.cols,
+            host: session.host,
+            rows: session.rows,
+            username: session.username,
+          })}\r\n`,
           createdAt: session.createdAt,
         },
       ]);
@@ -101,7 +108,7 @@ export function SshConnectionTree({
         {
           sessionId: session.sessionId,
           kind: "close",
-          data: "SSH session closed.\r\n",
+          data: `${t("ssh.session.closed")}\r\n`,
           createdAt: session.updatedAt,
         },
       ]);
@@ -116,7 +123,8 @@ export function SshConnectionTree({
 
   function disconnect(session: SshSessionSummary) {
     if (!["disconnected", "failed"].includes(session.status)) {
-      const confirmed = window.confirm(`Disconnect SSH session ${session.username}@${session.host}?`);
+      const label = `${session.username}@${session.host}`;
+      const confirmed = window.confirm(t("ssh.session.disconnectConfirm", { label }));
       if (!confirmed) {
         return;
       }
@@ -134,7 +142,7 @@ export function SshConnectionTree({
       <SidebarSection>
         <SidebarRow active={active} onClick={onOpenTerminal}>
           <TerminalSquare size={14} />
-          <span className="sr-only">SSH Sessions</span>
+          <span className="sr-only">{t("ssh.status.sshSessions")}</span>
         </SidebarRow>
       </SidebarSection>
     );
@@ -254,7 +262,7 @@ export function SshConnectionTree({
     {
       children: connectionItems,
       id: "ssh-connections",
-      label: "SSH Connections",
+      label: t("ssh.status.sshConnections"),
       meta: <StatusBadge>{connections.length}</StatusBadge>,
     },
     {
@@ -271,16 +279,16 @@ export function SshConnectionTree({
         title: `${session.username}@${session.host} ${session.cols}x${session.rows}`,
       })),
       id: "ssh-sessions",
-      label: "Sessions",
+      label: t("ssh.status.sessions"),
       meta: <StatusBadge>{sessions.length}</StatusBadge>,
     },
   ];
 
   return (
-    <SidebarSection title="SSH">
+    <SidebarSection title={t("app.nav.sshTerminalShort")}>
       <SidebarRow active={active && !selectedSshConnectionId} onClick={onOpenTerminal}>
         <TerminalSquare size={14} />
-        <span className="min-w-0 flex-1 truncate">SSH Sessions</span>
+        <span className="min-w-0 flex-1 truncate">{t("ssh.status.sshSessions")}</span>
         <StatusBadge>{sessions.length}</StatusBadge>
       </SidebarRow>
       {connections.length ? (
@@ -302,10 +310,10 @@ export function SshConnectionTree({
           selectedId={activeSessionId ? `session:${activeSessionId}` : selectedSshConnectionId}
         />
       ) : (
-        <EmptyState className="min-h-[72px]">No SSH connections</EmptyState>
+        <EmptyState className="min-h-[72px]">{t("ssh.empty.noConnectionsShort")}</EmptyState>
       )}
       {connectionsQuery.error && (
-        <StatusBadge tone="danger">Connections failed to load</StatusBadge>
+        <StatusBadge tone="danger">{t("ssh.empty.connectionsFailed")}</StatusBadge>
       )}
       {connectMutation.error && (
         <StatusBadge className="max-w-full" tone="danger">

@@ -2,7 +2,7 @@ import Editor, { type OnMount } from "@monaco-editor/react";
 import { Eraser, Play, Square } from "lucide-react";
 import { useEffect, useRef } from "react";
 import type { DatabaseConnection } from "@unfour/command-client";
-import { Button, EmptyState, IconButton, Select, Toolbar, ToolbarGroup } from "@unfour/ui";
+import { Button, EmptyState, IconButton, Select, Toolbar, ToolbarGroup, useI18n } from "@unfour/ui";
 
 export function SqlEditorTab({
   connections,
@@ -27,6 +27,7 @@ export function SqlEditorTab({
   selectedConnectionId: string | null;
   sql: string;
 }) {
+  const { t } = useI18n();
   const onRunRef = useRef(onRun);
   const selectedConnection = connections.find((connection) => connection.id === selectedConnectionId);
 
@@ -43,34 +44,34 @@ export function SqlEditorTab({
       <Toolbar className="h-8">
         <ToolbarGroup className="min-w-0 flex-1">
           <Select
-            aria-label="SQL editor connection"
+            aria-label={t("database.editor.connectionAria")}
             className="max-w-[260px]"
             onChange={(event) => onSelectConnection(event.target.value)}
             options={connections.map((connection) => ({ label: connection.name, value: connection.id }))}
             value={selectedConnectionId ?? ""}
           >
-            {!selectedConnectionId && <option value="">Select connection</option>}
-            {!connections.length && <option value="">No connections</option>}
+            {!selectedConnectionId && <option value="">{t("database.connection.select")}</option>}
+            {!connections.length && <option value="">{t("database.connection.none")}</option>}
           </Select>
           <span className="hidden min-w-0 truncate text-[12px] text-[var(--u-color-text-soft)] md:inline">
-            {selectedConnection ? connectionContext(selectedConnection) : "No connection selected"}
+            {selectedConnection ? connectionContext(selectedConnection) : t("database.editor.noConnectionSelected")}
           </span>
         </ToolbarGroup>
         <ToolbarGroup>
-          <IconButton disabled={!sql.trim() || executePending} label="Clear SQL" onClick={onClearSql}>
+          <IconButton disabled={!sql.trim() || executePending} label={t("database.actions.clearSql")} onClick={onClearSql}>
             <Eraser size={13} />
           </IconButton>
           <Button disabled={!selectedConnectionId || executePending} onClick={onRun} size="sm" type="button">
             <Play size={13} />
-            {pendingConfirmation ? "Confirm run" : "Run"}
+            {pendingConfirmation ? t("database.actions.confirmRun") : t("database.actions.run")}
           </Button>
-          <IconButton disabled={!executePending} label="Stop SQL execution" onClick={onStop}>
+          <IconButton disabled={!executePending} label={t("database.actions.stopSql")} onClick={onStop}>
             <Square size={13} />
           </IconButton>
         </ToolbarGroup>
       </Toolbar>
       {connections.length === 0 ? (
-        <EmptyState className="m-2 min-h-0 flex-1">Create or select a database connection to start writing SQL.</EmptyState>
+        <EmptyState className="m-2 min-h-0 flex-1">{t("database.editor.empty")}</EmptyState>
       ) : (
         <Editor
           defaultLanguage="sql"

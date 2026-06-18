@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Button, EmptyState, SplitPane } from "@unfour/ui";
+import { Button, EmptyState, SplitPane, useI18n } from "@unfour/ui";
 import { useApiRequestTabs } from "./hooks/useApiRequestTabs";
 import {
   getTabSaveState,
@@ -27,6 +27,7 @@ export function ApiDebuggerPage({
   openIntent: ApiOpenIntent | null;
   workspaceId: string;
 }) {
+  const { t } = useI18n();
   const {
     activeTab,
     closeTab,
@@ -227,7 +228,7 @@ export function ApiDebuggerPage({
       `unfour-api-collection-${new Date().toISOString().slice(0, 10)}.json`,
       payload,
     );
-    setCollectionStatus(`Exported ${payload.savedRequests.length} requests`);
+    setCollectionStatus(t("api.import.exported", { count: payload.savedRequests.length }));
   }
 
   async function importCollection(file: File | undefined) {
@@ -237,7 +238,7 @@ export function ApiDebuggerPage({
     try {
       const requests = parseCollectionImport(JSON.parse(await file.text()), workspaceId);
       if (!requests.length) {
-        setCollectionStatus("No importable requests found");
+        setCollectionStatus(t("api.import.empty"));
         return;
       }
       importCollectionMutation.mutate(requests);
@@ -280,9 +281,9 @@ export function ApiDebuggerPage({
           {!activeTab ? (
             <EmptyState className="m-3 flex-1">
               <div className="space-y-2">
-                <div>No request is open</div>
+                <div>{t("api.empty.noRequestOpen")}</div>
                 <Button onClick={newRequest} type="button">
-                  New Request
+                  {t("common.actions.newRequest")}
                 </Button>
               </div>
             </EmptyState>

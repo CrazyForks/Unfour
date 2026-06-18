@@ -1,5 +1,5 @@
 import { Activity, Minus } from "lucide-react";
-import { BottomPanel, IconButton } from "@unfour/ui";
+import { BottomPanel, IconButton, useI18n } from "@unfour/ui";
 
 export function BottomPanelPlaceholder({
   collapsed,
@@ -12,6 +12,8 @@ export function BottomPanelPlaceholder({
   onCollapse: () => void;
   onHeightChange: (height: number) => void;
 }) {
+  const { t } = useI18n();
+
   return (
     <BottomPanel
       collapsed={collapsed}
@@ -22,14 +24,14 @@ export function BottomPanelPlaceholder({
       <div className="flex h-[var(--u-size-section-toolbar)] items-center justify-between border-b border-[var(--u-color-border)] px-2">
         <div className="flex items-center gap-2 text-[12px] font-semibold text-[var(--u-color-text)]">
           <Activity size={14} />
-          Diagnostics
+          {t("app.bottomPanel.title")}
         </div>
-        <IconButton label="Collapse bottom panel" onClick={onCollapse}>
+        <IconButton label={t("app.bottomPanel.collapse")} onClick={onCollapse}>
           <Minus size={14} />
         </IconButton>
       </div>
       <div className="p-2 text-[12px] text-[var(--u-color-text-muted)]">
-        Local activity and module diagnostics will appear here.
+        {t("app.bottomPanel.description")}
       </div>
     </BottomPanel>
   );

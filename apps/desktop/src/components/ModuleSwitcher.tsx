@@ -3,7 +3,7 @@ import {
   Globe2,
   TerminalSquare,
 } from "lucide-react";
-import { SidebarRow, cn } from "@unfour/ui";
+import { SidebarRow, cn, useI18n } from "@unfour/ui";
 import {
   getModuleSwitcherItems,
   type ModuleSwitcherItem,
@@ -18,9 +18,11 @@ export function ModuleSwitcher({
   collapsed: boolean;
   onSelect: (tabId: ModuleSwitcherItem["id"]) => void;
 }) {
+  const { t } = useI18n();
+
   return (
     <nav
-      aria-label="Modules"
+      aria-label={t("app.sidebar.modules")}
       className={cn(
         "w-full",
         collapsed
@@ -35,7 +37,7 @@ export function ModuleSwitcher({
             : "grid grid-cols-3 gap-1",
         )}
       >
-        {getModuleSwitcherItems().map((item) => (
+        {getModuleSwitcherItems(t).map((item) => (
           <SidebarRow
             active={item.kind === activeKind}
             className={cn(

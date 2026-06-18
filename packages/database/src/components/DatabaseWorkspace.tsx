@@ -1,6 +1,6 @@
 import type { DatabaseConnection, DatabaseQueryResult, DatabaseTable } from "@unfour/command-client";
 import type { DatabaseResultTab, DatabaseTableViewState, SqlHistoryEntry } from "../model/types";
-import { Tabs } from "@unfour/ui";
+import { Tabs, useI18n } from "@unfour/ui";
 import { QueryResultPanel } from "./QueryResultPanel";
 import { SqlEditorTab } from "./SqlEditorTab";
 import { TableDataTab } from "./TableDataTab";
@@ -63,6 +63,8 @@ export function DatabaseWorkspace({
   sql: string;
   tableView: DatabaseTableViewState | null;
 }) {
+  const { t } = useI18n();
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <Tabs
@@ -73,19 +75,19 @@ export function DatabaseWorkspace({
             id: "sql-editor",
             loading: executePending,
             modified: sql.trim().length > 0,
-            title: "SQL Editor",
+            title: t("database.editor.sqlEditor"),
           },
           {
             id: "table-structure",
             loading: schemaLoading,
             meta: selectedTable ? <span className="text-[11px] text-[var(--u-color-text-soft)]">{selectedTable.name}</span> : null,
-            title: "Table Structure",
+            title: t("database.editor.tableStructure"),
           },
           {
             id: "table-data",
             loading: executePending,
             meta: tableView ? <span className="text-[11px] text-[var(--u-color-text-soft)]">{tableView.tableName}</span> : null,
-            title: "Table Data",
+            title: t("database.editor.tableData"),
           },
         ]}
       />

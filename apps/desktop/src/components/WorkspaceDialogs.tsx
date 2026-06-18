@@ -8,7 +8,7 @@ import {
   renameWorkspace,
 } from "@unfour/command-client";
 import type { Workspace } from "@unfour/command-client";
-import { Button, Input } from "@unfour/ui";
+import { Button, Input, useI18n } from "@unfour/ui";
 import { useWorkspaceStore } from "@unfour/workspace-core";
 
 export function WorkspaceDialogs({
@@ -30,6 +30,7 @@ export function WorkspaceDialogs({
   renameOpen: boolean;
   workspaces: Workspace[];
 }) {
+  const { t } = useI18n();
   const queryClient = useQueryClient();
   const { setActiveWorkspace } = useWorkspaceStore();
   const [workspaceName, setWorkspaceName] = useState("");
@@ -100,26 +101,26 @@ export function WorkspaceDialogs({
           <Dialog.Overlay className="fixed inset-0 z-50 bg-[var(--u-color-overlay)]" />
           <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[360px] -translate-x-1/2 -translate-y-1/2 rounded-md border border-[var(--u-color-border)] bg-[var(--u-color-surface)] p-4 shadow-xl">
             <Dialog.Title className="text-base font-semibold text-[var(--u-color-text)]">
-              New workspace
+              {t("app.workspace.dialog.createTitle")}
             </Dialog.Title>
             <Dialog.Description className="mt-2 text-sm text-[var(--u-color-text-muted)]">
-              Create a workspace for a separate set of API requests, SSH connections, and database resources.
+              {t("app.workspace.dialog.createDescription")}
             </Dialog.Description>
             <form className="mt-4 space-y-4" onSubmit={createWorkspaceFromDialog}>
               <Input
                 autoFocus
                 onChange={(event) => setWorkspaceName(event.target.value)}
-                placeholder="Workspace name"
+                placeholder={t("app.workspace.dialog.namePlaceholder")}
                 value={workspaceName}
               />
               <div className="flex justify-end gap-2">
                 <Dialog.Close asChild>
                   <Button type="button" variant="outline">
-                    Cancel
+                    {t("app.workspace.dialog.cancel")}
                   </Button>
                 </Dialog.Close>
                 <Button disabled={createWorkspaceMutation.isPending || !workspaceName.trim()} type="submit">
-                  Create
+                  {t("app.workspace.dialog.create")}
                 </Button>
               </div>
             </form>
@@ -132,22 +133,22 @@ export function WorkspaceDialogs({
           <Dialog.Overlay className="fixed inset-0 z-50 bg-[var(--u-color-overlay)]" />
           <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[360px] -translate-x-1/2 -translate-y-1/2 rounded-md border border-[var(--u-color-border)] bg-[var(--u-color-surface)] p-4 shadow-xl">
             <Dialog.Title className="text-base font-semibold text-[var(--u-color-text)]">
-              Rename workspace
+              {t("app.workspace.dialog.renameTitle")}
             </Dialog.Title>
             <Dialog.Description className="mt-2 text-sm text-[var(--u-color-text-muted)]">
-              Rename the active workspace. Existing workspace-scoped records stay attached to it.
+              {t("app.workspace.dialog.renameDescription")}
             </Dialog.Description>
             <form className="mt-4 space-y-4" onSubmit={renameWorkspaceFromDialog}>
               <Input
                 autoFocus
                 onChange={(event) => setRenameDraft(event.target.value)}
-                placeholder="Workspace name"
+                placeholder={t("app.workspace.dialog.namePlaceholder")}
                 value={renameDraft}
               />
               <div className="flex justify-end gap-2">
                 <Dialog.Close asChild>
                   <Button type="button" variant="outline">
-                    Cancel
+                    {t("app.workspace.dialog.cancel")}
                   </Button>
                 </Dialog.Close>
                 <Button
@@ -158,7 +159,7 @@ export function WorkspaceDialogs({
                   }
                   type="submit"
                 >
-                  Rename
+                  {t("app.workspace.dialog.rename")}
                 </Button>
               </div>
             </form>
@@ -171,16 +172,17 @@ export function WorkspaceDialogs({
           <Dialog.Overlay className="fixed inset-0 z-50 bg-[var(--u-color-overlay)]" />
           <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[360px] -translate-x-1/2 -translate-y-1/2 rounded-md border border-[var(--u-color-border)] bg-[var(--u-color-surface)] p-4 shadow-xl">
             <Dialog.Title className="text-base font-semibold text-[var(--u-color-text)]">
-              Delete workspace
+              {t("app.workspace.dialog.deleteTitle")}
             </Dialog.Title>
             <Dialog.Description className="mt-2 text-sm text-[var(--u-color-text-muted)]">
-              Delete {activeWorkspace?.name ?? "this workspace"} locally. The app will switch
-              to another available workspace.
+              {t("app.workspace.dialog.deleteDescription", {
+                name: activeWorkspace?.name ?? t("app.workspace.dialog.thisWorkspace"),
+              })}
             </Dialog.Description>
             <div className="mt-4 flex justify-end gap-2">
               <Dialog.Close asChild>
                 <Button type="button" variant="outline">
-                  Cancel
+                  {t("app.workspace.dialog.cancel")}
                 </Button>
               </Dialog.Close>
               <Button
@@ -190,7 +192,7 @@ export function WorkspaceDialogs({
                 type="button"
               >
                 <Trash2 size={15} />
-                Delete
+                {t("app.workspace.dialog.delete")}
               </Button>
             </div>
           </Dialog.Content>

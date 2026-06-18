@@ -1,6 +1,6 @@
 import type { Ref } from "react";
 import { Save, Send } from "lucide-react";
-import { Button, Input, cn } from "@unfour/ui";
+import { Button, Input, cn, useI18n } from "@unfour/ui";
 import {
   methodToneClass,
   type ApiRequestTab,
@@ -29,6 +29,8 @@ export function ApiRequestBar({
   tab: ApiRequestTab;
   urlInputRef?: Ref<HTMLInputElement>;
 }) {
+  const { t } = useI18n();
+
   return (
     <div className="flex min-h-[48px] shrink-0 items-center gap-2 border-b border-[var(--u-color-border)] bg-[var(--u-color-surface)] px-3 py-2">
       <div className="flex min-w-0 flex-1 items-stretch overflow-hidden rounded-[var(--u-radius-md)] border border-[var(--u-color-input)] bg-[var(--u-color-bg)] focus-within:border-[var(--u-color-focus)]">
@@ -61,7 +63,7 @@ export function ApiRequestBar({
         type="button"
       >
         <Send size={14} />
-        {tab.sending ? "Sending" : "Send"}
+        {tab.sending ? t("api.actions.sending") : t("api.actions.send")}
       </Button>
       <Button
         disabled={tab.saving}
@@ -71,7 +73,7 @@ export function ApiRequestBar({
         variant="outline"
       >
         <Save size={14} />
-        {tab.saving ? "Saving" : "Save"}
+        {tab.saving ? t("api.actions.saving") : t("api.actions.save")}
       </Button>
       <RequestActionsMenu
         canDelete={Boolean(tab.savedRequestId)}

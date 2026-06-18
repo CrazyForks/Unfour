@@ -14,6 +14,22 @@ export {
   DialogXClose,
 } from "./dialog";
 export { IconButton } from "./icon-button";
+export {
+  I18nProvider,
+  createTranslator,
+  defaultLocale,
+  getLocaleLabel,
+  isSupportedLocale,
+  normalizeLocale,
+  supportedLocales,
+  translate,
+  useI18n,
+  useT,
+  type I18nContextValue,
+  type Locale,
+  type TFunction,
+  type TranslationParams,
+} from "./i18n";
 export { Input } from "./input";
 export {
   ContextMenu,

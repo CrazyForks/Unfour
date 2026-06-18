@@ -1,5 +1,5 @@
 import { Download, Plus, Settings2, Upload } from "lucide-react";
-import { Button, Toolbar, ToolbarGroup } from "@unfour/ui";
+import { Button, Toolbar, ToolbarGroup, useI18n } from "@unfour/ui";
 
 export function ApiClientToolbar({
   onImport,
@@ -8,16 +8,18 @@ export function ApiClientToolbar({
   onImport: () => void;
   onNewRequest: () => void;
 }) {
+  const { t } = useI18n();
+
   return (
     <Toolbar className="h-[var(--u-size-section-toolbar)]">
       <ToolbarGroup>
         <Button onClick={onNewRequest} size="sm" type="button" variant="ghost">
           <Plus size={14} />
-          New Request
+          {t("common.actions.newRequest")}
         </Button>
         <Button onClick={onImport} size="sm" type="button" variant="ghost">
           <Upload size={14} />
-          Import
+          {t("api.actions.import")}
         </Button>
         <Button
           disabled
@@ -27,12 +29,12 @@ export function ApiClientToolbar({
           variant="ghost"
         >
           <Download size={14} />
-          Export
+          {t("api.actions.export")}
         </Button>
       </ToolbarGroup>
       <ToolbarGroup>
         <span className="rounded-[var(--u-radius-sm)] border border-[var(--u-color-border)] bg-[var(--u-color-surface)] px-2 py-1 text-[11px] text-[var(--u-color-text-muted)]">
-          No Environment
+          {t("api.environment.none")}
         </span>
         <Button
           disabled
