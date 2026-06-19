@@ -10,6 +10,32 @@ const CSS_DECLARATION =
   /(?<![\w-])(--[A-Za-z][\w-]*)(\s*:\s*)((?:[^;"'{}]|\([^)]*\)|"[^"]*"|'[^']*')*);(\s*\/\*\s*@kind\s+other\s*\*\/)?/g;
 const CSS_PROPERTY_REGISTRATION =
   /(@property\s+)(--[A-Za-z][\w-]*)(\s*\{)(\s*\/\*\s*@kind\s+other\s*\*\/)?/g;
+const NESTED_FOCUS_UTILITY_BLOCK =
+  /^([ \t]*)(\.[^\n{]+)\s*\{\r?\n([ \t]*)&:(focus-within|focus-visible|focus)\s*\{\r?\n([\s\S]*?)\r?\n\3\}\r?\n\1\}/gm;
+const NESTED_FOCUS_INTERNAL_DECLARATION = /--tw-(?:ring-shadow|ring-color|outline-style)\s*:/;
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function deindentNestedBody(body, nestedIndent) {
+  return body.replace(new RegExp(`^${escapeRegExp(`${nestedIndent}  `)}`, 'gm'), nestedIndent);
+}
+
+function flattenNestedFocusUtilities(css) {
+  let flattened = 0;
+  const nextCss = css.replace(
+    NESTED_FOCUS_UTILITY_BLOCK,
+    (match, selectorIndent, selector, nestedIndent, pseudo, body) => {
+      if (!NESTED_FOCUS_INTERNAL_DECLARATION.test(body)) return match;
+
+      flattened += 1;
+      return `${selectorIndent}${selector.trimEnd()}:${pseudo} {\n${deindentNestedBody(body, nestedIndent)}\n${selectorIndent}}`;
+    },
+  );
+
+  return { css: nextCss, flattened };
+}
 
 function markDeclarations(css) {
   let marked = 0;
@@ -97,17 +123,20 @@ function updateReadme(cssByFile) {
 
 let totalDeclarations = 0;
 let totalRegistrations = 0;
+let totalFlattened = 0;
 const cssByFile = new Map();
 for (const file of CSS_FILES) {
   if (!existsSync(file)) continue;
 
   const original = readFileSync(file, 'utf8');
-  const declarations = markDeclarations(original);
+  const flattened = flattenNestedFocusUtilities(original);
+  const declarations = markDeclarations(flattened.css);
   const registrations = markPropertyRegistrations(declarations.css);
 
   if (registrations.css !== original) writeFileSync(file, registrations.css);
   cssByFile.set(file, registrations.css);
 
+  totalFlattened += flattened.flattened;
   totalDeclarations += declarations.marked;
   totalRegistrations += registrations.marked;
 }
@@ -115,7 +144,8 @@ for (const file of CSS_FILES) {
 const readmeUpdated = updateReadme(cssByFile);
 
 console.error(
-  `  strip-tw-vars: marked ${totalDeclarations} Tailwind internal declaration(s)` +
+  `  strip-tw-vars: flattened ${totalFlattened} nested focus utility block(s),` +
+    ` marked ${totalDeclarations} Tailwind internal declaration(s)` +
     ` and ${totalRegistrations} @property registration(s) as other` +
     `${readmeUpdated ? '; updated README token summary' : ''}`,
 );
