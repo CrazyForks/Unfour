@@ -40,6 +40,7 @@ export function WorkspaceMenu({
             type="button"
             variant="outline"
           >
+            <span className="h-4 w-4 shrink-0 rounded-[5px] bg-[linear-gradient(135deg,var(--u-color-primary),var(--u-color-primary-hover))]" />
             <span className="min-w-0 truncate">
               {activeWorkspace?.name ?? t("app.workspace.none")}
             </span>

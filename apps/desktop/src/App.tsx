@@ -82,6 +82,7 @@ function App() {
         activityBar={
           <ModuleActivityBar
             activeKind={activeTab.kind}
+            onOpenCommandPalette={() => setCommandPaletteOpen(true)}
             sidebarCollapsed={sidebarCollapsed}
             onSelect={setActiveTab}
             onToggleSidebar={toggleSidebar}

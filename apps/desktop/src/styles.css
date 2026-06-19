@@ -95,14 +95,67 @@
   --warning: var(--u-color-warning);
   --warning-soft: var(--u-color-warning-soft);
   font-family:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-    sans-serif;
+    ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Roboto, sans-serif;
   color: var(--text);
   background: var(--app-bg);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* Dark theme — overrides only the themeable color tokens; sizes, radii, and
+   the legacy alias vars (which reference --u-color-*) resolve automatically. */
+[data-theme="dark"] {
+  color-scheme: dark;
+  --u-color-bg: #14191e;
+  --u-color-surface: #1b2228;
+  --u-color-surface-subtle: #1f272e;
+  --u-color-surface-muted: #262f37;
+  --u-color-surface-hover: #232c34;
+  --u-color-surface-active: #2c3742;
+  --u-color-border: #2c3742;
+  --u-color-border-strong: #3a4651;
+  --u-color-input: #3a4651;
+  --u-color-text: #d6dee7;
+  --u-color-text-muted: #8a949d;
+  --u-color-text-soft: #5b6671;
+  --u-color-focus: #14b8a6;
+  --u-color-primary: #14b8a6;
+  --u-color-primary-hover: #0d9488;
+  --u-color-primary-foreground: #06100e;
+  --u-color-primary-soft: #103b37;
+  --u-color-danger: #f87171;
+  --u-color-danger-soft: #3a1d1d;
+  --u-color-danger-hover: #fca5a5;
+  --u-color-danger-text: #fca5a5;
+  --u-color-success: #4ade80;
+  --u-color-success-soft: #16331f;
+  --u-color-warning: #fbbf24;
+  --u-color-warning-soft: #3a2c10;
+  --u-color-warning-text: #fcd34d;
+  --u-color-info: #60a5fa;
+  --u-color-info-soft: #16263f;
+  --u-color-info-text: #93c5fd;
+  --u-color-overlay: rgba(0, 0, 0, 0.5);
+  --u-color-scrollbar: #2c3742;
+  --u-color-scrollbar-hover: #3f4d59;
+  --u-badge-neutral-bg: #262f37;
+  --u-badge-neutral-text: #aeb8c2;
+  --u-badge-neutral-ring: #3a4651;
+  --u-badge-success-bg: #16331f;
+  --u-badge-success-text: #6ee7a0;
+  --u-badge-success-ring: #235e36;
+  --u-badge-warning-bg: #3a2c10;
+  --u-badge-warning-text: #fcd34d;
+  --u-badge-warning-ring: #6b521a;
+  --u-badge-danger-bg: #3a1d1d;
+  --u-badge-danger-text: #fca5a5;
+  --u-badge-danger-ring: #6b2f2f;
+  --u-badge-info-bg: #16263f;
+  --u-badge-info-text: #93c5fd;
+  --u-badge-info-ring: #2c4a73;
 }
 
 * {
@@ -116,20 +169,29 @@ body {
   overflow: hidden;
 }
 
-button,
-input,
-select,
-textarea {
-  font: inherit;
-}
+/* Keep native controls on the app font by default, but inside @layer base so
+   Tailwind utilities (font-mono, font-bold, text sizes) still win on controls
+   that opt in — e.g. the mono method selector and URL field. */
+@layer base {
+  button,
+  input,
+  select,
+  textarea {
+    font-family: inherit;
+    font-size: inherit;
+    font-weight: inherit;
+    line-height: inherit;
+    letter-spacing: inherit;
+  }
 
-button {
-  cursor: pointer;
-  letter-spacing: 0;
-}
+  button {
+    cursor: pointer;
+    letter-spacing: 0;
+  }
 
-button:disabled {
-  cursor: not-allowed;
+  button:disabled {
+    cursor: not-allowed;
+  }
 }
 
 button:focus-visible,
@@ -142,6 +204,26 @@ textarea:focus-visible {
 
 .app-shell {
   background: var(--app-bg);
+}
+
+/* Status bar band — teal in light, muted surface in dark (per Direction A). */
+.u-statusbar {
+  background: var(--u-color-primary);
+  color: var(--u-color-primary-foreground);
+}
+
+[data-theme="dark"] .u-statusbar {
+  background: var(--u-color-surface-active);
+  color: var(--u-color-text);
+  border-top: 1px solid var(--u-color-border);
+}
+
+.u-statusbar .u-statusbar-hover:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+[data-theme="dark"] .u-statusbar .u-statusbar-hover:hover {
+  background: var(--u-color-surface-hover);
 }
 
 .surface-panel {

@@ -1,6 +1,7 @@
 {
   "app": {
     "commandPalette": {
+      "open": "Open command palette",
       "openApiClient": "Open API Debugger",
       "openDatabase": "Open Database",
       "openSshTerminal": "Open SSH Terminal",
@@ -30,6 +31,11 @@
       "connected": "Connected",
       "ready": "Ready",
       "storageReady": "Storage ready"
+    },
+    "theme": {
+      "dark": "Dark",
+      "label": "Theme",
+      "light": "Light"
     },
     "titlebar": {
       "moreActions": "More actions",

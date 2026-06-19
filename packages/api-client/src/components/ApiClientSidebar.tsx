@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { Clock, FolderOpen, Settings2 } from "lucide-react";
+import { Clock, FolderOpen, Plus, Settings2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import {
   getWorkspaceEnvironment,
@@ -7,7 +7,7 @@ import {
   type ApiHistoryItem,
   type KeyValue,
 } from "@unfour/command-client";
-import { cn, useI18n } from "@unfour/ui";
+import { IconButton, cn, useI18n } from "@unfour/ui";
 import type { ApiOpenIntent } from "../model/types";
 import { ApiCollectionTree } from "./ApiCollectionTree";
 import { ApiHistoryTree } from "./ApiHistoryTree";
@@ -78,6 +78,17 @@ export function ApiClientSidebar({
               {tab.icon}
             </button>
           ))}
+          <span className="mx-0.5 h-4 w-px bg-[var(--u-color-border)]" />
+          <IconButton
+            label={t("common.actions.newRequest")}
+            onClick={() => {
+              setActiveTab("collections");
+              onNewRequest();
+            }}
+            size="compact"
+          >
+            <Plus size={15} />
+          </IconButton>
         </div>
       </div>
 

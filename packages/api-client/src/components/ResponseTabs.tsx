@@ -8,7 +8,7 @@ import {
   Send,
   WifiOff,
 } from "lucide-react";
-import { Badge, Button, EmptyState, cn, useI18n } from "@unfour/ui";
+import { Badge, Button, EmptyState, cn, useI18n, useTheme } from "@unfour/ui";
 import type { ApiResponse, KeyValue } from "@unfour/command-client";
 import { formatByteSize } from "../request-utils";
 import { formatResponseBody, looksLikeJson } from "../model/api-request-state";
@@ -212,6 +212,7 @@ function ResponseBodyView({
   response: ApiResponse | null;
 }) {
   const { t } = useI18n();
+  const { theme } = useTheme();
   const [mode, setMode] = useState<"pretty" | "raw">("pretty");
 
   if (!response) {
@@ -293,7 +294,7 @@ function ResponseBodyView({
             scrollBeyondLastLine: false,
             wordWrap: "on",
           }}
-          theme="vs-dark"
+          theme={theme === "dark" ? "vs-dark" : "vs"}
           value={displayBody}
         />
       </div>

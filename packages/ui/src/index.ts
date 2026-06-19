@@ -60,6 +60,13 @@ export {
   type ShellTab,
 } from "./shell";
 export { EmptyState, ErrorState, LoadingState } from "./states";
+export {
+  ThemeProvider,
+  initializeTheme,
+  useTheme,
+  type Theme,
+  type ThemeContextValue,
+} from "./theme";
 export { ConnectionStatus, StatusBadge, type StatusTone } from "./status";
 export { Tabs, type WorkspaceTab } from "./tabs";
 export { Toolbar, ToolbarGroup } from "./toolbar";

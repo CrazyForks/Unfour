@@ -486,7 +486,7 @@ export function StatusBar({
   return (
     <footer
       className={cn(
-        "flex h-[var(--u-size-statusbar)] shrink-0 items-center justify-between gap-3 border-t border-[var(--u-color-border)] bg-[var(--u-color-surface-subtle)] px-2 text-[11px] text-[var(--u-color-text-muted)]",
+        "u-statusbar flex h-[var(--u-size-statusbar)] shrink-0 items-center justify-between gap-3 border-t border-[var(--u-color-border)] bg-[var(--u-color-surface-subtle)] px-2 text-[11px] text-[var(--u-color-text-muted)]",
         className,
       )}
     >

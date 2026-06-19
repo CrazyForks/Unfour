@@ -1,6 +1,7 @@
 {
   "app": {
     "commandPalette": {
+      "open": "打开命令面板",
       "openApiClient": "打开 API 调试器",
       "openDatabase": "打开数据库",
       "openSshTerminal": "打开 SSH 终端",
@@ -30,6 +31,11 @@
       "connected": "已连接",
       "ready": "就绪",
       "storageReady": "存储就绪"
+    },
+    "theme": {
+      "dark": "深色",
+      "label": "主题",
+      "light": "浅色"
     },
     "titlebar": {
       "moreActions": "更多操作",

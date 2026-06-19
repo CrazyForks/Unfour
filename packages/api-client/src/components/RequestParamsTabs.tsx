@@ -2,7 +2,7 @@ import { useState } from "react";
 import type * as React from "react";
 import Editor from "@monaco-editor/react";
 import { Info, Plus, Save, Trash2, Wand2 } from "lucide-react";
-import { Button, Input, cn } from "@unfour/ui";
+import { Button, Input, cn, useTheme } from "@unfour/ui";
 import type { KeyValue } from "@unfour/command-client";
 import {
   duplicateEnvironmentKeys,
@@ -316,6 +316,7 @@ function BodyEditor({
   onRawBodyTypeChange: (value: RequestRawBodyType) => void;
   rawBodyType: RequestRawBodyType;
 }) {
+  const { theme } = useTheme();
   const [formatError, setFormatError] = useState<string | null>(null);
   const jsonError =
     bodyMode === "raw" && rawBodyType === "json" && body.trim()
@@ -390,7 +391,7 @@ function BodyEditor({
               scrollBeyondLastLine: false,
               wordWrap: "on",
             }}
-            theme="vs-dark"
+            theme={theme === "dark" ? "vs-dark" : "vs"}
             value={body}
           />
         )}
