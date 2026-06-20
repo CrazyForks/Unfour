@@ -36,37 +36,9 @@ export function ApiRequestBar({
   const { t } = useI18n();
 
   return (
-    <div className="grid shrink-0 gap-2 border-b border-[var(--u-color-border)] bg-[var(--u-color-surface)] px-3 py-2">
-      <div className="flex min-w-0 items-center gap-2">
-        <Input
-          aria-label={t("api.request.name")}
-          className="min-w-[160px] max-w-[280px] flex-[0_1_240px] rounded-[var(--u-radius-md)] bg-[var(--u-color-surface)] text-[12px]"
-          onChange={(event) => onUpdate({ name: event.target.value })}
-          placeholder={t("api.request.namePlaceholder")}
-          value={tab.draft.name}
-        />
-        <EnvironmentControl
-          activeEnvironmentId={activeEnvironmentId}
-          onSelectEnvironment={onSelectEnvironment}
-          workspaceId={workspaceId}
-        />
-        <RequestActionsMenu
-          canDelete={Boolean(tab.savedRequestId)}
-          canDuplicate={Boolean(tab.savedRequestId)}
-          onDelete={onDelete}
-          onDuplicate={onDuplicate}
-          onExport={onExport}
-          onImport={onImport}
-        />
-        {tab.saveError && (
-          <span
-            className="min-w-0 flex-1 truncate text-[12px] text-[var(--u-color-danger)]"
-            title={tab.saveError}
-          >
-            {tab.saveError}
-          </span>
-        )}
-      </div>
+    <div className="flex shrink-0 flex-col gap-1.5 border-b border-[var(--u-color-border)] bg-[var(--u-color-surface)] px-3 py-2">
+      {/* Primary action row: Method + URL + Send are the first visual layer.
+          The request name lives in the Save dialog and the tab, not here. */}
       <div className="flex min-w-0 items-center gap-2">
         <select
           aria-label={t("api.request.method")}
@@ -109,7 +81,28 @@ export function ApiRequestBar({
         >
           <Save size={14} />
         </Button>
+        <EnvironmentControl
+          activeEnvironmentId={activeEnvironmentId}
+          onSelectEnvironment={onSelectEnvironment}
+          workspaceId={workspaceId}
+        />
+        <RequestActionsMenu
+          canDelete={Boolean(tab.savedRequestId)}
+          canDuplicate={Boolean(tab.savedRequestId)}
+          onDelete={onDelete}
+          onDuplicate={onDuplicate}
+          onExport={onExport}
+          onImport={onImport}
+        />
       </div>
+      {tab.saveError && (
+        <span
+          className="min-w-0 truncate text-[12px] text-[var(--u-color-danger)]"
+          title={tab.saveError}
+        >
+          {tab.saveError}
+        </span>
+      )}
     </div>
   );
 }

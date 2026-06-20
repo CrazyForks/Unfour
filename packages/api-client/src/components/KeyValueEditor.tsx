@@ -33,6 +33,7 @@ export function KeyValueEditor({
   const cellInputClass =
     "h-[32px] rounded-none border-0 bg-transparent px-0 text-[12px] hover:border-0 focus:border-0 focus:ring-0 disabled:bg-transparent disabled:text-[var(--u-color-text-soft)]";
   const rows = [...items, { key: "", value: "", enabled: true }];
+  const duplicateKeys = findDuplicateKeys(items);
 
   return (
     <div className="space-y-1.5">
@@ -95,8 +96,33 @@ export function KeyValueEditor({
           </div>
         ))}
       </div>
+      {duplicateKeys.length > 0 && (
+        <div className="rounded-md bg-[var(--u-color-warning-soft)] px-2 py-1 text-[11px] text-[var(--u-color-warning-text)] ring-1 ring-inset ring-[var(--u-badge-warning-ring)]">
+          {t("api.keyValue.duplicateKeys", { keys: duplicateKeys.join(", ") })}
+        </div>
+      )}
     </div>
   );
+}
+
+function findDuplicateKeys(items: KeyValue[]): string[] {
+  const seen = new Set<string>();
+  const duplicates = new Set<string>();
+  for (const item of items) {
+    if (!item.enabled) {
+      continue;
+    }
+    const key = item.key.trim();
+    if (!key) {
+      continue;
+    }
+    if (seen.has(key)) {
+      duplicates.add(key);
+    } else {
+      seen.add(key);
+    }
+  }
+  return [...duplicates];
 }
 
 export function EnvironmentHints({ variables }: { variables: KeyValue[] }) {
