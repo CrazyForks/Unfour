@@ -1,1 +1,1 @@
-D:/project/Unfour/AGENTS.md
+@AGENTS.md

@@ -12,8 +12,8 @@ Unfour Workspace is a Tauri 2 desktop app for unified operations and development
 - Workspace environment variables with `{{variable}}` resolution for API requests.
 - Saved API requests can be grouped into folders, duplicated, deleted, and loaded back into the editor.
 - Database connection metadata, SQLite connection test, SQLite schema browsing, and SQLite SQL execution.
-- SSH connection metadata with credential references; live sessions remain reserved.
-- AI and cloud sync extension points reserved.
+- SSH connection metadata with credential references and live terminal sessions (pending live-server verification).
+- Local MCP server (`crates/unfour-mcp`) exposes read-only workspace/API/database tools to AI clients. Cloud sync extension points reserved.
 
 ## Workspace Layout
 
@@ -56,9 +56,12 @@ The project currently expects a modern stable Rust toolchain. This workspace was
 
 ## Documentation
 
-- `AGENTS.md`: rules for coding agents.
-- `docs/engineering`: architecture and implementation notes.
-- `docs/engineering/progress.md`: current progress and next work slices.
+- `AGENTS.md`: rules for coding agents (start here for AI tools).
+- `docs/agents/START_HERE.md`: scoped reading order for AI/coding agents.
+- `docs/project/PACKAGE_STATUS.md`: source-of-truth status for every package and crate.
+- `design.md` and `docs/ui/*`: UI design system and rules.
+- `docs/ai/mcp.md`: local MCP server tools and usage.
+- `docs/engineering`: architecture and implementation notes (historical/reference).
 - `docs/testing/playwright.md`: Playwright usage and troubleshooting.
 - `docs/decisions`: ADRs.
 - `docs/user/USER_GUIDE.md`: user-facing guide.

@@ -19,7 +19,7 @@ React UI
   -> Adapter / Driver
 ```
 
-The same `CommandBus` shape is reserved for later AI, MCP, CLI, workflow runner, and cloud automation adapters.
+The same `CommandBus` shape backs the shipped MCP adapter (`crates/unfour-mcp`) and is reserved for later AI, CLI, workflow runner, and cloud automation adapters.
 
 ## Current Modules
 
@@ -48,7 +48,7 @@ The same `CommandBus` shape is reserved for later AI, MCP, CLI, workflow runner,
   streaming, resize, close, redacted log export, host-key trust, and reconnect
   behavior. The full live SSH server journey remains experimental until
   release-gate verification is completed.
-- AI and cloud sync are intentionally not user-facing yet. The current work only preserves their data fields and command boundaries.
+- A local MCP server (`crates/unfour-mcp`) now exposes read-only tools to AI clients; in-app AI and cloud sync remain not user-facing yet, preserving their data fields and command boundaries.
 
 ## Frontend Shape
 
