@@ -292,6 +292,10 @@ Example Codex prompts:
 请通过 unfour MCP 查看 connectionId 为 xxx 的数据库表列表。
 请通过 unfour MCP 描述 users 表结构。
 请通过 unfour MCP 对 connectionId 为 xxx 执行只读查询：select id, email from users limit 10，并总结结果。
+请通过 unfour MCP 列出最近的 API 请求历史，找出最早开始返回非 2xx 的请求。
+请通过 unfour MCP 获取 historyId 为 xxx 的历史详情，对照请求/响应头里的 auth 掩码信息判断鉴权问题。
+请通过 unfour MCP 测试 connectionId 为 xxx 的数据库连通性。
+请通过 unfour MCP 检查系统健康状态。
 ```
 
 ## Current Non-Goals
