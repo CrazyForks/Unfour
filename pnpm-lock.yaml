@@ -250,9 +250,39 @@ importers:
 
   packages/app-shell:
     dependencies:
+      '@radix-ui/react-dialog':
+        specifier: ^1.1.15
+        version: 1.1.15(@types/react-dom@19.2.3(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      '@radix-ui/react-dropdown-menu':
+        specifier: ^2.1.16
+        version: 2.1.16(@types/react-dom@19.2.3(@types/react@19.2.16))(@types/react@19.2.16)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      '@tanstack/react-query':
+        specifier: ^5.100.14
+        version: 5.100.14(react@19.2.7)
+      '@tauri-apps/api':
+        specifier: ^2
+        version: 2.11.0
+      '@unfour/api-client':
+        specifier: workspace:*
+        version: link:../api-client
+      '@unfour/command-client':
+        specifier: workspace:*
+        version: link:../command-client
+      '@unfour/database':
+        specifier: workspace:*
+        version: link:../database
+      '@unfour/ssh-terminal':
+        specifier: workspace:*
+        version: link:../ssh-terminal
       '@unfour/ui':
         specifier: workspace:*
         version: link:../ui
+      '@unfour/workspace-core':
+        specifier: workspace:*
+        version: link:../workspace-core
+      lucide-react:
+        specifier: ^1.17.0
+        version: 1.17.0(react@19.2.7)
       react:
         specifier: ^19.1.0
         version: 19.2.7
