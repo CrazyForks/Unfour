@@ -6204,6 +6204,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "unfour-app"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "tauri",
+ "tauri-plugin-opener",
+ "unfour-command-bus",
+ "unfour-core",
+ "unfour-local-storage",
+ "unfour-secret-store",
+]
+
+[[package]]
 name = "unfour-command-bus"
 version = "0.1.0"
 dependencies = [
@@ -6319,7 +6332,6 @@ dependencies = [
 name = "unfour-workspace"
 version = "0.1.0"
 dependencies = [
- "serde_json",
  "sqlx",
  "tauri",
  "tauri-build",
@@ -6327,14 +6339,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
- "unfour-command-bus",
- "unfour-core",
- "unfour-database-engine",
- "unfour-http-engine",
- "unfour-local-storage",
- "unfour-secret-store",
- "unfour-ssh-engine",
- "unfour-workspace-engine",
+ "unfour-app",
 ]
 
 [[package]]
