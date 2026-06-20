@@ -20,7 +20,11 @@ export function useLayoutPersistence(activeWorkspaceId: string | null) {
       updateWorkspaceLayout(workspaceId, snapshotLayout(workspaceId)),
   });
 
+  // Keep a stable ref to the mutate function so the debounced effect
+  // does not re-trigger on every render (layoutMutation object identity
+  // changes each render even though .mutate is stable).
   const mutateRef = useRef(layoutMutation.mutate);
+  // eslint-disable-next-line react-hooks/refs -- render-time ref sync is the recommended pattern for stabilizing callbacks
   mutateRef.current = layoutMutation.mutate;
 
   useEffect(() => {
