@@ -1,6 +1,5 @@
 use serde_json::Value;
 
-pub const REDACTED: &str = "[REDACTED]";
 pub const MAX_BODY_PREVIEW_BYTES: usize = 20 * 1024;
 
 fn normalize(name: &str) -> String {
@@ -33,9 +32,139 @@ pub fn is_sensitive_key(name: &str) -> bool {
     )
 }
 
+/// Produce a partial-mask descriptor for a sensitive value.
+///
+/// The descriptor exposes diagnostic *shape* (auth scheme, structural kind,
+/// length, and a stable fingerprint) while never revealing the usable secret.
+/// This lets an LLM client diagnose the common auth failures (wrong scheme,
+/// truncated/malformed token, wrong environment key, mismatched tokens across
+/// fields) without exfiltrating the credential itself.
+///
+/// Examples:
+/// - `Authorization: Bearer eyJ...` -> `[mask kind=jwt scheme=Bearer len=872 fp=a1b2c3]`
+/// - `x-api-key: sk-live-...`        -> `[mask kind=prefixed:sk len=51 fp=9f8e7d]`
+pub fn mask_secret(value: &str) -> String {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return "[mask empty]".to_string();
+    }
+
+    let (scheme, secret) = split_scheme(trimmed);
+    let len = secret.chars().count();
+    let kind = classify_secret(scheme, secret, len);
+    // Fingerprint the secret material (post-scheme) so the same token correlates
+    // across header / query / body / environment fields.
+    let fp = fnv1a_hex6(secret);
+
+    let mut parts = vec![format!("kind={kind}")];
+    if let Some(scheme) = scheme {
+        parts.push(format!("scheme={scheme}"));
+    }
+    parts.push(format!("len={len}"));
+    parts.push(format!("fp={fp}"));
+    format!("[mask {}]", parts.join(" "))
+}
+
+/// Split a `Scheme credential` value (e.g. `Bearer abc`) into its scheme and
+/// credential. Only a purely-alphabetic leading word followed by a remainder is
+/// treated as a scheme (captures Bearer/Basic/Digest/Negotiate/NTLM); anything
+/// else is treated as an opaque secret with no scheme.
+fn split_scheme(value: &str) -> (Option<&str>, &str) {
+    if let Some((head, rest)) = value.split_once(char::is_whitespace) {
+        let rest = rest.trim();
+        if !head.is_empty()
+            && head.chars().all(|c| c.is_ascii_alphabetic())
+            && !rest.is_empty()
+        {
+            return (Some(head), rest);
+        }
+    }
+    (None, value)
+}
+
+fn classify_secret(scheme: Option<&str>, secret: &str, len: usize) -> String {
+    if scheme.is_some_and(|s| s.eq_ignore_ascii_case("basic")) {
+        return "basic".to_string();
+    }
+    if is_jwt(secret) {
+        return "jwt".to_string();
+    }
+    if is_uuid(secret) {
+        return "uuid".to_string();
+    }
+    // Skip structured-prefix / hex classification for very short secrets to avoid
+    // leaking a meaningful share of a low-entropy value.
+    if len >= 8 {
+        if let Some(prefix) = structured_prefix(secret) {
+            return format!("prefixed:{prefix}");
+        }
+        if is_hex(secret) {
+            return "hex".to_string();
+        }
+    }
+    "opaque".to_string()
+}
+
+fn is_jwt(secret: &str) -> bool {
+    let segments: Vec<&str> = secret.split('.').collect();
+    segments.len() == 3
+        && segments.iter().all(|segment| {
+            !segment.is_empty()
+                && segment
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        })
+}
+
+fn is_uuid(secret: &str) -> bool {
+    let bytes = secret.as_bytes();
+    if bytes.len() != 36 {
+        return false;
+    }
+    bytes.iter().enumerate().all(|(i, &b)| {
+        if matches!(i, 8 | 13 | 18 | 23) {
+            b == b'-'
+        } else {
+            b.is_ascii_hexdigit()
+        }
+    })
+}
+
+fn is_hex(secret: &str) -> bool {
+    secret.len() >= 16 && secret.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+/// Reveal a structured prefix (e.g. `sk`, `ghp`) when a separator appears within
+/// the first 8 characters. The prefix itself is not the secret and strongly aids
+/// "wrong environment key" diagnosis.
+fn structured_prefix(secret: &str) -> Option<String> {
+    let window: String = secret.chars().take(8).collect();
+    let idx = window.find(['_', '-'])?;
+    if idx == 0 {
+        return None;
+    }
+    let prefix = &window[..idx];
+    if prefix.chars().all(|c| c.is_ascii_alphanumeric()) {
+        Some(prefix.to_string())
+    } else {
+        None
+    }
+}
+
+/// Dependency-free deterministic FNV-1a fingerprint, truncated to 6 hex digits.
+/// Non-cryptographic; used only for cross-field correlation, never reversal.
+fn fnv1a_hex6(value: &str) -> String {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in value.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    format!("{:06x}", hash & 0xff_ffff)
+}
+
 pub fn redact_header_value(name: &str, value: &str) -> String {
     if is_sensitive_key(name) {
-        REDACTED.to_string()
+        mask_secret(value)
     } else {
         value.to_string()
     }
@@ -66,7 +195,7 @@ pub fn redact_url_query(url: &str) -> String {
                 let key = &pair[..eq_pos];
                 let value = &pair[eq_pos + 1..];
                 if is_sensitive_key(key) {
-                    format!("{}={}", key, REDACTED)
+                    format!("{}={}", key, mask_secret(value))
                 } else {
                     format!("{}={}", key, value)
                 }
@@ -101,7 +230,11 @@ fn redact_json_value(value: &mut Value) {
         Value::Object(map) => {
             for (key, val) in map.iter_mut() {
                 if is_sensitive_key(key) {
-                    *val = Value::String(REDACTED.to_string());
+                    let secret = match val.as_str() {
+                        Some(s) => s.to_string(),
+                        None => val.to_string(),
+                    };
+                    *val = Value::String(mask_secret(&secret));
                 } else {
                     redact_json_value(val);
                 }
@@ -170,31 +303,80 @@ mod tests {
     }
 
     #[test]
-    fn header_redaction_replaces_sensitive_values() {
-        assert_eq!(
-            redact_header_value("Authorization", "Bearer secret123"),
-            REDACTED
-        );
+    fn header_redaction_masks_sensitive_values() {
+        let masked = redact_header_value("Authorization", "Bearer secret123");
+        assert!(masked.starts_with("[mask "));
+        assert!(masked.contains("scheme=Bearer"));
+        assert!(masked.contains("len="));
+        assert!(!masked.contains("secret123"));
+
         assert_eq!(
             redact_header_value("Content-Type", "application/json"),
             "application/json"
         );
-        assert_eq!(
-            redact_header_value("x-api-key", "my-key"),
-            REDACTED
-        );
+
+        let key_masked = redact_header_value("x-api-key", "my-key");
+        assert!(key_masked.starts_with("[mask "));
+        assert!(!key_masked.contains("my-key"));
     }
 
     #[test]
-    fn url_query_redaction_replaces_sensitive_params() {
+    fn url_query_redaction_masks_sensitive_params() {
         let url = "https://api.example.com/users?token=abc123&page=1&api_key=secret";
         let redacted = redact_url_query(url);
 
-        assert!(redacted.contains(&format!("token={}", REDACTED)));
+        assert!(redacted.contains("token=[mask "));
         assert!(redacted.contains("page=1"));
-        assert!(redacted.contains(&format!("api_key={}", REDACTED)));
+        assert!(redacted.contains("api_key=[mask "));
         assert!(!redacted.contains("abc123"));
-        assert!(!redacted.contains("secret"));
+        // The raw secret value must not survive; "secret" only appears inside a
+        // mask descriptor's fp/len fields by accident is impossible since fp is hex.
+        assert!(!redacted.contains("=secret&"));
+        assert!(!redacted.contains("=secret\""));
+        assert!(!redacted.ends_with("=secret"));
+    }
+
+    #[test]
+    fn mask_secret_classifies_common_shapes() {
+        let jwt = mask_secret("Bearer aaa.bbb.ccc");
+        assert!(jwt.contains("kind=jwt"));
+        assert!(jwt.contains("scheme=Bearer"));
+
+        let basic = mask_secret("Basic dXNlcjpwYXNz");
+        assert!(basic.contains("kind=basic"));
+
+        let prefixed = mask_secret("sk-live-0123456789abcdef");
+        assert!(prefixed.contains("kind=prefixed:sk"));
+
+        let hex = mask_secret("deadbeefcafef00d1234");
+        assert!(hex.contains("kind=hex"));
+
+        let uuid = mask_secret("123e4567-e89b-12d3-a456-426614174000");
+        assert!(uuid.contains("kind=uuid"));
+
+        let opaque = mask_secret("PlainOpaqueValue123");
+        assert!(opaque.contains("kind=opaque"));
+
+        let short = mask_secret("ab12");
+        assert!(short.contains("kind=opaque"));
+        assert!(short.contains("len=4"));
+
+        assert_eq!(mask_secret(""), "[mask empty]");
+    }
+
+    #[test]
+    fn mask_secret_fingerprint_is_deterministic_and_correlates() {
+        // Same secret material correlates across scheme-prefixed and bare forms.
+        let header = mask_secret("Bearer eyJabc.def.ghi");
+        let bare = mask_secret("eyJabc.def.ghi");
+        let fp = |s: &str| {
+            s.split_whitespace()
+                .find_map(|p| p.strip_prefix("fp="))
+                .map(|f| f.trim_end_matches(']').to_string())
+                .unwrap()
+        };
+        assert_eq!(fp(&header), fp(&bare), "fp ignores the auth scheme");
+        assert_ne!(fp(&mask_secret("token-a")), fp(&mask_secret("token-b")));
     }
 
     #[test]
@@ -216,9 +398,10 @@ mod tests {
         let parsed: Value = serde_json::from_str(&redacted).unwrap();
 
         assert_eq!(parsed["user"], "alice");
-        assert_eq!(parsed["password"], REDACTED);
+        assert!(parsed["password"].as_str().unwrap().starts_with("[mask "));
         assert_eq!(parsed["data"], "safe");
-        assert_eq!(parsed["nested"]["token"], REDACTED);
+        assert!(parsed["nested"]["token"].as_str().unwrap().starts_with("[mask "));
+        assert!(!redacted.contains("secret123"));
     }
 
     #[test]

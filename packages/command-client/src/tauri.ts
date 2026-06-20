@@ -14,6 +14,7 @@ import type {
   DatabaseBrowseResult,
   DatabaseConnection,
   DatabaseConnectionInput,
+  DbQueryHistoryEntry,
   DatabaseQueryInput,
   DatabaseQueryResult,
   DatabaseSchema,
@@ -731,6 +732,18 @@ async function mockInvoke<T>(
     } satisfies DatabaseSchema) as T;
   }
 
+  if (command === "database_query_history_list") {
+    return [] as T;
+  }
+
+  if (command === "database_query_history_record") {
+    return undefined as T;
+  }
+
+  if (command === "database_query_history_clear") {
+    return undefined as T;
+  }
+
   if (command === "database_query_execute") {
     const input = args?.input as DatabaseQueryInput;
     const isSelect = input.sql.trim().toLowerCase().startsWith("select");
@@ -1310,6 +1323,18 @@ export function getDatabaseSchema(workspaceId: string, connectionId: string) {
 
 export function executeDatabaseQuery(input: DatabaseQueryInput) {
   return call<DatabaseQueryResult>("database_query_execute", { input });
+}
+
+export function recordDatabaseQueryHistory(input: DbQueryHistoryEntry) {
+  return call<void>("database_query_history_record", { input });
+}
+
+export function listDatabaseQueryHistory(workspaceId: string, limit = 200) {
+  return call<DbQueryHistoryEntry[]>("database_query_history_list", { workspaceId, limit });
+}
+
+export function clearDatabaseQueryHistory(workspaceId: string) {
+  return call<void>("database_query_history_clear", { workspaceId });
 }
 
 export function browseDatabaseTable(input: DatabaseBrowseInput) {

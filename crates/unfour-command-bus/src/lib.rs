@@ -5,11 +5,12 @@ use unfour_core::models::{
     ApiSavedRequest, CredentialCreateInput, CredentialDeleteInput, CredentialInspectInput,
     CredentialMetadata, CredentialRotateInput, DatabaseBrowseInput, DatabaseBrowseResult,
     DatabaseConnection, DatabaseConnectionInput, DatabaseQueryInput, DatabaseQueryResult,
-    DatabaseSchema, DatabaseTestResult, KeyValue, SshCloseInput, SshConnectInput, SshConnection,
-    SshConnectionInput, SshHostFingerprintInfo, SshHostKeyInput, SshKnownHostsExportResult,
-    SshKnownHostsImportInput, SshKnownHostsImportResult, SshLogExport, SshLogExportInput,
-    SshReconnectCancelInput, SshResizeInput, SshSessionEvent, SshSessionInput, SshSessionSummary,
-    SystemHealth, Workspace, WorkspaceLayout, WorkspaceState,
+    DatabaseSchema, DatabaseTestResult, DbQueryHistoryEntry, DbQueryHistoryRecordInput, KeyValue,
+    SshCloseInput, SshConnectInput, SshConnection, SshConnectionInput, SshHostFingerprintInfo,
+    SshHostKeyInput, SshKnownHostsExportResult, SshKnownHostsImportInput,
+    SshKnownHostsImportResult, SshLogExport, SshLogExportInput, SshReconnectCancelInput,
+    SshResizeInput, SshSessionEvent, SshSessionInput, SshSessionSummary, SystemHealth, Workspace,
+    WorkspaceLayout, WorkspaceState,
 };
 use unfour_core::sync_reserved;
 use unfour_core::AppResult;
@@ -47,6 +48,14 @@ pub enum ReadCommand {
     ApiGetRequest {
         request_id: String,
     },
+    ApiListHistory {
+        workspace_id: Option<String>,
+        limit: Option<i64>,
+    },
+    ApiGetHistory {
+        workspace_id: Option<String>,
+        history_id: String,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -56,6 +65,8 @@ pub enum ReadCommandResult {
     ApiCollections(ApiCollectionListResult),
     ApiRequests(ApiRequestListResult),
     ApiRequest(ApiRequestDetailResult),
+    ApiHistory(ApiHistoryListResult),
+    ApiHistoryDetailResult(ApiHistoryDetailResult),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -140,6 +151,21 @@ pub struct ApiRequestSummary {
 #[serde(rename_all = "camelCase")]
 pub struct ApiRequestDetailResult {
     pub request: ApiSavedRequest,
+    pub source: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiHistoryListResult {
+    pub history: Vec<ApiHistoryItem>,
+    pub count: usize,
+    pub source: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiHistoryDetailResult {
+    pub detail: ApiHistoryDetail,
     pub source: String,
 }
 
@@ -439,6 +465,33 @@ impl CommandBus {
                     request,
                     source: "command-bus".to_string(),
                 }))
+            }
+            ReadCommand::ApiListHistory {
+                workspace_id,
+                limit,
+            } => {
+                let state = self.read_workspace_state().await?;
+                let ws_id = workspace_id.unwrap_or(state.active_workspace_id);
+                let history = self.api_client.list_history(ws_id, limit).await?;
+                Ok(ReadCommandResult::ApiHistory(ApiHistoryListResult {
+                    count: history.len(),
+                    history,
+                    source: "command-bus".to_string(),
+                }))
+            }
+            ReadCommand::ApiGetHistory {
+                workspace_id,
+                history_id,
+            } => {
+                let state = self.read_workspace_state().await?;
+                let ws_id = workspace_id.unwrap_or(state.active_workspace_id);
+                let detail = self.api_client.history_detail(ws_id, history_id).await?;
+                Ok(ReadCommandResult::ApiHistoryDetailResult(
+                    ApiHistoryDetailResult {
+                        detail,
+                        source: "command-bus".to_string(),
+                    },
+                ))
             }
         }
     }
@@ -1003,6 +1056,25 @@ impl CommandBus {
         input: DatabaseBrowseInput,
     ) -> AppResult<DatabaseBrowseResult> {
         self.database.browse_table(input).await
+    }
+
+    pub async fn record_database_query_history(
+        &self,
+        input: DbQueryHistoryRecordInput,
+    ) -> AppResult<()> {
+        self.database.record_query_history(input).await
+    }
+
+    pub async fn list_database_query_history(
+        &self,
+        workspace_id: String,
+        limit: Option<i64>,
+    ) -> AppResult<Vec<DbQueryHistoryEntry>> {
+        self.database.list_query_history(workspace_id, limit).await
+    }
+
+    pub async fn clear_database_query_history(&self, workspace_id: String) -> AppResult<()> {
+        self.database.clear_query_history(workspace_id).await
     }
 
     pub async fn list_ssh_connections(

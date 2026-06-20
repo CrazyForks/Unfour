@@ -149,12 +149,13 @@ mod tests {
 
     use serde_json::{json, Value};
     use unfour_command_bus::{
-        ApiCollectionListResult, ApiRequestDetailResult, ApiRequestListResult,
-        ConnectionListResult, CurrentWorkspaceResult, ReadCommand, ReadCommandResult,
+        ApiCollectionListResult, ApiHistoryDetailResult, ApiHistoryListResult,
+        ApiRequestDetailResult, ApiRequestListResult, ConnectionListResult, CurrentWorkspaceResult,
+        ReadCommand, ReadCommandResult,
     };
     use unfour_core::models::{
-        ApiResponse, ApiSavedRequest, DatabaseConnection, DatabaseQueryInput, DatabaseQueryResult,
-        DatabaseQuerySafety, DatabaseSchema,
+        ApiHistoryDetail, ApiResponse, ApiSavedRequest, DatabaseConnection, DatabaseQueryInput,
+        DatabaseQueryResult, DatabaseQuerySafety, DatabaseSchema,
     };
 
     use super::{run_stdio, McpServer, SUPPORTED_PROTOCOL_VERSION};
@@ -212,6 +213,38 @@ mod tests {
                             query_json: "[]".to_string(),
                             body: None,
                             body_kind: "json".to_string(),
+                            created_at: String::new(),
+                            updated_at: String::new(),
+                            deleted_at: None,
+                            revision: 1,
+                            sync_status: "local".to_string(),
+                            remote_id: None,
+                        },
+                        source: "command-bus".to_string(),
+                    })
+                }
+                ReadCommand::ApiListHistory { .. } => {
+                    ReadCommandResult::ApiHistory(ApiHistoryListResult {
+                        history: vec![],
+                        count: 0,
+                        source: "command-bus".to_string(),
+                    })
+                }
+                ReadCommand::ApiGetHistory { history_id, .. } => {
+                    ReadCommandResult::ApiHistoryDetailResult(ApiHistoryDetailResult {
+                        detail: ApiHistoryDetail {
+                            id: history_id,
+                            workspace_id: "workspace-1".to_string(),
+                            name: None,
+                            method: "GET".to_string(),
+                            url: "https://example.com".to_string(),
+                            request_headers_json: "[]".to_string(),
+                            request_query_json: "[]".to_string(),
+                            request_body: None,
+                            status: Some(200),
+                            duration_ms: Some(10),
+                            response_headers_json: "[]".to_string(),
+                            response_body_preview: None,
                             created_at: String::new(),
                             updated_at: String::new(),
                             deleted_at: None,
@@ -364,7 +397,7 @@ mod tests {
         assert_eq!(responses.len(), 3);
         assert_eq!(
             responses[1]["result"]["tools"].as_array().unwrap().len(),
-            13
+            17
         );
         assert_eq!(
             responses[2]["result"]["structuredContent"],

@@ -1,7 +1,7 @@
-import { Clipboard, Download } from "lucide-react";
+import { Clipboard, Download, Trash2 } from "lucide-react";
 import { useState } from "react";
 import type { DatabaseQueryResult } from "@unfour/command-client";
-import { Button, EmptyState, ErrorState, LoadingState, StatusBadge, Tabs, Toolbar, ToolbarGroup } from "@unfour/ui";
+import { Button, EmptyState, ErrorState, LoadingState, StatusBadge, Tabs, Toolbar, ToolbarGroup, useI18n } from "@unfour/ui";
 import type { DatabaseResultTab, SqlHistoryEntry } from "../model/types";
 import { describeDatabaseError, serializeDatabaseResult } from "../result-utils";
 import { DatabaseErrorDetails } from "./DatabaseErrorDetails";
@@ -12,6 +12,7 @@ export function QueryResultPanel({
   error,
   history,
   isPending,
+  onClearHistory,
   onSelectHistory,
   onSelectTab,
   pendingConfirmation,
@@ -21,11 +22,13 @@ export function QueryResultPanel({
   error: unknown;
   history: SqlHistoryEntry[];
   isPending: boolean;
+  onClearHistory: () => void;
   onSelectHistory: (entry: SqlHistoryEntry) => void;
   onSelectTab: (tab: DatabaseResultTab) => void;
   pendingConfirmation: boolean;
   result: DatabaseQueryResult | null;
 }) {
+  const { t } = useI18n();
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">("idle");
   const [lastResult, setLastResult] = useState(result);
   if (result !== lastResult) {
@@ -71,7 +74,7 @@ export function QueryResultPanel({
           { id: "results", title: "Results" },
           { id: "messages", title: "Messages" },
           { id: "logs", title: "Logs" },
-          { id: "history", meta: <span className="text-[11px] text-[var(--u-color-text-soft)]">{history.length}</span>, title: "History" },
+          { id: "history", meta: <span className="text-[11px] text-[var(--u-color-text-soft)]">{history.length}</span>, title: t("database.history.tab") },
         ]}
       />
       <Toolbar className="h-8">
@@ -81,14 +84,23 @@ export function QueryResultPanel({
           </span>
         </ToolbarGroup>
         <ToolbarGroup>
-          <Button disabled={!result} onClick={copyTsv} size="sm" type="button" variant="outline">
-            <Clipboard size={13} />
-            {copyStatus === "copied" ? "Copied" : copyStatus === "failed" ? "Copy failed" : "Copy result"}
-          </Button>
-          <Button disabled={!result} onClick={exportCsv} size="sm" type="button" variant="outline">
-            <Download size={13} />
-            Export CSV
-          </Button>
+          {activeTab === "history" ? (
+            <Button disabled={!history.length} onClick={onClearHistory} size="sm" type="button" variant="outline">
+              <Trash2 size={13} />
+              {t("database.actions.clearHistory")}
+            </Button>
+          ) : (
+            <>
+              <Button disabled={!result} onClick={copyTsv} size="sm" type="button" variant="outline">
+                <Clipboard size={13} />
+                {copyStatus === "copied" ? "Copied" : copyStatus === "failed" ? "Copy failed" : "Copy result"}
+              </Button>
+              <Button disabled={!result} onClick={exportCsv} size="sm" type="button" variant="outline">
+                <Download size={13} />
+                Export CSV
+              </Button>
+            </>
+          )}
         </ToolbarGroup>
       </Toolbar>
       {activeTab === "results" && renderResults({ error, isPending, pendingConfirmation, result })}
@@ -184,8 +196,10 @@ function History({
   entries: SqlHistoryEntry[];
   onSelect: (entry: SqlHistoryEntry) => void;
 }) {
+  const { t } = useI18n();
+
   if (!entries.length) {
-    return <EmptyState className="m-2 min-h-0 flex-1">Executed SQL history will appear here for this session.</EmptyState>;
+    return <EmptyState className="m-2 min-h-0 flex-1">{t("database.history.empty")}</EmptyState>;
   }
 
   return (
@@ -199,12 +213,16 @@ function History({
           type="button"
         >
           <span className="text-[var(--u-color-text-soft)]">{formatHistoryTime(entry.executedAt)}</span>
-          <StatusBadge tone={entry.status === "success" ? "success" : "danger"}>{entry.status}</StatusBadge>
+          <StatusBadge tone={entry.status === "success" ? "success" : "danger"}>
+            {entry.status === "success"
+              ? t("database.history.statusSuccess")
+              : t("database.history.statusFailed")}
+          </StatusBadge>
           <span className="truncate font-mono text-[var(--u-color-text)]">{entry.sql}</span>
           <span className="truncate text-right text-[var(--u-color-text-soft)]">
             {entry.status === "success"
-              ? `${entry.rowCount ?? entry.affectedRows ?? 0} rows`
-              : entry.error ?? "failed"}
+              ? t("database.history.rows", { count: entry.rowCount ?? entry.affectedRows ?? 0 })
+              : entry.error ?? t("database.history.failedFallback")}
           </span>
         </button>
       ))}

@@ -245,6 +245,7 @@
   },
   "database": {
     "actions": {
+      "clearHistory": "清空历史",
       "clearSql": "清空 SQL",
       "confirmRun": "确认运行",
       "newQuery": "新建查询",
@@ -298,6 +299,14 @@
       "port": "端口",
       "sqlitePath": "SQLite 路径",
       "username": "用户名"
+    },
+    "history": {
+      "empty": "执行过的 SQL 历史会显示在这里。",
+      "failedFallback": "失败",
+      "rows": "{count} 行",
+      "statusFailed": "失败",
+      "statusSuccess": "成功",
+      "tab": "历史"
     },
     "query": {
       "completed": "查询完成，用时 {durationMs}ms",

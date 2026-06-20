@@ -246,6 +246,7 @@
   },
   "database": {
     "actions": {
+      "clearHistory": "Clear History",
       "clearSql": "Clear SQL",
       "confirmRun": "Confirm run",
       "newQuery": "New Query",
@@ -299,6 +300,14 @@
       "port": "Port",
       "sqlitePath": "SQLite Path",
       "username": "Username"
+    },
+    "history": {
+      "empty": "Executed SQL history will appear here.",
+      "failedFallback": "failed",
+      "rows": "{count} rows",
+      "statusFailed": "failed",
+      "statusSuccess": "success",
+      "tab": "History"
     },
     "query": {
       "completed": "Query completed in {durationMs}ms",

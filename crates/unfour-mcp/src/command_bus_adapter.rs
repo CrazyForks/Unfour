@@ -5,6 +5,7 @@ use tokio::runtime::{Builder, Runtime};
 use unfour_command_bus::{CommandBus, ReadCommand, ReadCommandResult};
 use unfour_core::models::{
     ApiResponse, DatabaseConnection, DatabaseQueryInput, DatabaseQueryResult, DatabaseSchema,
+    DatabaseTestResult, SystemHealth,
 };
 
 pub trait CommandBusAdapter: Send + Sync {
@@ -34,6 +35,28 @@ pub trait CommandBusAdapter: Send + Sync {
         &self,
         input: DatabaseQueryInput,
     ) -> Result<DatabaseQueryResult, CommandBusAdapterError>;
+
+    /// Test connectivity to a saved database connection. Diagnostic action with
+    /// a side effect (opens a connection), so it is not a `ReadCommand`. Adapters
+    /// that cannot test connections may use the default unsupported response.
+    fn test_db_connection(
+        &self,
+        _workspace_id: &str,
+        _connection_id: &str,
+    ) -> Result<DatabaseTestResult, CommandBusAdapterError> {
+        Err(CommandBusAdapterError {
+            code: "COMMAND_BUS_OPERATION_UNSUPPORTED",
+            message: "This command-bus adapter does not support connection testing.",
+        })
+    }
+
+    /// Return command-bus / storage health for diagnostics.
+    fn system_health(&self) -> Result<SystemHealth, CommandBusAdapterError> {
+        Err(CommandBusAdapterError {
+            code: "COMMAND_BUS_OPERATION_UNSUPPORTED",
+            message: "This command-bus adapter does not support system health reads.",
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -145,6 +168,31 @@ impl CommandBusAdapter for LocalCommandBusAdapter {
                 message: "The command-bus database query operation failed.",
             })
     }
+
+    fn test_db_connection(
+        &self,
+        workspace_id: &str,
+        connection_id: &str,
+    ) -> Result<DatabaseTestResult, CommandBusAdapterError> {
+        self.runtime
+            .block_on(
+                self.bus
+                    .test_database_connection(workspace_id.to_string(), connection_id.to_string()),
+            )
+            .map_err(|_| CommandBusAdapterError {
+                code: "COMMAND_BUS_DB_TEST_FAILED",
+                message: "The command-bus database connection test failed.",
+            })
+    }
+
+    fn system_health(&self) -> Result<SystemHealth, CommandBusAdapterError> {
+        self.runtime
+            .block_on(self.bus.system_health())
+            .map_err(|_| CommandBusAdapterError {
+                code: "COMMAND_BUS_HEALTH_FAILED",
+                message: "The command-bus system health read failed.",
+            })
+    }
 }
 
 impl CommandBusAdapterError {
@@ -194,6 +242,11 @@ mod tests {
             .list_db_connections(&workspace.workspace_id)
             .expect("list db connections");
         assert_eq!(db_connections.len(), 0);
+
+        // System health should be readable through the real adapter.
+        let health = adapter.system_health().expect("system health");
+        assert!(health.command_bus_ready);
+        assert!(health.storage_ready);
     }
 
     #[test]

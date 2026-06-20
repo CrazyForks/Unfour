@@ -340,6 +340,21 @@ export type DatabaseQueryInput = {
   confirmMutation?: boolean;
 };
 
+export type DbQueryHistoryEntry = {
+  id: string;
+  workspaceId: string;
+  connectionId: string | null;
+  connectionName: string;
+  sql: string;
+  status: "success" | "failed";
+  classification: string | null;
+  rowCount: number | null;
+  affectedRows: number | null;
+  durationMs: number | null;
+  error: string | null;
+  executedAt: string;
+};
+
 export type DatabaseBrowseInput = {
   workspaceId: string;
   connectionId: string;

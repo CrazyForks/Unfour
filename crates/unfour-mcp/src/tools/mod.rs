@@ -2,6 +2,7 @@ mod api;
 mod database;
 mod mock;
 mod real;
+mod system;
 
 use std::sync::Arc;
 
@@ -63,6 +64,7 @@ impl ToolRegistry {
         tools.extend(real::registered_tools());
         tools.extend(api::registered_tools());
         tools.extend(database::registered_tools());
+        tools.extend(system::registered_tools());
 
         Self {
             tools,
@@ -133,13 +135,13 @@ mod tests {
 
     use serde_json::json;
     use unfour_command_bus::{
-        ApiCollectionListResult, ApiRequestDetailResult, ApiRequestListResult,
-        ConnectionListResult, CurrentWorkspaceResult, ReadCommand, ReadCommandResult,
-        SafeConnection, SafeConnectionSummary,
+        ApiCollectionListResult, ApiHistoryDetailResult, ApiHistoryListResult,
+        ApiRequestDetailResult, ApiRequestListResult, ConnectionListResult, CurrentWorkspaceResult,
+        ReadCommand, ReadCommandResult, SafeConnection, SafeConnectionSummary,
     };
     use unfour_core::models::{
-        ApiResponse, ApiSavedRequest, DatabaseConnection, DatabaseQueryInput, DatabaseQueryResult,
-        DatabaseQuerySafety, DatabaseSchema, KeyValue,
+        ApiHistoryDetail, ApiResponse, ApiSavedRequest, DatabaseConnection, DatabaseQueryInput,
+        DatabaseQueryResult, DatabaseQuerySafety, DatabaseSchema, KeyValue,
     };
 
     use crate::command_bus_adapter::{CommandBusAdapter, CommandBusAdapterError};
@@ -208,6 +210,38 @@ mod tests {
                             query_json: "[]".to_string(),
                             body: None,
                             body_kind: "json".to_string(),
+                            created_at: String::new(),
+                            updated_at: String::new(),
+                            deleted_at: None,
+                            revision: 1,
+                            sync_status: "local".to_string(),
+                            remote_id: None,
+                        },
+                        source: "command-bus".to_string(),
+                    })
+                }
+                ReadCommand::ApiListHistory { .. } => {
+                    ReadCommandResult::ApiHistory(ApiHistoryListResult {
+                        history: vec![],
+                        count: 0,
+                        source: "command-bus".to_string(),
+                    })
+                }
+                ReadCommand::ApiGetHistory { history_id, .. } => {
+                    ReadCommandResult::ApiHistoryDetailResult(ApiHistoryDetailResult {
+                        detail: ApiHistoryDetail {
+                            id: history_id,
+                            workspace_id: "workspace-1".to_string(),
+                            name: None,
+                            method: "GET".to_string(),
+                            url: "https://api.example.com/test".to_string(),
+                            request_headers_json: "[]".to_string(),
+                            request_query_json: "[]".to_string(),
+                            request_body: None,
+                            status: Some(200),
+                            duration_ms: Some(10),
+                            response_headers_json: "[]".to_string(),
+                            response_body_preview: None,
                             created_at: String::new(),
                             updated_at: String::new(),
                             deleted_at: None,
@@ -366,7 +400,7 @@ mod tests {
     fn real_tool_schemas_are_available_separately_from_mocks() {
         let definitions = ToolRegistry::with_command_bus(Arc::new(StubCommandBus)).definitions();
 
-        assert_eq!(definitions.len(), 13);
+        assert_eq!(definitions.len(), 17);
         assert!(definitions
             .iter()
             .any(|definition| definition.name == "unfour.workspace.current"));
@@ -397,6 +431,18 @@ mod tests {
         assert!(definitions
             .iter()
             .any(|definition| definition.name == "unfour.db.query_readonly"));
+        assert!(definitions
+            .iter()
+            .any(|definition| definition.name == "unfour.api.list_history"));
+        assert!(definitions
+            .iter()
+            .any(|definition| definition.name == "unfour.api.get_history"));
+        assert!(definitions
+            .iter()
+            .any(|definition| definition.name == "unfour.db.test_connection"));
+        assert!(definitions
+            .iter()
+            .any(|definition| definition.name == "unfour.system.health"));
         assert_eq!(
             definitions
                 .iter()

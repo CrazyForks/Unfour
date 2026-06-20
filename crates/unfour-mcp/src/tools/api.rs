@@ -3,8 +3,8 @@ use unfour_command_bus::{ReadCommand, ReadCommandResult};
 
 use crate::command_bus_adapter::CommandBusAdapter;
 use crate::sanitize::{
-    is_sensitive_key, redact_body, redact_header_value, redact_url_query, truncate_body,
-    MAX_BODY_PREVIEW_BYTES, REDACTED,
+    is_sensitive_key, mask_secret, redact_body, redact_header_value, redact_url_query,
+    truncate_body, MAX_BODY_PREVIEW_BYTES,
 };
 
 use super::{object_with_allowed_keys, RegisteredTool, ToolCallError, ToolDefinition, ToolHandler};
@@ -206,6 +206,108 @@ pub(super) fn registered_tools() -> Vec<RegisteredTool> {
             },
             handler: ToolHandler::Real(api_send_request),
         },
+        RegisteredTool {
+            definition: ToolDefinition {
+                name: "unfour.api.list_history",
+                title: "List API Request History",
+                description:
+                    "Lists recent API request/response history for the active workspace through the Unfour command bus. Sensitive URL parameters are masked. Useful for diagnosing when a request started failing.",
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "workspaceId": {
+                            "type": "string",
+                            "description": "Optional workspace ID. Uses the active workspace if omitted."
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Maximum number of history entries to return (default 50, max 200)."
+                        }
+                    },
+                    "additionalProperties": false
+                }),
+                output_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "history": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "id": { "type": "string" },
+                                    "name": { "type": ["string", "null"] },
+                                    "method": { "type": "string" },
+                                    "url": { "type": "string" },
+                                    "status": { "type": ["integer", "null"] },
+                                    "durationMs": { "type": ["integer", "null"] },
+                                    "createdAt": { "type": "string" }
+                                },
+                                "required": ["id", "method", "url", "createdAt"],
+                                "additionalProperties": false
+                            }
+                        },
+                        "count": { "type": "integer", "minimum": 0 },
+                        "source": { "type": "string", "const": "command-bus" }
+                    },
+                    "required": ["history", "count", "source"],
+                    "additionalProperties": false
+                }),
+            },
+            handler: ToolHandler::Real(api_list_history),
+        },
+        RegisteredTool {
+            definition: ToolDefinition {
+                name: "unfour.api.get_history",
+                title: "Get API Request History Detail",
+                description:
+                    "Returns a single API history entry with request and response detail through the Unfour command bus. Sensitive headers, query parameters, and body fields are masked.",
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "historyId": {
+                            "type": "string",
+                            "description": "The API history entry ID."
+                        },
+                        "workspaceId": {
+                            "type": "string",
+                            "description": "Optional workspace ID. Uses the active workspace if omitted."
+                        }
+                    },
+                    "required": ["historyId"],
+                    "additionalProperties": false
+                }),
+                output_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "history": {
+                            "type": "object",
+                            "properties": {
+                                "id": { "type": "string" },
+                                "name": { "type": ["string", "null"] },
+                                "method": { "type": "string" },
+                                "url": { "type": "string" },
+                                "status": { "type": ["integer", "null"] },
+                                "durationMs": { "type": ["integer", "null"] },
+                                "requestHeaders": { "type": "array" },
+                                "requestQuery": { "type": "array" },
+                                "requestBody": { "type": "string" },
+                                "requestBodyTruncated": { "type": "boolean" },
+                                "responseHeaders": { "type": "array" },
+                                "responseBodyPreview": { "type": "string" },
+                                "responseBodyTruncated": { "type": "boolean" },
+                                "createdAt": { "type": "string" }
+                            },
+                            "required": ["id", "method", "url", "createdAt"],
+                            "additionalProperties": false
+                        },
+                        "source": { "type": "string", "const": "command-bus" }
+                    },
+                    "required": ["history", "source"],
+                    "additionalProperties": false
+                }),
+            },
+            handler: ToolHandler::Real(api_get_history),
+        },
     ]
 }
 
@@ -285,32 +387,14 @@ fn api_get_request(
     let headers: Vec<Value> = serde_json::from_str::<Vec<Value>>(&saved.headers_json)
         .unwrap_or_default()
         .into_iter()
-        .map(|mut h| {
-            if let Some(name) = h.get("key").and_then(|v| v.as_str()) {
-                if is_sensitive_key(name) {
-                    if let Some(obj) = h.as_object_mut() {
-                        obj.insert("value".to_string(), Value::String(REDACTED.to_string()));
-                    }
-                }
-            }
-            h
-        })
+        .map(mask_key_value_entry)
         .collect();
 
     // Parse and redact query params
     let query: Vec<Value> = serde_json::from_str::<Vec<Value>>(&saved.query_json)
         .unwrap_or_default()
         .into_iter()
-        .map(|mut q| {
-            if let Some(name) = q.get("key").and_then(|v| v.as_str()) {
-                if is_sensitive_key(name) {
-                    if let Some(obj) = q.as_object_mut() {
-                        obj.insert("value".to_string(), Value::String(REDACTED.to_string()));
-                    }
-                }
-            }
-            q
-        })
+        .map(mask_key_value_entry)
         .collect();
 
     // Redact and truncate body
@@ -394,7 +478,139 @@ fn api_send_request(
     }
 }
 
+fn api_list_history(
+    command_bus: &dyn CommandBusAdapter,
+    arguments: Value,
+) -> Result<Value, ToolCallError> {
+    let arguments = object_with_allowed_keys(arguments, &["workspaceId", "limit"])?;
+    let workspace_id = parse_optional_string(&arguments, "workspaceId")?;
+    let limit = parse_optional_history_limit(&arguments)?;
+
+    let result = command_bus
+        .execute_read(ReadCommand::ApiListHistory {
+            workspace_id,
+            limit,
+        })
+        .map_err(|error| ToolCallError::Execution {
+            code: error.code,
+            message: error.message,
+        })?;
+
+    let ReadCommandResult::ApiHistory(history) = result else {
+        return Err(unexpected_result());
+    };
+
+    let items: Vec<Value> = history
+        .history
+        .iter()
+        .map(|item| {
+            json!({
+                "id": item.id,
+                "name": item.name,
+                "method": item.method,
+                "url": redact_url_query(&item.url),
+                "status": item.status,
+                "durationMs": item.duration_ms,
+                "createdAt": item.created_at
+            })
+        })
+        .collect();
+
+    Ok(json!({
+        "history": items,
+        "count": history.count,
+        "source": "command-bus"
+    }))
+}
+
+fn api_get_history(
+    command_bus: &dyn CommandBusAdapter,
+    arguments: Value,
+) -> Result<Value, ToolCallError> {
+    let arguments = object_with_allowed_keys(arguments, &["historyId", "workspaceId"])?;
+    let history_id = parse_required_string(&arguments, "historyId", "unfour.api.get_history")?;
+    let workspace_id = parse_optional_string(&arguments, "workspaceId")?;
+
+    let result = command_bus
+        .execute_read(ReadCommand::ApiGetHistory {
+            workspace_id,
+            history_id,
+        })
+        .map_err(|error| ToolCallError::Execution {
+            code: error.code,
+            message: error.message,
+        })?;
+
+    let ReadCommandResult::ApiHistoryDetailResult(detail) = result else {
+        return Err(unexpected_result());
+    };
+    let detail = detail.detail;
+
+    let request_headers = mask_kv_json_array(&detail.request_headers_json);
+    let request_query = mask_kv_json_array(&detail.request_query_json);
+    let response_headers = mask_kv_json_array(&detail.response_headers_json);
+
+    let (request_body, request_body_truncated) =
+        redact_and_truncate(detail.request_body.as_deref().unwrap_or(""));
+    let (response_body_preview, response_body_truncated) =
+        redact_and_truncate(detail.response_body_preview.as_deref().unwrap_or(""));
+
+    Ok(json!({
+        "history": {
+            "id": detail.id,
+            "name": detail.name,
+            "method": detail.method,
+            "url": redact_url_query(&detail.url),
+            "status": detail.status,
+            "durationMs": detail.duration_ms,
+            "requestHeaders": request_headers,
+            "requestQuery": request_query,
+            "requestBody": request_body,
+            "requestBodyTruncated": request_body_truncated,
+            "responseHeaders": response_headers,
+            "responseBodyPreview": response_body_preview,
+            "responseBodyTruncated": response_body_truncated,
+            "createdAt": detail.created_at
+        },
+        "source": "command-bus"
+    }))
+}
+
 // --- Helpers ---
+
+/// Parse a JSON array of `{ key, value }` entries and mask sensitive values.
+fn mask_kv_json_array(raw: &str) -> Vec<Value> {
+    serde_json::from_str::<Vec<Value>>(raw)
+        .unwrap_or_default()
+        .into_iter()
+        .map(mask_key_value_entry)
+        .collect()
+}
+
+/// Redact sensitive fields from a body string and truncate to the preview limit.
+fn redact_and_truncate(raw: &str) -> (String, bool) {
+    let body_type = guess_body_type(raw);
+    let redacted = redact_body(raw, &body_type);
+    truncate_body(&redacted, MAX_BODY_PREVIEW_BYTES)
+}
+
+/// Mask the `value` of a `{ "key": ..., "value": ... }` entry when its key is
+/// sensitive, preserving the entry's other fields.
+fn mask_key_value_entry(mut entry: Value) -> Value {
+    let name = entry
+        .get("key")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    if is_sensitive_key(&name) {
+        if let Some(obj) = entry.as_object_mut() {
+            let current = obj.get("value").and_then(|v| v.as_str()).unwrap_or("");
+            let masked = mask_secret(current);
+            obj.insert("value".to_string(), Value::String(masked));
+        }
+    }
+    entry
+}
 
 fn parse_optional_string(
     arguments: &Map<String, Value>,
@@ -440,6 +656,28 @@ fn parse_optional_bool(
             "argument `{}` must be a boolean",
             key
         ))),
+    }
+}
+
+const DEFAULT_HISTORY_LIMIT: i64 = 50;
+const MAX_HISTORY_LIMIT: i64 = 200;
+
+fn parse_optional_history_limit(
+    arguments: &Map<String, Value>,
+) -> Result<Option<i64>, ToolCallError> {
+    match arguments.get("limit") {
+        None => Ok(Some(DEFAULT_HISTORY_LIMIT)),
+        Some(Value::Number(n)) => {
+            let value = n.as_i64().ok_or_else(|| {
+                ToolCallError::InvalidArguments(
+                    "argument `limit` must be a positive integer".to_string(),
+                )
+            })?;
+            Ok(Some(value.clamp(1, MAX_HISTORY_LIMIT)))
+        }
+        Some(_) => Err(ToolCallError::InvalidArguments(
+            "argument `limit` must be a number".to_string(),
+        )),
     }
 }
 
@@ -492,12 +730,13 @@ mod tests {
     use super::*;
     use std::sync::Arc;
     use unfour_command_bus::{
-        ApiCollectionListResult, ApiCollectionSummary, ApiRequestDetailResult,
-        ApiRequestListResult, ApiRequestSummary, ReadCommand, ReadCommandResult,
+        ApiCollectionListResult, ApiCollectionSummary, ApiHistoryDetailResult,
+        ApiHistoryListResult, ApiRequestDetailResult, ApiRequestListResult, ApiRequestSummary,
+        ReadCommand, ReadCommandResult,
     };
     use unfour_core::models::{
-        ApiResponse, ApiSavedRequest, DatabaseConnection, DatabaseQueryInput, DatabaseQueryResult,
-        DatabaseQuerySafety, DatabaseSchema, KeyValue,
+        ApiHistoryDetail, ApiHistoryItem, ApiResponse, ApiSavedRequest, DatabaseConnection,
+        DatabaseQueryInput, DatabaseQueryResult, DatabaseQuerySafety, DatabaseSchema, KeyValue,
     };
 
     use crate::command_bus_adapter::{CommandBusAdapter, CommandBusAdapterError};
@@ -565,6 +804,52 @@ mod tests {
                             body_kind: "json".to_string(),
                             created_at: String::new(),
                             updated_at: String::new(),
+                            deleted_at: None,
+                            revision: 1,
+                            sync_status: "local".to_string(),
+                            remote_id: None,
+                        },
+                        source: "command-bus".to_string(),
+                    })
+                }
+                ReadCommand::ApiListHistory { .. } => {
+                    ReadCommandResult::ApiHistory(ApiHistoryListResult {
+                        history: vec![ApiHistoryItem {
+                            id: "hist-1".to_string(),
+                            workspace_id: "ws-1".to_string(),
+                            name: Some("Get Users".to_string()),
+                            method: "GET".to_string(),
+                            url: "https://api.example.com/users?token=secret123&page=2".to_string(),
+                            status: Some(500),
+                            duration_ms: Some(87),
+                            created_at: "2026-06-20T00:00:00Z".to_string(),
+                            updated_at: "2026-06-20T00:00:00Z".to_string(),
+                            deleted_at: None,
+                            revision: 1,
+                            sync_status: "local".to_string(),
+                            remote_id: None,
+                        }],
+                        count: 1,
+                        source: "command-bus".to_string(),
+                    })
+                }
+                ReadCommand::ApiGetHistory { history_id, .. } => {
+                    ReadCommandResult::ApiHistoryDetailResult(ApiHistoryDetailResult {
+                        detail: ApiHistoryDetail {
+                            id: history_id,
+                            workspace_id: "ws-1".to_string(),
+                            name: Some("Create User".to_string()),
+                            method: "POST".to_string(),
+                            url: "https://api.example.com/users?api_key=secret".to_string(),
+                            request_headers_json: r#"[{"key":"Authorization","value":"Bearer secret-token","enabled":true}]"#.to_string(),
+                            request_query_json: r#"[{"key":"token","value":"secret","enabled":true}]"#.to_string(),
+                            request_body: Some(r#"{"name":"test","password":"secret123"}"#.to_string()),
+                            status: Some(401),
+                            duration_ms: Some(120),
+                            response_headers_json: r#"[{"key":"Set-Cookie","value":"session=secret-session-id","enabled":true}]"#.to_string(),
+                            response_body_preview: Some(r#"{"error":"unauthorized","token":"secret-jwt"}"#.to_string()),
+                            created_at: "2026-06-20T00:00:00Z".to_string(),
+                            updated_at: "2026-06-20T00:00:00Z".to_string(),
                             deleted_at: None,
                             revision: 1,
                             sync_status: "local".to_string(),
@@ -776,8 +1061,8 @@ mod tests {
         // token should be redacted in urlPreview
         let url_preview = requests[0]["urlPreview"].as_str().unwrap();
         assert!(
-            url_preview.contains("[REDACTED]"),
-            "token should be redacted in urlPreview"
+            url_preview.contains("token=[mask "),
+            "token should be masked in urlPreview"
         );
         assert!(
             !url_preview.contains("secret123"),
@@ -797,36 +1082,39 @@ mod tests {
         assert_eq!(result["isError"], false);
         let request = &result["structuredContent"]["request"];
 
-        // URL query params redacted
+        // URL query params masked
         let url = request["url"].as_str().unwrap();
         assert!(
-            url.contains("[REDACTED]"),
-            "api_key should be redacted in URL"
+            url.contains("api_key=[mask "),
+            "api_key should be masked in URL"
         );
-        assert!(!url.contains("secret"), "raw secret should not appear");
+        assert!(!url.contains("=secret"), "raw secret should not appear");
 
-        // Authorization header redacted
+        // Authorization header masked (scheme preserved for diagnosis)
         let headers = request["headers"].as_array().unwrap();
         let auth_header = headers
             .iter()
             .find(|h| h["key"] == "Authorization")
             .unwrap();
-        assert_eq!(auth_header["value"], "[REDACTED]");
+        let auth_value = auth_header["value"].as_str().unwrap();
+        assert!(auth_value.starts_with("[mask "));
+        assert!(auth_value.contains("scheme=Bearer"));
+        assert!(!auth_value.contains("secret-token"));
 
         // Content-Type preserved
         let ct_header = headers.iter().find(|h| h["key"] == "Content-Type").unwrap();
         assert_eq!(ct_header["value"], "application/json");
 
-        // Query param token redacted
+        // Query param token masked
         let query = request["query"].as_array().unwrap();
         let token_param = query.iter().find(|q| q["key"] == "token").unwrap();
-        assert_eq!(token_param["value"], "[REDACTED]");
+        assert!(token_param["value"].as_str().unwrap().starts_with("[mask "));
 
-        // Body password redacted
+        // Body password masked
         let body = request["bodyPreview"].as_str().unwrap();
         assert!(
-            body.contains("[REDACTED]"),
-            "password should be redacted in body"
+            body.contains("[mask "),
+            "password should be masked in body"
         );
         assert!(
             !body.contains("secret123"),
@@ -860,16 +1148,16 @@ mod tests {
         assert_eq!(content["durationMs"], 123);
         assert_eq!(content["source"], "command-bus");
 
-        // Set-Cookie response header redacted
+        // Set-Cookie response header masked
         let headers = content["headers"].as_array().unwrap();
         let set_cookie = headers.iter().find(|h| h["name"] == "Set-Cookie").unwrap();
-        assert_eq!(set_cookie["value"], "[REDACTED]");
+        assert!(set_cookie["value"].as_str().unwrap().starts_with("[mask "));
 
-        // Body token redacted
+        // Body token masked
         let body = content["bodyPreview"].as_str().unwrap();
         assert!(
-            body.contains("[REDACTED]"),
-            "token should be redacted in response body"
+            body.contains("[mask "),
+            "token should be masked in response body"
         );
         assert!(!body.contains("secret-jwt"), "raw token should not appear");
     }
@@ -919,6 +1207,71 @@ mod tests {
             result["structuredContent"]["error"]["code"],
             "COMMAND_BUS_READ_FAILED"
         );
+    }
+
+    // --- history tests ---
+
+    #[test]
+    fn list_history_masks_url_and_returns_status() {
+        let result = api_registry()
+            .call("unfour.api.list_history", json!({}))
+            .expect("should succeed");
+
+        assert_eq!(result["isError"], false);
+        let content = &result["structuredContent"];
+        assert_eq!(content["count"], 1);
+        let item = &content["history"][0];
+        assert_eq!(item["status"], 500);
+        let url = item["url"].as_str().unwrap();
+        assert!(url.contains("token=[mask "), "token should be masked");
+        assert!(!url.contains("secret123"), "raw token should not appear");
+        assert!(url.contains("page=2"), "safe params preserved");
+    }
+
+    #[test]
+    fn get_history_masks_request_and_response() {
+        let result = api_registry()
+            .call("unfour.api.get_history", json!({ "historyId": "hist-1" }))
+            .expect("should succeed");
+
+        assert_eq!(result["isError"], false);
+        let h = &result["structuredContent"]["history"];
+        assert_eq!(h["status"], 401);
+
+        let url = h["url"].as_str().unwrap();
+        assert!(url.contains("api_key=[mask "));
+        assert!(!url.contains("=secret"));
+
+        let req_headers = h["requestHeaders"].as_array().unwrap();
+        let auth = req_headers
+            .iter()
+            .find(|x| x["key"] == "Authorization")
+            .unwrap();
+        let auth_val = auth["value"].as_str().unwrap();
+        assert!(auth_val.starts_with("[mask "));
+        assert!(auth_val.contains("scheme=Bearer"));
+        assert!(!auth_val.contains("secret-token"));
+
+        let resp_headers = h["responseHeaders"].as_array().unwrap();
+        let cookie = resp_headers
+            .iter()
+            .find(|x| x["key"] == "Set-Cookie")
+            .unwrap();
+        assert!(cookie["value"].as_str().unwrap().starts_with("[mask "));
+
+        let req_body = h["requestBody"].as_str().unwrap();
+        assert!(req_body.contains("[mask "));
+        assert!(!req_body.contains("secret123"));
+
+        let resp_body = h["responseBodyPreview"].as_str().unwrap();
+        assert!(resp_body.contains("[mask "));
+        assert!(!resp_body.contains("secret-jwt"));
+    }
+
+    #[test]
+    fn get_history_requires_history_id() {
+        let result = api_registry().call("unfour.api.get_history", json!({}));
+        assert!(result.is_err(), "should fail without historyId");
     }
 
     #[test]

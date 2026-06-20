@@ -483,6 +483,40 @@ pub struct DatabaseQueryInput {
     pub confirm_mutation: Option<bool>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct DbQueryHistoryEntry {
+    pub id: String,
+    pub workspace_id: String,
+    pub connection_id: Option<String>,
+    pub connection_name: String,
+    pub sql: String,
+    pub status: String,
+    pub classification: Option<String>,
+    pub row_count: Option<i64>,
+    pub affected_rows: Option<i64>,
+    pub duration_ms: Option<i64>,
+    pub error: Option<String>,
+    pub executed_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbQueryHistoryRecordInput {
+    pub id: String,
+    pub workspace_id: String,
+    pub connection_id: Option<String>,
+    pub connection_name: String,
+    pub sql: String,
+    pub status: String,
+    pub classification: Option<String>,
+    pub row_count: Option<i64>,
+    pub affected_rows: Option<i64>,
+    pub duration_ms: Option<i64>,
+    pub error: Option<String>,
+    pub executed_at: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DatabaseBrowseInput {

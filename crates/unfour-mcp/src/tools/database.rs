@@ -237,6 +237,42 @@ pub(super) fn registered_tools() -> Vec<RegisteredTool> {
             },
             handler: ToolHandler::Real(db_query_readonly),
         },
+        RegisteredTool {
+            definition: ToolDefinition {
+                name: "unfour.db.test_connection",
+                title: "Test Database Connection",
+                description:
+                    "Tests connectivity to a saved database connection through the Unfour command bus. Returns whether the connection succeeded and the server version when available.",
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "connectionId": {
+                            "type": "string",
+                            "description": "Required saved database connection ID."
+                        },
+                        "workspaceId": {
+                            "type": "string",
+                            "description": "Optional workspace ID. Uses the active workspace if omitted."
+                        }
+                    },
+                    "required": ["connectionId"],
+                    "additionalProperties": false
+                }),
+                output_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "ok": { "type": "boolean" },
+                        "connectionId": { "type": "string" },
+                        "message": { "type": "string" },
+                        "serverVersion": { "type": ["string", "null"] },
+                        "source": { "type": "string", "const": "command-bus" }
+                    },
+                    "required": ["ok", "connectionId", "message", "source"],
+                    "additionalProperties": false
+                }),
+            },
+            handler: ToolHandler::Real(db_test_connection),
+        },
     ]
 }
 
@@ -423,6 +459,30 @@ fn db_query_readonly(
                 "source": "command-bus"
             }))
         }
+        Err(error) => Err(ToolCallError::Execution {
+            code: error.code,
+            message: error.message,
+        }),
+    }
+}
+
+fn db_test_connection(
+    command_bus: &dyn CommandBusAdapter,
+    arguments: Value,
+) -> Result<Value, ToolCallError> {
+    let arguments = object_with_allowed_keys(arguments, &["connectionId", "workspaceId"])?;
+    let connection_id =
+        parse_required_string(&arguments, "connectionId", "unfour.db.test_connection")?;
+    let workspace_id = resolve_workspace_id(command_bus, &arguments)?;
+
+    match command_bus.test_db_connection(&workspace_id, &connection_id) {
+        Ok(result) => Ok(json!({
+            "ok": result.ok,
+            "connectionId": connection_id,
+            "message": result.message,
+            "serverVersion": result.server_version,
+            "source": "command-bus"
+        })),
         Err(error) => Err(ToolCallError::Execution {
             code: error.code,
             message: error.message,
@@ -653,7 +713,7 @@ mod tests {
     use unfour_core::models::{
         ApiResponse, DatabaseConnection, DatabaseQueryInput, DatabaseQueryResult,
         DatabaseQuerySafety, DatabaseResultColumn, DatabaseSchema, DatabaseTable,
-        DatabaseTableColumn,
+        DatabaseTableColumn, DatabaseTestResult,
     };
 
     use crate::command_bus_adapter::{CommandBusAdapter, CommandBusAdapterError};
@@ -828,6 +888,18 @@ mod tests {
                     confirmed: true,
                     message: None,
                 },
+            })
+        }
+
+        fn test_db_connection(
+            &self,
+            _workspace_id: &str,
+            _connection_id: &str,
+        ) -> Result<DatabaseTestResult, CommandBusAdapterError> {
+            Ok(DatabaseTestResult {
+                ok: true,
+                message: "Connection successful".to_string(),
+                server_version: Some("PostgreSQL 16.1".to_string()),
             })
         }
     }
@@ -1422,6 +1494,31 @@ mod tests {
             result["structuredContent"]["error"]["code"],
             "COMMAND_BUS_DB_QUERY_FAILED"
         );
+    }
+
+    // --- test_connection tests ---
+
+    #[test]
+    fn test_connection_returns_ok_with_server_version() {
+        let result = registry()
+            .call(
+                "unfour.db.test_connection",
+                json!({ "connectionId": "conn-1" }),
+            )
+            .expect("should succeed");
+
+        let content = &result["structuredContent"];
+        assert_eq!(content["ok"], true);
+        assert_eq!(content["connectionId"], "conn-1");
+        assert_eq!(content["message"], "Connection successful");
+        assert_eq!(content["serverVersion"], "PostgreSQL 16.1");
+        assert_eq!(content["source"], "command-bus");
+    }
+
+    #[test]
+    fn test_connection_requires_connection_id() {
+        let result = registry().call("unfour.db.test_connection", json!({}));
+        assert!(result.is_err(), "should fail without connectionId");
     }
 
     // --- SQL validation unit tests ---

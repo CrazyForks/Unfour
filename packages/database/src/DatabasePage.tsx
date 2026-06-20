@@ -33,6 +33,7 @@ import { DatabaseStatusBar } from "./components/DatabaseStatusBar";
 import { DatabaseWorkspace } from "./components/DatabaseWorkspace";
 import { useDatabaseConnections } from "./hooks/useDatabaseConnections";
 import { useDatabaseLayout } from "./hooks/useDatabaseLayout";
+import { useQueryHistory } from "./hooks/useQueryHistory";
 import { useSchemaTree } from "./hooks/useSchemaTree";
 import { useSqlExecution } from "./hooks/useSqlExecution";
 import { useTableData } from "./hooks/useTableData";
@@ -74,6 +75,7 @@ export function DatabasePage({ workspaceId }: { workspaceId: string }) {
   });
 
   const connectionsQuery = useDatabaseConnections(workspaceId);
+  const queryHistoryQuery = useQueryHistory(workspaceId, MAX_HISTORY_ENTRIES);
   const connections = useMemo(() => connectionsQuery.data ?? [], [connectionsQuery.data]);
   const selectedConnection = useMemo(
     () => connections.find((item) => item.id === selectedConnectionId) ?? null,
@@ -115,6 +117,11 @@ export function DatabasePage({ workspaceId }: { workspaceId: string }) {
       return next;
     });
   }, [connections, selectedConnectionId, setSelectedDatabaseConnection]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing persisted query history into local optimistic UI state
+    setQueryHistory(queryHistoryQuery.entries.slice(0, MAX_HISTORY_ENTRIES));
+  }, [queryHistoryQuery.entries]);
 
   // Sync form state when the selected connection changes (render-time adjustment pattern).
   if (selectedConnectionId !== prevSelectedConnectionIdRef.current) {
@@ -513,14 +520,18 @@ export function DatabasePage({ workspaceId }: { workspaceId: string }) {
 
   function appendHistory(entry: Omit<SqlHistoryEntry, "executedAt" | "id">) {
     const now = new Date().toISOString();
-    setQueryHistory((current) => [
-      {
-        ...entry,
-        executedAt: now,
-        id: `${now}-${Math.random().toString(36).slice(2, 8)}`,
-      },
-      ...current,
-    ].slice(0, MAX_HISTORY_ENTRIES));
+    const historyEntry: SqlHistoryEntry = {
+      ...entry,
+      executedAt: now,
+      id: `${now}-${Math.random().toString(36).slice(2, 8)}`,
+    };
+    setQueryHistory((current) => [historyEntry, ...current].slice(0, MAX_HISTORY_ENTRIES));
+    queryHistoryQuery.record(historyEntry);
+  }
+
+  function clearQueryHistory() {
+    setQueryHistory([]);
+    queryHistoryQuery.clear();
   }
 
   function loadHistoryEntry(entry: SqlHistoryEntry) {
@@ -612,6 +623,7 @@ export function DatabasePage({ workspaceId }: { workspaceId: string }) {
           executePending={executePending}
           history={queryHistory}
           onClearSql={clearSql}
+          onClearHistory={clearQueryHistory}
           onPreviewSelectedTable={previewSelectedTable}
           onRefreshSchema={refreshSelectedSchema}
           onRun={runSql}

@@ -5,11 +5,12 @@ use unfour_core::models::{
     ApiSavedRequest, CredentialCreateInput, CredentialDeleteInput, CredentialInspectInput,
     CredentialMetadata, CredentialRotateInput, DatabaseBrowseInput, DatabaseBrowseResult,
     DatabaseConnection, DatabaseConnectionInput, DatabaseQueryInput, DatabaseQueryResult,
-    DatabaseSchema, DatabaseTestResult, KeyValue, SshCloseInput, SshConnectInput, SshConnection,
-    SshConnectionInput, SshHostFingerprintInfo, SshHostKeyInput, SshKnownHostsExportResult,
-    SshKnownHostsImportInput, SshKnownHostsImportResult, SshLogExport, SshLogExportInput,
-    SshReconnectCancelInput, SshResizeInput, SshSessionEvent, SshSessionInput, SshSessionSummary,
-    SystemHealth, Workspace, WorkspaceLayout, WorkspaceState,
+    DatabaseSchema, DatabaseTestResult, DbQueryHistoryEntry, DbQueryHistoryRecordInput, KeyValue,
+    SshCloseInput, SshConnectInput, SshConnection, SshConnectionInput, SshHostFingerprintInfo,
+    SshHostKeyInput, SshKnownHostsExportResult, SshKnownHostsImportInput,
+    SshKnownHostsImportResult, SshLogExport, SshLogExportInput, SshReconnectCancelInput,
+    SshResizeInput, SshSessionEvent, SshSessionInput, SshSessionSummary, SystemHealth, Workspace,
+    WorkspaceLayout, WorkspaceState,
 };
 use unfour_core::AppResult;
 
@@ -384,6 +385,37 @@ pub async fn database_query_execute(
     state: State<'_, AppState>,
 ) -> AppResult<DatabaseQueryResult> {
     state.command_bus.execute_database_query(input).await
+}
+
+#[tauri::command]
+pub async fn database_query_history_record(
+    input: DbQueryHistoryRecordInput,
+    state: State<'_, AppState>,
+) -> AppResult<()> {
+    state.command_bus.record_database_query_history(input).await
+}
+
+#[tauri::command]
+pub async fn database_query_history_list(
+    workspace_id: String,
+    limit: Option<i64>,
+    state: State<'_, AppState>,
+) -> AppResult<Vec<DbQueryHistoryEntry>> {
+    state
+        .command_bus
+        .list_database_query_history(workspace_id, limit)
+        .await
+}
+
+#[tauri::command]
+pub async fn database_query_history_clear(
+    workspace_id: String,
+    state: State<'_, AppState>,
+) -> AppResult<()> {
+    state
+        .command_bus
+        .clear_database_query_history(workspace_id)
+        .await
 }
 
 #[tauri::command]

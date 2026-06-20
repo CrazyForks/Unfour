@@ -277,6 +277,23 @@ const MIGRATIONS: &[&str] = &[
     )
     "#,
     r#"
+    CREATE TABLE IF NOT EXISTS db_query_history (
+      id TEXT PRIMARY KEY,
+      workspace_id TEXT NOT NULL,
+      connection_id TEXT,
+      connection_name TEXT NOT NULL,
+      sql TEXT NOT NULL,
+      status TEXT NOT NULL,
+      classification TEXT,
+      row_count INTEGER,
+      affected_rows INTEGER,
+      duration_ms INTEGER,
+      error TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY(workspace_id) REFERENCES workspaces(id)
+    )
+    "#,
+    r#"
     CREATE TABLE IF NOT EXISTS connections (
       id TEXT PRIMARY KEY,
       workspace_id TEXT NOT NULL,
@@ -304,6 +321,7 @@ const MIGRATIONS: &[&str] = &[
     )
     "#,
     "CREATE INDEX IF NOT EXISTS idx_api_history_workspace_created ON api_history(workspace_id, created_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_db_query_history_workspace_created ON db_query_history(workspace_id, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_connections_workspace_kind ON connections(workspace_id, kind)",
     r#"
     CREATE TABLE IF NOT EXISTS ssh_host_keys (
@@ -436,6 +454,7 @@ mod tests {
         assert!(names.contains(&"workspaces"));
         assert!(names.contains(&"api_requests"));
         assert!(names.contains(&"api_history"));
+        assert!(names.contains(&"db_query_history"));
         assert!(names.contains(&"connections"));
         assert!(names.contains(&"activity_events"));
         assert!(names.contains(&"app_settings"));

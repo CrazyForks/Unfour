@@ -26,11 +26,15 @@ reserved for MCP messages; process errors are written to standard error.
 | `unfour.api.list_collections` | `{ "workspaceId": "optional" }` | Lists API request collections (derived from folder paths). |
 | `unfour.api.list_requests` | `{ "workspaceId": "optional", "collectionId": "optional" }` | Lists saved API requests with sensitive URL parameters redacted. |
 | `unfour.api.get_request` | `{ "requestId": "required", "includeBody": "optional bool" }` | Returns a saved API request with sensitive headers, query params, URL params, and body fields redacted. |
-| `unfour.api.send_request` | `{ "requestId": "required", "environmentId": "optional", "timeoutMs": "optional" }` | Sends a previously saved API request and returns the response summary with sensitive data redacted. |
+| `unfour.api.send_request` | `{ "requestId": "required", "environmentId": "optional", "timeoutMs": "optional" }` | Sends a previously saved API request and returns the response summary with sensitive data masked. |
+| `unfour.api.list_history` | `{ "workspaceId": "optional", "limit": "optional" }` | Lists recent API request/response history with sensitive URL parameters masked. Default limit 50, max 200. Useful for diagnosing when a request started failing. |
+| `unfour.api.get_history` | `{ "historyId": "required", "workspaceId": "optional" }` | Returns a single history entry's request/response detail with sensitive headers, query params, and body fields masked. |
 | `unfour.db.list_connections` | `{ "workspaceId": "optional" }` | Lists saved database connections as safe summaries (no passwords or connection strings). |
 | `unfour.db.list_tables` | `{ "connectionId": "required", "workspaceId": "optional", "limit": "optional" }` | Lists tables and views for a saved database connection. Default limit 200, max 500. |
 | `unfour.db.describe_table` | `{ "connectionId": "required", "tableName": "required", "schema": "optional", "workspaceId": "optional" }` | Describes a table's columns (name, type, nullable, primaryKey). Does not read table data. |
 | `unfour.db.query_readonly` | `{ "connectionId": "required", "sql": "required", "limit": "optional", "workspaceId": "optional" }` | Executes a read-only SQL query. Only SELECT, WITH, SHOW, DESCRIBE, DESC, EXPLAIN are allowed. Default limit 100, max 1000. |
+| `unfour.db.test_connection` | `{ "connectionId": "required", "workspaceId": "optional" }` | Tests connectivity to a saved database connection and returns success plus server version when available. |
+| `unfour.system.health` | `{}` | Returns command-bus and storage readiness for diagnostics. |
 
 ### API Debugger Tools
 
@@ -162,23 +166,47 @@ Example query_readonly result:
 }
 ```
 
-## Sensitive Data Redaction
+## Sensitive Data Masking
 
-All API tools apply a comprehensive sanitization layer before returning
-results. The following field names are treated as sensitive (case-insensitive,
-ignoring hyphens and underscores) and their values are replaced with
-`[REDACTED]`:
+All API tools apply a sanitization layer before returning results. The
+following field names are treated as sensitive (case-insensitive, ignoring
+hyphens and underscores):
 
 `password`, `passwd`, `pwd`, `token`, `access_token`, `refresh_token`,
 `api_key`, `apikey`, `secret`, `client_secret`, `authorization`, `cookie`,
 `set-cookie`, `proxy-authorization`, `x-api-key`, `x-auth-token`,
 `private_key`, `connection_string`, `database_url`, `credential_ref`.
 
-Redaction is applied to:
+Because MCP results are consumed by an LLM (potentially cloud-hosted), these
+values must not leave the machine in usable form. Instead of replacing the
+whole value, sensitive values are replaced with a **partial-mask descriptor**
+that exposes diagnostic *shape* while hiding the usable secret. This lets a
+client diagnose the common auth failures (wrong scheme, truncated/malformed
+token, expired JWT, wrong-environment key, mismatched tokens across fields)
+without exfiltrating the credential.
+
+The descriptor has the form `[mask kind=… scheme=… len=… fp=…]` where:
+
+- `kind` — structural classification: `jwt`, `basic`, `uuid`, `hex`,
+  `prefixed:<p>` (a non-secret leading prefix such as `sk`/`ghp`), or `opaque`.
+- `scheme` — the auth scheme word (`Bearer`, `Basic`, `Digest`, …) when present.
+- `len` — character length of the secret material.
+- `fp` — a short, deterministic, non-cryptographic fingerprint (FNV-1a) of the
+  secret. It lets a client check whether two fields hold the *same* secret
+  (e.g. request header vs. environment variable) without revealing either.
+
+Examples: `[mask kind=jwt scheme=Bearer len=872 fp=a1b2c3]`,
+`[mask kind=prefixed:sk len=51 fp=9f8e7d]`.
+
+Masking is applied to:
 
 - HTTP request and response headers
 - URL query parameters
 - JSON request and response body fields
+
+This is the MCP-layer (LLM-facing) policy. The narrower persistence-layer
+redaction in `unfour-core` (`<redacted>` for the five auth headers) is
+separate and unchanged.
 
 Body previews are truncated to 20 KB. When truncation occurs the result
 includes `"truncated": true`.

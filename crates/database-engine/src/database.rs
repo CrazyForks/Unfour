@@ -9,7 +9,7 @@ use unfour_core::models::{
     DatabaseBrowseInput, DatabaseBrowseResult, DatabaseConnection, DatabaseConnectionConfig,
     DatabaseConnectionInput, DatabaseQueryInput, DatabaseQueryResult, DatabaseQuerySafety,
     DatabaseResultColumn, DatabaseSchema, DatabaseTable, DatabaseTableColumn, DatabaseTestResult,
-    StoredConnection,
+    DbQueryHistoryEntry, DbQueryHistoryRecordInput, StoredConnection,
 };
 use unfour_core::{AppError, AppResult};
 use unfour_local_storage::LocalDb;
@@ -473,6 +473,115 @@ impl DatabaseService {
                 display_driver(driver)
             ))),
         }
+    }
+
+    pub async fn record_query_history(&self, input: DbQueryHistoryRecordInput) -> AppResult<()> {
+        validate_workspace_id(&input.workspace_id)?;
+        let workspace_id = input.workspace_id;
+        let id = input.id.trim().to_string();
+        if id.is_empty() {
+            return Err(AppError::Validation(
+                "database query history id cannot be empty".to_string(),
+            ));
+        }
+
+        let sql = input.sql.trim().to_string();
+        if sql.is_empty() {
+            return Err(AppError::Validation(
+                "database query history SQL cannot be empty".to_string(),
+            ));
+        }
+
+        let connection_name = input.connection_name.trim().to_string();
+        if connection_name.is_empty() {
+            return Err(AppError::Validation(
+                "database query history connection name cannot be empty".to_string(),
+            ));
+        }
+
+        let status = input.status.trim().to_string();
+        if !matches!(status.as_str(), "success" | "failed") {
+            return Err(AppError::Validation(
+                "database query history status must be success or failed".to_string(),
+            ));
+        }
+
+        let executed_at = input.executed_at.trim().to_string();
+        if executed_at.is_empty() {
+            return Err(AppError::Validation(
+                "database query history timestamp cannot be empty".to_string(),
+            ));
+        }
+
+        sqlx::query(
+            r#"
+            INSERT INTO db_query_history (
+              id, workspace_id, connection_id, connection_name, sql, status,
+              classification, row_count, affected_rows, duration_ms, error, created_at
+            )
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+            "#,
+        )
+        .bind(id)
+        .bind(workspace_id)
+        .bind(empty_to_none(input.connection_id))
+        .bind(connection_name)
+        .bind(sql)
+        .bind(status)
+        .bind(empty_to_none(input.classification))
+        .bind(input.row_count)
+        .bind(input.affected_rows)
+        .bind(input.duration_ms)
+        .bind(empty_to_none(input.error))
+        .bind(executed_at)
+        .execute(self.db.pool())
+        .await?;
+
+        Ok(())
+    }
+
+    pub async fn list_query_history(
+        &self,
+        workspace_id: String,
+        limit: Option<i64>,
+    ) -> AppResult<Vec<DbQueryHistoryEntry>> {
+        validate_workspace_id(&workspace_id)?;
+        let limit = limit.unwrap_or(200).clamp(1, 200);
+
+        let entries = sqlx::query_as::<_, DbQueryHistoryEntry>(
+            r#"
+            SELECT
+              id, workspace_id, connection_id, connection_name, sql, status,
+              classification, row_count, affected_rows, duration_ms, error,
+              created_at AS executed_at
+            FROM db_query_history
+            WHERE workspace_id = ?1
+            ORDER BY created_at DESC
+            LIMIT ?2
+            "#,
+        )
+        .bind(workspace_id)
+        .bind(limit)
+        .fetch_all(self.db.pool())
+        .await?;
+
+        Ok(entries)
+    }
+
+    pub async fn clear_query_history(&self, workspace_id: String) -> AppResult<()> {
+        validate_workspace_id(&workspace_id)?;
+
+        sqlx::query(
+            r#"
+            DELETE FROM db_query_history
+            WHERE workspace_id = ?1
+            "#,
+        )
+        .bind(workspace_id)
+        .execute(self.db.pool())
+        .await?;
+
+        Ok(())
     }
 
     pub async fn browse_table(
@@ -1643,6 +1752,112 @@ mod tests {
         let service = DatabaseService::new(db).with_secret_store(secret_store);
 
         (service, workspace_id)
+    }
+
+    #[tokio::test]
+    async fn query_history_is_workspace_scoped_ordered_limited_and_clearable() {
+        let (service, workspace_id) = service_with_workspace().await;
+        let other_workspace_id = Uuid::new_v4().to_string();
+        let now = Utc::now().to_rfc3339();
+        sqlx::query(
+            r#"
+            INSERT INTO workspaces (
+              id, name, is_default, last_opened_at, created_at, updated_at,
+              revision, sync_status
+            )
+            VALUES (?1, 'Other Workspace', 0, ?2, ?2, ?2, 1, 'local')
+            "#,
+        )
+        .bind(&other_workspace_id)
+        .bind(&now)
+        .execute(service.db.pool())
+        .await
+        .expect("insert other workspace");
+
+        service
+            .record_query_history(DbQueryHistoryRecordInput {
+                id: "history-old".to_string(),
+                workspace_id: workspace_id.clone(),
+                connection_id: Some("connection-1".to_string()),
+                connection_name: "Local SQLite".to_string(),
+                sql: "select 1".to_string(),
+                status: "success".to_string(),
+                classification: Some("read".to_string()),
+                row_count: Some(1),
+                affected_rows: Some(0),
+                duration_ms: Some(3),
+                error: None,
+                executed_at: "2026-01-01T00:00:00Z".to_string(),
+            })
+            .await
+            .expect("record old history");
+        service
+            .record_query_history(DbQueryHistoryRecordInput {
+                id: "history-new".to_string(),
+                workspace_id: workspace_id.clone(),
+                connection_id: Some("connection-1".to_string()),
+                connection_name: "Local SQLite".to_string(),
+                sql: "select 2".to_string(),
+                status: "success".to_string(),
+                classification: Some("read".to_string()),
+                row_count: Some(2),
+                affected_rows: Some(0),
+                duration_ms: Some(5),
+                error: None,
+                executed_at: "2026-01-01T00:00:02Z".to_string(),
+            })
+            .await
+            .expect("record new history");
+        service
+            .record_query_history(DbQueryHistoryRecordInput {
+                id: "history-other".to_string(),
+                workspace_id: other_workspace_id.clone(),
+                connection_id: None,
+                connection_name: "Other SQLite".to_string(),
+                sql: "select other".to_string(),
+                status: "failed".to_string(),
+                classification: None,
+                row_count: None,
+                affected_rows: None,
+                duration_ms: None,
+                error: Some("syntax error".to_string()),
+                executed_at: "2026-01-01T00:00:03Z".to_string(),
+            })
+            .await
+            .expect("record other workspace history");
+
+        let listed = service
+            .list_query_history(workspace_id.clone(), Some(10))
+            .await
+            .expect("list history");
+        assert_eq!(listed.len(), 2);
+        assert_eq!(listed[0].id, "history-new");
+        assert_eq!(listed[0].row_count, Some(2));
+        assert_eq!(listed[1].id, "history-old");
+
+        let limited = service
+            .list_query_history(workspace_id.clone(), Some(1))
+            .await
+            .expect("list limited history");
+        assert_eq!(limited.len(), 1);
+        assert_eq!(limited[0].id, "history-new");
+
+        service
+            .clear_query_history(workspace_id.clone())
+            .await
+            .expect("clear workspace history");
+        let cleared = service
+            .list_query_history(workspace_id, Some(10))
+            .await
+            .expect("list cleared history");
+        assert!(cleared.is_empty());
+
+        let other = service
+            .list_query_history(other_workspace_id, Some(10))
+            .await
+            .expect("list other workspace history");
+        assert_eq!(other.len(), 1);
+        assert_eq!(other[0].id, "history-other");
     }
 
     async fn sqlite_fixture() -> PathBuf {

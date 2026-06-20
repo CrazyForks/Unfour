@@ -14,6 +14,7 @@ export function DatabaseWorkspace({
   error,
   executePending,
   history,
+  onClearHistory,
   onClearSql,
   onPreviewSelectedTable,
   onRefreshSchema,
@@ -42,6 +43,7 @@ export function DatabaseWorkspace({
   error: unknown;
   executePending: boolean;
   history: SqlHistoryEntry[];
+  onClearHistory: () => void;
   onClearSql: () => void;
   onPreviewSelectedTable: () => void;
   onRefreshSchema: () => void;
@@ -130,6 +132,7 @@ export function DatabaseWorkspace({
           error={error}
           history={history}
           isPending={executePending}
+          onClearHistory={onClearHistory}
           onSelectHistory={onSelectHistory}
           onSelectTab={onSelectResultTab}
           pendingConfirmation={pendingConfirmation}
