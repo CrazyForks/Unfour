@@ -17,6 +17,7 @@ import { useWorkspaceStore } from "@unfour/workspace-core";
 import {
   Badge,
   Button,
+  ConfirmDialog,
   ErrorState,
   IconButton,
   Input,
@@ -179,23 +180,28 @@ export function DatabasePage({ workspaceId }: { workspaceId: string }) {
     },
   });
 
+  const [deleteConfirm, setDeleteConfirm] = useState<DatabaseConnection | null>(null);
   const deleteMutation = useMutation({
     mutationFn: (connectionId: string) => deleteDatabaseConnection(workspaceId, connectionId),
-    onSuccess: () => {
-      if (selectedConnectionId) {
-        setConnectionStates((current) => {
-          const next = { ...current };
-          delete next[selectedConnectionId];
-          return next;
-        });
+    onSuccess: (_result, connectionId) => {
+      setConnectionStates((current) => {
+        const next = { ...current };
+        delete next[connectionId];
+        return next;
+      });
+      // Only reset the active workspace when the deleted connection was the one
+      // in use; deleting another connection from the context menu must not clear
+      // the current query or table view.
+      if (connectionId === selectedConnectionId) {
+        setSelectedDatabaseConnection(null);
+        setTestResult(null);
+        setQueryResult(null);
+        setTableView(null);
+        setSelectedTable(null);
+        setPendingSqlConfirmation(false);
+        setClientError(null);
       }
-      setSelectedDatabaseConnection(null);
-      setTestResult(null);
-      setQueryResult(null);
-      setTableView(null);
-      setSelectedTable(null);
-      setPendingSqlConfirmation(false);
-      setClientError(null);
+      setDeleteConfirm(null);
       queryClient.invalidateQueries({ queryKey: ["database-connections", workspaceId] });
     },
   });
@@ -587,7 +593,9 @@ export function DatabasePage({ workspaceId }: { workspaceId: string }) {
               connectionStates={connectionStates}
               connections={connections}
               onConnect={connectConnection}
+              onDeleteConnection={setDeleteConfirm}
               onDisconnect={disconnectConnection}
+              onEditConnection={(connection) => selectConnection(connection.id)}
               onNewQuery={startNewQuery}
               onPreviewTable={(table) => browseTablePage(table, 0, tableView?.pageSize ?? DEFAULT_PREVIEW_PAGE_SIZE)}
               onRefresh={refreshConnectionsAndSchema}
@@ -603,7 +611,12 @@ export function DatabasePage({ workspaceId }: { workspaceId: string }) {
           <ConnectionEditor
             error={saveMutation.error ?? testMutation.error}
             form={form}
-            onDelete={() => selectedConnectionId && deleteMutation.mutate(selectedConnectionId)}
+            onDelete={() => {
+              const target = connections.find((item) => item.id === selectedConnectionId);
+              if (target) {
+                setDeleteConfirm(target);
+              }
+            }}
             onNew={newConnection}
             onSubmit={submitConnection}
             onTest={connectSelectedConnection}
@@ -646,6 +659,17 @@ export function DatabasePage({ workspaceId }: { workspaceId: string }) {
         />
       </div>
       <DatabaseStatusBar connection={selectedConnection} executing={executePending} session={selectedSession} />
+      <ConfirmDialog
+        confirmLabel={t("common.actions.delete")}
+        description={
+          deleteConfirm ? t("database.tree.deleteBody", { name: deleteConfirm.name }) : ""
+        }
+        onConfirm={() => deleteConfirm && deleteMutation.mutate(deleteConfirm.id)}
+        onOpenChange={(open) => !open && setDeleteConfirm(null)}
+        open={deleteConfirm !== null}
+        pending={deleteMutation.isPending}
+        title={t("database.tree.deleteTitle")}
+      />
     </div>
   );
 }

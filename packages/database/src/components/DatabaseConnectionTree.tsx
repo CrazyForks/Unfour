@@ -1,8 +1,9 @@
-import { Columns3, Database, MoreHorizontal, Play, RefreshCw, Table2 } from "lucide-react";
+import { Columns3, Copy, Database, MoreHorizontal, Pencil, Play, RefreshCw, Table2, Trash2 } from "lucide-react";
 import type { DatabaseConnection, DatabaseSchema, DatabaseTable } from "@unfour/command-client";
 import {
   Badge,
   ConnectionStatus,
+  ContextMenuItem,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -20,7 +21,9 @@ export function DatabaseConnectionTree({
   connectionStates,
   connections,
   onConnect,
+  onDeleteConnection,
   onDisconnect,
+  onEditConnection,
   onNewQuery,
   onPreviewTable,
   onRefresh,
@@ -35,7 +38,9 @@ export function DatabaseConnectionTree({
   connectionStates?: Record<string, DatabaseConnectionSessionState>;
   connections: DatabaseConnection[];
   onConnect?: (connection: DatabaseConnection) => void;
+  onDeleteConnection?: (connection: DatabaseConnection) => void;
   onDisconnect?: (connection: DatabaseConnection) => void;
+  onEditConnection?: (connection: DatabaseConnection) => void;
   onNewQuery?: () => void;
   onPreviewTable?: (table: DatabaseTable) => void;
   onRefresh?: () => void;
@@ -75,9 +80,23 @@ export function DatabaseConnectionTree({
         <ConnectionActions
           connection={connection}
           onConnect={onConnect}
+          onDeleteConnection={onDeleteConnection}
           onDisconnect={onDisconnect}
+          onEditConnection={onEditConnection}
           onNewQuery={onNewQuery}
           onRefresh={onRefresh}
+          onRefreshSchema={onRefreshSchema}
+          status={status}
+        />
+      ),
+      contextMenu: (
+        <ConnectionContextMenu
+          connection={connection}
+          onConnect={onConnect}
+          onDeleteConnection={onDeleteConnection}
+          onDisconnect={onDisconnect}
+          onEditConnection={onEditConnection}
+          onNewQuery={onNewQuery}
           onRefreshSchema={onRefreshSchema}
           status={status}
         />
@@ -278,7 +297,9 @@ function tableItem(
 function ConnectionActions({
   connection,
   onConnect,
+  onDeleteConnection,
   onDisconnect,
+  onEditConnection,
   onNewQuery,
   onRefresh,
   onRefreshSchema,
@@ -286,7 +307,9 @@ function ConnectionActions({
 }: {
   connection: DatabaseConnection;
   onConnect?: (connection: DatabaseConnection) => void;
+  onDeleteConnection?: (connection: DatabaseConnection) => void;
   onDisconnect?: (connection: DatabaseConnection) => void;
+  onEditConnection?: (connection: DatabaseConnection) => void;
   onNewQuery?: () => void;
   onRefresh?: () => void;
   onRefreshSchema?: (connection: DatabaseConnection) => void;
@@ -297,7 +320,7 @@ function ConnectionActions({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <IconButton label={`Database actions for ${connection.name}`} size="compact">
+        <IconButton label={t("database.tree.actionsLabel", { name: connection.name })} size="compact">
           <MoreHorizontal size={13} />
         </IconButton>
       </DropdownMenuTrigger>
@@ -309,8 +332,80 @@ function ConnectionActions({
         <DropdownMenuItem onSelect={onNewQuery}>{t("database.actions.newQuery")}</DropdownMenuItem>
         <DropdownMenuItem onSelect={onRefresh}>{t("database.actions.refreshConnections")}</DropdownMenuItem>
         <DropdownMenuItem onSelect={() => onRefreshSchema?.(connection)}>{t("database.actions.refreshSchema")}</DropdownMenuItem>
+        {onEditConnection && (
+          <DropdownMenuItem onSelect={() => onEditConnection(connection)}>
+            <Pencil size={13} />
+            {t("database.tree.editConnection")}
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuItem onSelect={() => void navigator.clipboard?.writeText(connection.name)}>
+          <Copy size={13} />
+          {t("database.tree.copyName")}
+        </DropdownMenuItem>
+        {onDeleteConnection && (
+          <DropdownMenuItem
+            className="text-[var(--u-color-danger)]"
+            onSelect={() => onDeleteConnection(connection)}
+          >
+            <Trash2 size={13} />
+            {t("database.tree.deleteConnection")}
+          </DropdownMenuItem>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+function ConnectionContextMenu({
+  connection,
+  onConnect,
+  onDeleteConnection,
+  onDisconnect,
+  onEditConnection,
+  onNewQuery,
+  onRefreshSchema,
+  status,
+}: {
+  connection: DatabaseConnection;
+  onConnect?: (connection: DatabaseConnection) => void;
+  onDeleteConnection?: (connection: DatabaseConnection) => void;
+  onDisconnect?: (connection: DatabaseConnection) => void;
+  onEditConnection?: (connection: DatabaseConnection) => void;
+  onNewQuery?: () => void;
+  onRefreshSchema?: (connection: DatabaseConnection) => void;
+  status: DatabaseConnectionStatus;
+}) {
+  const { t } = useI18n();
+
+  return (
+    <>
+      <ContextMenuItem onSelect={() => onConnect?.(connection)}>
+        {t("common.actions.connect")}
+      </ContextMenuItem>
+      <ContextMenuItem
+        disabled={status === "disconnected"}
+        onSelect={() => onDisconnect?.(connection)}
+      >
+        {t("common.actions.disconnect")}
+      </ContextMenuItem>
+      <ContextMenuItem onSelect={onNewQuery}>{t("database.actions.newQuery")}</ContextMenuItem>
+      <ContextMenuItem onSelect={() => onRefreshSchema?.(connection)}>
+        {t("database.actions.refreshSchema")}
+      </ContextMenuItem>
+      {onEditConnection && (
+        <ContextMenuItem onSelect={() => onEditConnection(connection)}>
+          {t("database.tree.editConnection")}
+        </ContextMenuItem>
+      )}
+      <ContextMenuItem onSelect={() => void navigator.clipboard?.writeText(connection.name)}>
+        {t("database.tree.copyName")}
+      </ContextMenuItem>
+      {onDeleteConnection && (
+        <ContextMenuItem onSelect={() => onDeleteConnection(connection)} tone="danger">
+          {t("database.tree.deleteConnection")}
+        </ContextMenuItem>
+      )}
+    </>
   );
 }
 
