@@ -4,10 +4,6 @@ import { X } from "lucide-react";
 import { cn } from "./utils";
 import { IconButton } from "./icon-button";
 
-export const Dialog = DialogPrimitive.Root;
-export const DialogTrigger = DialogPrimitive.Trigger;
-export const DialogClose = DialogPrimitive.Close;
-
 export function DialogContent({
   children,
   className,

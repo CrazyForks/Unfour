@@ -1,16 +1,14 @@
 export { Badge } from "./badge";
 export { Button, type ButtonProps } from "./button";
 export { DataTable, type DataTableColumn } from "./data-table";
+export { Dialog, DialogClose, DialogTrigger } from "./dialog-primitives";
 export {
-  Dialog,
   DialogBody,
-  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
   DialogXClose,
 } from "./dialog";
 export { IconButton } from "./icon-button";
@@ -36,18 +34,17 @@ export {
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuTrigger,
-  DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuTrigger,
 } from "./menus";
+export { DropdownMenu, DropdownMenuTrigger } from "./menus-primitives";
+export { PopoverContent } from "./popover";
 export {
   Popover,
   PopoverAnchor,
   PopoverClose,
-  PopoverContent,
   PopoverTrigger,
-} from "./popover";
+} from "./popover-primitives";
 export { Select, type SelectOption } from "./select";
 export {
   ActivityBar,
@@ -69,11 +66,11 @@ export {
 export { EmptyState, ErrorState, LoadingState } from "./states";
 export {
   ThemeProvider,
-  initializeTheme,
   useTheme,
   type Theme,
   type ThemeContextValue,
 } from "./theme";
+export { initializeTheme } from "./theme-init";
 export { ConnectionStatus, StatusBadge, type StatusTone } from "./status";
 export { Tabs, type WorkspaceTab } from "./tabs";
 export { Toolbar, ToolbarGroup } from "./toolbar";

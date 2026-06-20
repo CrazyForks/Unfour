@@ -1,24 +1,12 @@
 import * as React from "react";
 import { cn } from "./utils";
+import { clampResizablePaneSize } from "./shell-utils";
 
 export type ShellTab = {
   id: string;
   title: string;
   meta?: string;
 };
-
-export function clampResizablePaneSize(
-  nextSize: number,
-  minSize: number,
-  maxSize: number,
-  currentSize: number,
-) {
-  if (!Number.isFinite(nextSize)) {
-    return currentSize;
-  }
-
-  return Math.min(Math.max(nextSize, minSize), maxSize);
-}
 
 export function AppShellFrame({
   activityBar,

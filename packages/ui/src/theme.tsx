@@ -1,4 +1,5 @@
 import * as React from "react";
+import { applyTheme, readStoredTheme, writeStoredTheme } from "./theme-internal";
 
 export type Theme = "light" | "dark";
 
@@ -58,39 +59,7 @@ export function ThemeProvider({
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- co-located hook with its context provider; splitting would create circular imports
 export function useTheme(): ThemeContextValue {
   return React.useContext(ThemeContext);
-}
-
-export function initializeTheme({
-  defaultTheme = DEFAULT_THEME,
-  storageKey = DEFAULT_STORAGE_KEY,
-}: {
-  defaultTheme?: Theme;
-  storageKey?: string;
-} = {}): Theme {
-  const theme = readStoredTheme(storageKey) ?? defaultTheme;
-  applyTheme(theme);
-  return theme;
-}
-
-function applyTheme(theme: Theme) {
-  globalThis.document?.documentElement.setAttribute("data-theme", theme);
-}
-
-function readStoredTheme(storageKey: string): Theme | null {
-  try {
-    const stored = globalThis.localStorage?.getItem(storageKey);
-    return stored === "light" || stored === "dark" ? stored : null;
-  } catch {
-    return null;
-  }
-}
-
-function writeStoredTheme(storageKey: string, theme: Theme) {
-  try {
-    globalThis.localStorage?.setItem(storageKey, theme);
-  } catch {
-    // Ignore storage failures; theme still applies for the current session.
-  }
 }

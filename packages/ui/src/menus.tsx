@@ -7,8 +7,6 @@ const menuContent =
 const menuItem =
   "flex h-7 cursor-default select-none items-center gap-2 rounded-[var(--u-radius-sm)] px-2 outline-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[highlighted]:bg-[var(--u-color-surface-hover)]";
 
-export const DropdownMenu = DropdownMenuPrimitive.Root;
-export const DropdownMenuTrigger = DropdownMenuPrimitive.Trigger;
 export function DropdownMenuContent({
   className,
   ...props

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clampResizablePaneSize } from "./shell";
+import { clampResizablePaneSize } from "./shell-utils";
 
 describe("clampResizablePaneSize", () => {
   it("keeps resized shell pane widths within bounds", () => {
