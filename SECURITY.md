@@ -1,6 +1,6 @@
 # Security Policy
 
-Unfour Workspace handles sensitive material — SSH private keys, database
+Unfour handles sensitive material — SSH private keys, database
 passwords, and API tokens — so we take security reports seriously.
 
 ## Supported Versions

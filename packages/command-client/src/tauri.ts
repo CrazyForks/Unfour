@@ -172,7 +172,7 @@ async function mockInvoke<T>(
 ): Promise<T> {
   if (command === "system_health") {
     return {
-      appName: "Unfour Workspace",
+      appName: "Unfour",
       storageReady: true,
       commandBusReady: true,
       aiReservedCapabilities: ["api.send_request", "ssh.connect.reserved"],
@@ -583,7 +583,7 @@ async function mockInvoke<T>(
 
   if (command === "credential_create") {
     const input = args?.input as CredentialCreateInput;
-    const credentialRef = `unfour-workspace:${input.workspaceId}:${input.kind}:${crypto.randomUUID()}`;
+    const credentialRef = `unfour:${input.workspaceId}:${input.kind}:${crypto.randomUUID()}`;
     mockCredentials[credentialRef] = input.secret;
     return ({
       workspaceId: input.workspaceId,
@@ -1605,7 +1605,7 @@ function inspectMockCredential(
 ): CredentialMetadata {
   const [serviceName, refWorkspaceId, kind, recordId] = credentialRef.split(":");
   if (
-    serviceName !== "unfour-workspace" ||
+    serviceName !== "unfour" ||
     refWorkspaceId !== workspaceId ||
     !kind ||
     !recordId ||

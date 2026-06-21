@@ -76,7 +76,7 @@ pnpm run build
 cargo fmt --check
 cargo test --workspace
 cargo check --workspace
-cargo check -p unfour-workspace --features ssh-native
+cargo check -p unfour --features ssh-native
 ```
 
 If a command does not exist, record:

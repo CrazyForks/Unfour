@@ -57,7 +57,7 @@ Run the default verification for every touched area, plus any task-specific comm
 | Frontend TypeScript / React | `git diff --check`, `pnpm run build` |
 | Frontend tests or lint config | `pnpm run lint` / `pnpm run test` (when available) |
 | Rust crates | `cargo fmt --check`, `cargo test --workspace` |
-| Rust compile-sensitive feature flags | relevant `cargo check` (e.g. `cargo check -p unfour-workspace --features ssh-native`) |
+| Rust compile-sensitive feature flags | relevant `cargo check` (e.g. `cargo check -p unfour --features ssh-native`) |
 | Tauri adapter or cross-layer changes | frontend build plus relevant Rust checks |
 | Build configuration | build command and output inspection |
 

@@ -10,7 +10,7 @@ pub(super) fn registered_tools() -> Vec<RegisteredTool> {
         RegisteredTool {
             definition: ToolDefinition {
                 name: "unfour.workspace.current",
-                title: "Current Unfour Workspace",
+                title: "Current Unfour workspace",
                 description:
                     "Returns the active local workspace through the Unfour command bus.",
                 input_schema: json!({
@@ -43,7 +43,7 @@ pub(super) fn registered_tools() -> Vec<RegisteredTool> {
         RegisteredTool {
             definition: ToolDefinition {
                 name: "unfour.workspace.list",
-                title: "List Unfour Workspaces",
+                title: "List Unfour workspaces",
                 description:
                     "Lists all local workspaces through the Unfour command bus, marking which one is active.",
                 input_schema: json!({

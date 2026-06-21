@@ -6204,6 +6204,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "unfour"
+version = "0.1.0"
+dependencies = [
+ "sqlx",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-opener",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "unfour-app",
+]
+
+[[package]]
 name = "unfour-app"
 version = "0.1.0"
 dependencies = [
@@ -6326,20 +6340,6 @@ dependencies = [
  "unfour-local-storage",
  "unfour-secret-store",
  "uuid",
-]
-
-[[package]]
-name = "unfour-workspace"
-version = "0.1.0"
-dependencies = [
- "sqlx",
- "tauri",
- "tauri-build",
- "tauri-plugin-opener",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "unfour-app",
 ]
 
 [[package]]

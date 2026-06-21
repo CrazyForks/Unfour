@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "check:rust": "cd ../.. && cargo check --workspace",
-    "check:rust:ssh": "cd ../.. && cargo check -p unfour-workspace --features ssh-native",
+    "check:rust:ssh": "cd ../.. && cargo check -p unfour --features ssh-native",
     "test:rust": "cd ../.. && cargo test --workspace"
   },
   "dependencies": {

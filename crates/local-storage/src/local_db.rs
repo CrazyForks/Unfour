@@ -6,7 +6,7 @@ use sqlx::SqlitePool;
 use tauri::{AppHandle, Manager};
 use unfour_core::{AppError, AppResult};
 
-const DB_FILENAME: &str = "unfour-workspace.sqlite";
+const DB_FILENAME: &str = "unfour.sqlite";
 
 /// How long a connection waits for a held lock before returning
 /// `SQLITE_BUSY`. The desktop app and satellite processes (e.g. the MCP server)

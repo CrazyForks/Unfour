@@ -23,13 +23,13 @@ use unfour_secret_store::SecretStore;
 use unfour_ssh_engine::SshService;
 use unfour_workspace_engine::WorkspaceService;
 
-pub const DEFAULT_APP_IDENTIFIER: &str = "com.unfour.workspace";
+pub const DEFAULT_APP_IDENTIFIER: &str = "dev.unfour";
 
 /// OS keychain service name under which credentials are stored. Must match the
 /// value the desktop app passes to `SecretStore::new` (see
 /// `apps/desktop/src-tauri/src/lib.rs`) so satellite processes read the same
 /// credential entries.
-pub const DEFAULT_SECRET_SERVICE: &str = "unfour-workspace";
+pub const DEFAULT_SECRET_SERVICE: &str = "unfour";
 
 /// Default and maximum number of activity events returned by `ListActivity`.
 const DEFAULT_ACTIVITY_LIMIT: i64 = 50;
@@ -282,7 +282,7 @@ impl CommandBus {
         app_data_dir: impl AsRef<std::path::Path>,
     ) -> AppResult<Self> {
         let db = LocalDb::connect_existing_read_only_path(
-            app_data_dir.as_ref().join("unfour-workspace.sqlite"),
+            app_data_dir.as_ref().join("unfour.sqlite"),
         )
         .await?;
         Self::from_existing_db_read_only(db).await
@@ -348,7 +348,7 @@ impl CommandBus {
 
     pub async fn system_health(&self) -> AppResult<SystemHealth> {
         Ok(SystemHealth {
-            app_name: "Unfour Workspace".to_string(),
+            app_name: "Unfour".to_string(),
             storage_ready: true,
             command_bus_ready: true,
             ai_reserved_capabilities: ai_reserved::capability_ids(),

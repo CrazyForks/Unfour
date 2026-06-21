@@ -12,7 +12,7 @@
     "tauri": "pnpm --filter @unfour/desktop tauri",
     "check": "pnpm run build && pnpm run check:rust",
     "check:rust": "cargo check --workspace",
-    "check:rust:ssh": "cargo check -p unfour-workspace --features ssh-native",
+    "check:rust:ssh": "cargo check -p unfour --features ssh-native",
     "lint": "eslint .",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",

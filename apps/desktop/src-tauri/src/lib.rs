@@ -8,7 +8,7 @@ pub fn run() {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "unfour_workspace=info,tauri=info".into()),
+                .unwrap_or_else(|_| "unfour=info,tauri=info".into()),
         )
         .try_init();
 
@@ -77,5 +77,5 @@ pub fn run() {
             unfour_app::commands::ssh_sessions_list,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running Unfour Workspace");
+        .expect("error while running Unfour");
 }

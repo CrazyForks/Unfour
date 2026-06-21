@@ -2932,7 +2932,7 @@ mod tests {
             database: Some("mydb".to_string()),
             username: Some("admin".to_string()),
             sqlite_path: None,
-            credential_ref: Some("unfour-workspace:ws:database-password:abc".to_string()),
+            credential_ref: Some("unfour:ws:database-password:abc".to_string()),
         };
 
         let config = input_to_config(&input).expect("config");
@@ -3164,7 +3164,7 @@ mod tests {
     fn mysql_config_maps_host_port_database_username() {
         let input = mysql_input(
             "ws",
-            Some("unfour-workspace:ws:database-password:abc".to_string()),
+            Some("unfour:ws:database-password:abc".to_string()),
         );
         let config = input_to_config(&input).expect("config");
 

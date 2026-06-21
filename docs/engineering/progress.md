@@ -162,7 +162,7 @@ Goal: move from functional request runner to Postman-like daily tool.
 
 Goal: make the app understandable and installable.
 
-- Re-run full `pnpm run build`, `cargo check --workspace`, `cargo check -p unfour-workspace --features ssh-native`, and `pnpm run tauri build` in an unrestricted local shell.
+- Re-run full `pnpm run build`, `cargo check --workspace`, `cargo check -p unfour --features ssh-native`, and `pnpm run tauri build` in an unrestricted local shell.
 - Add screenshots after the UI is stable.
 - Expand `docs/user/USER_GUIDE.md` with real workflows, troubleshooting, and screenshots.
 - Keep engineering details in `docs/engineering/*` and keep user instructions in `docs/user/*`.

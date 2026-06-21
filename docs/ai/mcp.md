@@ -361,7 +361,7 @@ concurrently, all connections set a 5-second `busy_timeout` to avoid spurious
 "database is locked" failures under contention.
 
 Database connection credentials are resolved from the OS keychain under the
-same service name the desktop app uses (`unfour-workspace`). The MCP only reads
+same service name the desktop app uses (`unfour`). The MCP only reads
 credentials to open database connections; it never creates, rotates, or deletes
 them. On platforms where keychain items are ACL'd per-application (notably
 macOS), the first credential read from the MCP process may require user
@@ -370,7 +370,7 @@ approval.
 On Windows this resolves to:
 
 ```text
-%APPDATA%\com.unfour.workspace\unfour-workspace.sqlite
+%APPDATA%\dev.unfour\unfour.sqlite
 ```
 
 The MCP process does not run migrations, seed workspaces, or write fallback

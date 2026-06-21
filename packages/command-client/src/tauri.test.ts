@@ -248,7 +248,7 @@ describe("MySQL browser mock compatibility", () => {
       port: 3306,
       database: "app",
       username: "developer",
-      credentialRef: "unfour-workspace:mock:database-password:ref",
+      credentialRef: "unfour:mock:database-password:ref",
     });
 
     await expect(testDatabaseConnection(workspaceId, connection.id)).resolves.toMatchObject({

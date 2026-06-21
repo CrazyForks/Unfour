@@ -67,7 +67,7 @@ jobs:
         with:
           projectPath: apps/desktop
           tagName: ${{ github.ref_name }}
-          releaseName: 'Unfour Workspace ${{ github.ref_name }}'
+          releaseName: 'Unfour ${{ github.ref_name }}'
           releaseBody: 'See the assets below to download and install this version. This is an early alpha build — see the README for caveats.'
           releaseDraft: true
           prerelease: true

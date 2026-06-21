@@ -224,7 +224,7 @@ Rust command entry point for Tauri, MCP, and future AI/CLI adapters.
 Depends on: `unfour-command-bus` and `unfour-core`. Provides the local stdio
 MCP server and routes real tool behavior through the command bus.
 
-### `unfour-workspace` (apps/desktop/src-tauri)
+### `unfour` (apps/desktop/src-tauri)
 
 Depends on the command bus plus the core engine crates. It is the Tauri adapter
 and composition layer for desktop commands, app setup, and event wiring.
@@ -245,7 +245,7 @@ unfour-core  (foundation)
 
 unfour-command-bus --> unfour-core, local-storage, secret-store, http-engine, database-engine, ssh-engine, workspace-engine
 unfour-mcp         --> unfour-command-bus, unfour-core
-unfour-workspace (desktop)  --> unfour-command-bus and core engine crates
+unfour (desktop)  --> unfour-command-bus and core engine crates
 ```
 
 ## Frontend-to-Rust Call Chain
@@ -292,8 +292,8 @@ maintained here; use `docs/project/PACKAGE_STATUS.md` for current status.
 
 | Field | Value |
 |---|---|
-| Product name | Unfour Workspace |
-| Identifier | com.unfour.workspace |
+| Product name | Unfour |
+| Identifier | dev.unfour |
 | Version | 0.1.0 |
 | Window | 1280x820, min 1040x680, frameless (`decorations: false`) |
 | CSP | null (disabled) |

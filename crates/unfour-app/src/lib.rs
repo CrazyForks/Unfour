@@ -31,7 +31,7 @@ pub fn configure(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::W
             let command_bus = tauri::async_runtime::block_on(async {
                 let db = LocalDb::connect(&app_handle).await?;
                 db.migrate().await?;
-                CommandBus::from_db_with_secret_store(db, SecretStore::new("unfour-workspace"))
+                CommandBus::from_db_with_secret_store(db, SecretStore::new("unfour"))
                     .await
             })?;
 

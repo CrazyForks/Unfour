@@ -1,10 +1,10 @@
-# Unfour Workspace User Guide
+# Unfour User Guide
 
 This document is for people using the app. It avoids implementation details that belong in `docs/engineering`.
 
 ## Current MVP
 
-Unfour Workspace opens into a single workspace surface:
+Unfour opens into a single workspace surface:
 
 - Workspaces on the left
 - Tool tabs across the top

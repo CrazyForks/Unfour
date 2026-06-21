@@ -1,6 +1,6 @@
 # Architecture
 
-Unfour Workspace is a local-first Tauri 2 app built around a shared Workspace model. SSH, database, and API workflows reuse the same resource tree, tab system, credential boundary, local activity trail, and future sync model.
+Unfour is a local-first Tauri 2 app built around a shared Workspace model. SSH, database, and API workflows reuse the same resource tree, tab system, credential boundary, local activity trail, and future sync model.
 
 ## Runtime Split
 

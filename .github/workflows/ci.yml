@@ -62,7 +62,7 @@ jobs:
         run: cargo check --workspace
 
       - name: cargo check (ssh-native)
-        run: cargo check -p unfour-workspace --features ssh-native
+        run: cargo check -p unfour --features ssh-native
 
       - name: cargo test (workspace)
         run: cargo test --workspace

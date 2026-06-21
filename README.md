@@ -1,6 +1,6 @@
 <div align="center">
 
-# Unfour Workspace
+# Unfour
 
 **One local-first desktop workspace for API debugging, SSH terminals, and database management.**
 
@@ -21,7 +21,7 @@
 
 ## What is Unfour?
 
-Unfour Workspace bundles the day-to-day tools of a backend / ops developer into
+Unfour bundles the day-to-day tools of a backend / ops developer into
 a single fast, local-first desktop app — no accounts, no cloud, your data stays
 on your machine. It is built on [Tauri 2](https://tauri.app), React, TypeScript,
 and Rust, so the UI is lightweight and the security-sensitive work (SSH,

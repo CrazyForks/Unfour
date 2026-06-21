@@ -1,6 +1,6 @@
 # Security
 
-Unfour Workspace handles credentials, remote command execution, database access, and HTTP tokens. The default posture is local-first and least privilege.
+Unfour handles credentials, remote command execution, database access, and HTTP tokens. The default posture is local-first and least privilege.
 
 ## Sensitive Data
 

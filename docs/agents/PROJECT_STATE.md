@@ -38,7 +38,7 @@ UI module split is **in progress**. Terminal, Database, Workspace, and Command-C
 | HTTP engine (API client + history + body redaction) | `unfour-http-engine` | Complete | 10 pass |
 | SSH engine (simulated + native + known_hosts) | `unfour-ssh-engine` | Complete | 33 pass |
 | Workspace engine | `unfour-workspace-engine` | Complete | 8 pass |
-| CommandBus (Tauri adapter) | `unfour-workspace` (apps/desktop/src-tauri) | Complete | Compile-verified, 3 integration tests in command_bus.rs, 44 Tauri commands |
+| CommandBus (Tauri adapter) | `unfour` (apps/desktop/src-tauri) | Complete | Compile-verified, 3 integration tests in command_bus.rs, 44 Tauri commands |
 
 ### Frontend (TypeScript)
 
@@ -51,7 +51,7 @@ UI module split is **in progress**. Terminal, Database, Workspace, and Command-C
 
 ### Build
 
-- **Windows native startup:** PASS (`unfour-workspace.exe` launched with the expected title and remained responsive)
+- **Windows native startup:** PASS (`unfour.exe` launched with the expected title and remained responsive)
 - **Browser first viewport/navigation/dialogs:** PASS with no console warnings or errors
 - **Frontend production build:** PASS
 - **Frontend bundle chunks:** index (394 kB), xterm (367 kB), vendor-tanstack (101 kB), vendor-radix (88 kB), monaco (15 kB)
@@ -84,10 +84,10 @@ UI module split is **in progress**. Terminal, Database, Workspace, and Command-C
 | `cargo fmt --check` | PASS | No formatting issues |
 | `cargo test --workspace` | PASS | 98 tests pass, 1 ignored (OS keychain smoke) |
 | `cargo check --workspace` | PASS | All crates compile |
-| `cargo check -p unfour-workspace --features ssh-native` | PASS | SSH feature compiles |
+| `cargo check -p unfour --features ssh-native` | PASS | SSH feature compiles |
 | `cargo test -p unfour-ssh-engine --features ssh-native` | PASS | 25 native-feature tests (included in workspace run above; 33 total ssh-engine tests) |
 | `cargo test -p unfour-database-engine` | PASS | 19 tests |
-| Windows native startup | PASS | Tauri dev build launched `unfour-workspace.exe`; window title was correct and process remained responsive |
+| Windows native startup | PASS | Tauri dev build launched `unfour.exe`; window title was correct and process remained responsive |
 | `cargo test -p unfour-secret-store --test os_keychain_release_smoke -- --ignored` | PASS | Real Windows Credential Manager create/read/delete for four release credential categories |
 | Browser UI smoke | PASS | First viewport, module navigation, workspace menu, SSH dialog, database page, API GET/POST, response headers, and history |
 | API persisted body redaction | PASS | Request editor sent the real `x-api-key`; loaded history displayed `<redacted>` |
@@ -127,14 +127,14 @@ UI module split is **in progress**. Terminal, Database, Workspace, and Command-C
 | `unfour-ssh-engine` | SSH connections, sessions, PTY, host keys |
 | `unfour-workspace-engine` | Workspace CRUD, environment, layout |
 | `unfour-secret-store` | OS keyring-backed credential storage |
-| `unfour-workspace` (Tauri) | CommandBus, 44 Tauri commands, app setup |
+| `unfour` (Tauri) | CommandBus, 44 Tauri commands, app setup |
 
 ### Feature Flags
 
 | Feature | Crate | Effect |
 |---|---|---|
 | `ssh-native` | `unfour-ssh-engine` | Enables `russh`, `ssh-key`, `tokio` optional dependencies |
-| `ssh-native` | `unfour-workspace` (Tauri adapter) | Forwards to `unfour-ssh-engine/ssh-native` |
+| `ssh-native` | `unfour` (Tauri adapter) | Forwards to `unfour-ssh-engine/ssh-native` |
 
 ### Source Code Hygiene
 
