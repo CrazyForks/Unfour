@@ -606,6 +606,15 @@ export function DatabasePage({
     layout.setActiveTabId("sql-editor");
   }
 
+  // Load generated SQL (e.g. from a table context-menu action) into the editor.
+  function loadSqlIntoEditor(generatedSql: string) {
+    setSql(generatedSql);
+    setClientError(null);
+    setPendingSqlConfirmation(false);
+    layout.setActiveTabId("sql-editor");
+    layout.setResultTab("results");
+  }
+
   function handleNewConnection() {
     newConnection();
     setEditorOpen(true);
@@ -631,6 +640,7 @@ export function DatabasePage({
     refreshSchema: (connection: DatabaseConnection) => void;
     selectConnection: (connection: DatabaseConnection) => void;
     selectTable: (table: DatabaseTable) => void;
+    useSql: (sql: string) => void;
   } | null>(null);
   sidebarActionsRef.current = {
     connect: connectConnection,
@@ -644,6 +654,7 @@ export function DatabasePage({
     refreshSchema: refreshConnectionSchema,
     selectConnection: (connection) => selectConnection(connection.id),
     selectTable,
+    useSql: loadSqlIntoEditor,
   };
 
   const sidebarHandlers = useMemo(
@@ -659,6 +670,7 @@ export function DatabasePage({
       onRefreshSchema: (connection: DatabaseConnection) => sidebarActionsRef.current?.refreshSchema(connection),
       onSelectConnection: (connection: DatabaseConnection) => sidebarActionsRef.current?.selectConnection(connection),
       onSelectTable: (table: DatabaseTable) => sidebarActionsRef.current?.selectTable(table),
+      onUseSql: (sql: string) => sidebarActionsRef.current?.useSql(sql),
     }),
     [],
   );

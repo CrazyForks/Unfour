@@ -348,10 +348,14 @@
     "tree": {
       "actionsLabel": "{name} 的数据库操作",
       "copyName": "复制连接名称",
+      "copyTableName": "复制表名",
       "deleteBody": "删除连接“{name}”？这会移除其已保存的设置，且无法撤销。",
       "deleteConnection": "删除连接",
       "deleteTitle": "删除连接？",
-      "editConnection": "编辑连接"
+      "editConnection": "编辑连接",
+      "generateInsert": "生成 INSERT 语句",
+      "generateSelect": "生成 SELECT 语句",
+      "previewData": "预览数据"
     },
     "title": "数据库"
   },
