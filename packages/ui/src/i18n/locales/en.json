@@ -315,6 +315,21 @@
       "sqlitePath": "SQLite Path",
       "username": "Username"
     },
+    "grid": {
+      "cellCopied": "Cell copied",
+      "clearSort": "Clear sort",
+      "copyFailed": "Copy failed",
+      "copyHint": "Click a cell to inspect, or a row icon to copy",
+      "copyValue": "Copy value",
+      "empty": "This result set is empty.",
+      "filterPlaceholder": "Filter rows",
+      "noMatches": "No rows match the filter.",
+      "rowCopied": "Row copied",
+      "rowsRendered": "{count} rows rendered",
+      "showingFirst": "Showing first {shown} of {total} rows",
+      "sortBy": "Sort by {column}",
+      "valueViewer": "Cell value"
+    },
     "history": {
       "empty": "Executed SQL history will appear here.",
       "failedFallback": "failed",

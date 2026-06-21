@@ -314,6 +314,21 @@
       "sqlitePath": "SQLite 路径",
       "username": "用户名"
     },
+    "grid": {
+      "cellCopied": "已复制单元格",
+      "clearSort": "清除排序",
+      "copyFailed": "复制失败",
+      "copyHint": "点击单元格查看，或点击行图标复制",
+      "copyValue": "复制值",
+      "empty": "此结果集为空。",
+      "filterPlaceholder": "筛选行",
+      "noMatches": "没有符合筛选条件的行。",
+      "rowCopied": "已复制行",
+      "rowsRendered": "已渲染 {count} 行",
+      "showingFirst": "显示前 {shown} 行，共 {total} 行",
+      "sortBy": "按 {column} 排序",
+      "valueViewer": "单元格值"
+    },
     "history": {
       "empty": "执行过的 SQL 历史会显示在这里。",
       "failedFallback": "失败",
