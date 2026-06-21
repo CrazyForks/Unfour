@@ -530,6 +530,37 @@ pub struct DatabaseTableStructureInput {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct DatabaseCellValue {
+    pub column: String,
+    pub value: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DatabaseRowMutationInput {
+    pub workspace_id: String,
+    pub connection_id: String,
+    pub schema: Option<String>,
+    pub table_name: String,
+    /// One of: "insert", "update", "delete".
+    pub operation: String,
+    /// Column values to write for insert/update operations.
+    #[serde(default)]
+    pub values: Vec<DatabaseCellValue>,
+    /// Primary-key columns identifying the row for update/delete operations.
+    #[serde(default)]
+    pub primary_key: Vec<DatabaseCellValue>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DatabaseRowMutationResult {
+    pub affected_rows: u64,
+    pub sql: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DatabaseTableStructure {
     pub schema: Option<String>,
     pub name: String,

@@ -52,6 +52,7 @@ pub fn run() {
             unfour_app::commands::database_connection_test,
             unfour_app::commands::database_connections_list,
             unfour_app::commands::database_query_execute,
+            unfour_app::commands::database_row_mutate,
             unfour_app::commands::database_query_history_clear,
             unfour_app::commands::database_query_history_list,
             unfour_app::commands::database_query_history_record,

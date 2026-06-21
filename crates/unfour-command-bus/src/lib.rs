@@ -5,10 +5,11 @@ use unfour_core::models::{
     ApiSavedRequest, CredentialCreateInput, CredentialDeleteInput, CredentialInspectInput,
     CredentialMetadata, CredentialRotateInput, DatabaseBrowseInput, DatabaseBrowseResult,
     DatabaseConnection, DatabaseConnectionInput, DatabaseQueryInput, DatabaseQueryResult,
-    DatabaseSchema, DatabaseTableStructure, DatabaseTableStructureInput, DatabaseTestResult,
-    DbQueryHistoryEntry, DbQueryHistoryRecordInput, KeyValue, SshCloseInput, SshConnectInput,
-    SshConnection, SshConnectionInput, SshDiagnosticInput, SshDiagnosticResult,
-    SshHostFingerprintInfo, SshHostKeyInput, SshKnownHostsExportResult, SshKnownHostsImportInput,
+    DatabaseRowMutationInput, DatabaseRowMutationResult, DatabaseSchema, DatabaseTableStructure,
+    DatabaseTableStructureInput, DatabaseTestResult, DbQueryHistoryEntry,
+    DbQueryHistoryRecordInput, KeyValue, SshCloseInput, SshConnectInput, SshConnection,
+    SshConnectionInput, SshDiagnosticInput, SshDiagnosticResult, SshHostFingerprintInfo,
+    SshHostKeyInput, SshKnownHostsExportResult, SshKnownHostsImportInput,
     SshKnownHostsImportResult, SshLogExport, SshLogExportInput, SshReconnectCancelInput,
     SshResizeInput, SshSessionEvent, SshSessionInput, SshSessionSummary, SystemHealth, Workspace,
     WorkspaceLayout, WorkspaceState,
@@ -1198,6 +1199,13 @@ impl CommandBus {
         input: DatabaseTableStructureInput,
     ) -> AppResult<DatabaseTableStructure> {
         self.database.table_structure(input).await
+    }
+
+    pub async fn mutate_database_row(
+        &self,
+        input: DatabaseRowMutationInput,
+    ) -> AppResult<DatabaseRowMutationResult> {
+        self.database.mutate_table_row(input).await
     }
 
     pub async fn record_database_query_history(

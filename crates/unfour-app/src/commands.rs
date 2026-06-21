@@ -5,12 +5,13 @@ use unfour_core::models::{
     ApiSavedRequest, CredentialCreateInput, CredentialDeleteInput, CredentialInspectInput,
     CredentialMetadata, CredentialRotateInput, DatabaseBrowseInput, DatabaseBrowseResult,
     DatabaseConnection, DatabaseConnectionInput, DatabaseQueryInput, DatabaseQueryResult,
-    DatabaseSchema, DatabaseTableStructure, DatabaseTableStructureInput, DatabaseTestResult,
-    DbQueryHistoryEntry, DbQueryHistoryRecordInput, KeyValue, SshCloseInput, SshConnectInput,
-    SshConnection, SshConnectionInput, SshHostFingerprintInfo, SshHostKeyInput,
-    SshKnownHostsExportResult, SshKnownHostsImportInput, SshKnownHostsImportResult, SshLogExport,
-    SshLogExportInput, SshReconnectCancelInput, SshResizeInput, SshSessionEvent, SshSessionInput,
-    SshSessionSummary, SystemHealth, Workspace, WorkspaceLayout, WorkspaceState,
+    DatabaseRowMutationInput, DatabaseRowMutationResult, DatabaseSchema, DatabaseTableStructure,
+    DatabaseTableStructureInput, DatabaseTestResult, DbQueryHistoryEntry,
+    DbQueryHistoryRecordInput, KeyValue, SshCloseInput, SshConnectInput, SshConnection,
+    SshConnectionInput, SshHostFingerprintInfo, SshHostKeyInput, SshKnownHostsExportResult,
+    SshKnownHostsImportInput, SshKnownHostsImportResult, SshLogExport, SshLogExportInput,
+    SshReconnectCancelInput, SshResizeInput, SshSessionEvent, SshSessionInput, SshSessionSummary,
+    SystemHealth, Workspace, WorkspaceLayout, WorkspaceState,
 };
 use unfour_core::AppResult;
 
@@ -432,6 +433,14 @@ pub async fn database_table_structure(
     state: State<'_, AppState>,
 ) -> AppResult<DatabaseTableStructure> {
     state.command_bus.database_table_structure(input).await
+}
+
+#[tauri::command]
+pub async fn database_row_mutate(
+    input: DatabaseRowMutationInput,
+    state: State<'_, AppState>,
+) -> AppResult<DatabaseRowMutationResult> {
+    state.command_bus.mutate_database_row(input).await
 }
 
 #[tauri::command]

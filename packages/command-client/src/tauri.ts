@@ -17,6 +17,8 @@ import type {
   DbQueryHistoryEntry,
   DatabaseQueryInput,
   DatabaseQueryResult,
+  DatabaseRowMutationInput,
+  DatabaseRowMutationResult,
   DatabaseSchema,
   DatabaseTableStructure,
   DatabaseTableStructureInput,
@@ -882,6 +884,14 @@ async function mockInvoke<T>(
     } satisfies DatabaseTableStructure) as T;
   }
 
+  if (command === "database_row_mutate") {
+    const input = args?.input as DatabaseRowMutationInput;
+    return ({
+      affectedRows: 1,
+      sql: `-- mock ${input.operation} on ${input.tableName}`,
+    } satisfies DatabaseRowMutationResult) as T;
+  }
+
   if (command === "ssh_connections_list") {
     const workspaceId = String(args?.workspaceId ?? mockState.activeWorkspaceId);
     return mockSshConnections.filter((item) => item.workspaceId === workspaceId) as T;
@@ -1395,6 +1405,10 @@ export function browseDatabaseTable(input: DatabaseBrowseInput) {
 
 export function getDatabaseTableStructure(input: DatabaseTableStructureInput) {
   return call<DatabaseTableStructure>("database_table_structure", { input });
+}
+
+export function mutateDatabaseRow(input: DatabaseRowMutationInput) {
+  return call<DatabaseRowMutationResult>("database_row_mutate", { input });
 }
 
 export function listSshConnections(workspaceId: string) {

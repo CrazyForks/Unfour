@@ -6,9 +6,10 @@ use sqlx::{Column, Row, TypeInfo, ValueRef};
 use std::path::Path;
 use std::time::{Duration, Instant};
 use unfour_core::models::{
-    DatabaseBrowseInput, DatabaseBrowseResult, DatabaseConnection, DatabaseConnectionConfig,
-    DatabaseConnectionInput, DatabaseForeignKey, DatabaseIndex, DatabaseQueryInput,
-    DatabaseQueryResult, DatabaseQuerySafety, DatabaseResultColumn, DatabaseSchema, DatabaseTable,
+    DatabaseBrowseInput, DatabaseBrowseResult, DatabaseCellValue, DatabaseConnection,
+    DatabaseConnectionConfig, DatabaseConnectionInput, DatabaseForeignKey, DatabaseIndex,
+    DatabaseQueryInput, DatabaseQueryResult, DatabaseQuerySafety, DatabaseResultColumn,
+    DatabaseRowMutationInput, DatabaseRowMutationResult, DatabaseSchema, DatabaseTable,
     DatabaseTableColumn, DatabaseTableStructure, DatabaseTableStructureInput, DatabaseTestResult,
     DbQueryHistoryEntry, DbQueryHistoryRecordInput, StoredConnection,
 };
@@ -878,6 +879,111 @@ impl DatabaseService {
             }
             driver => Err(AppError::Unsupported(format!(
                 "{} table structure is not yet supported",
+                display_driver(driver)
+            ))),
+        }
+    }
+
+    /// Insert, update, or delete a single table row. Update and delete require
+    /// a non-empty primary key so a malformed request can never rewrite a whole
+    /// table. Values are emitted as escaped, coercible string literals.
+    pub async fn mutate_table_row(
+        &self,
+        input: DatabaseRowMutationInput,
+    ) -> AppResult<DatabaseRowMutationResult> {
+        validate_workspace_id(&input.workspace_id)?;
+        validate_connection_id(&input.connection_id)?;
+        let table_name = input.table_name.trim();
+        if table_name.is_empty() {
+            return Err(AppError::Validation(
+                "table name cannot be empty".to_string(),
+            ));
+        }
+        let operation = input.operation.trim().to_ascii_lowercase();
+
+        let connection = self
+            .get_connection(&input.workspace_id, &input.connection_id)
+            .await?;
+
+        match connection.driver.as_str() {
+            "sqlite" => {
+                let pool = sqlite_pool(&connection).await?;
+                ensure_sqlite_table_exists(&pool, table_name).await?;
+                let sql = build_row_mutation_sql(
+                    SqlDialect::Standard,
+                    None,
+                    table_name,
+                    &operation,
+                    &input.values,
+                    &input.primary_key,
+                )?;
+                let result = sqlx::query(&sql).execute(&pool).await?;
+                Ok(DatabaseRowMutationResult {
+                    affected_rows: result.rows_affected(),
+                    sql,
+                })
+            }
+            "postgres" => {
+                let pool = self.postgres_pool(&connection).await?;
+                let schema = input
+                    .schema
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .unwrap_or("public");
+                ensure_postgres_table_exists(&pool, schema, table_name)
+                    .await
+                    .map_err(sanitize_pg_app_error)?;
+                let sql = build_row_mutation_sql(
+                    SqlDialect::Standard,
+                    Some(schema),
+                    table_name,
+                    &operation,
+                    &input.values,
+                    &input.primary_key,
+                )?;
+                let result = sqlx::query(&sql)
+                    .execute(&pool)
+                    .await
+                    .map_err(sanitize_pg_error)?;
+                Ok(DatabaseRowMutationResult {
+                    affected_rows: result.rows_affected(),
+                    sql,
+                })
+            }
+            "mysql" => {
+                let pool = self.mysql_pool(&connection).await?;
+                let schema = input
+                    .schema
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .or(connection.database.as_deref())
+                    .ok_or_else(|| {
+                        AppError::Validation("MySQL database name is required".to_string())
+                    })?;
+                ensure_mysql_table_exists(&pool, schema, table_name)
+                    .await
+                    .map_err(sanitize_mysql_app_error)?;
+                let sql = build_row_mutation_sql(
+                    SqlDialect::MySql,
+                    Some(schema),
+                    table_name,
+                    &operation,
+                    &input.values,
+                    &input.primary_key,
+                )?;
+                let result = sqlx::query(&sql)
+                    .execute(&pool)
+                    .await
+                    .map_err(sanitize_mysql_error)?;
+                Ok(DatabaseRowMutationResult {
+                    affected_rows: result.rows_affected(),
+                    sql,
+                })
+            }
+            driver => Err(AppError::Unsupported(format!(
+                "{} row editing is not yet supported",
                 display_driver(driver)
             ))),
         }
@@ -2013,6 +2119,135 @@ fn mysql_browse_sql(schema: &str, table_name: &str, limit: u32, offset: u32) -> 
     )
 }
 
+#[derive(Clone, Copy)]
+enum SqlDialect {
+    /// SQLite and PostgreSQL: double-quoted identifiers, `''` escapes only.
+    Standard,
+    /// MySQL/MariaDB: backtick identifiers and backslash escaping.
+    MySql,
+}
+
+impl SqlDialect {
+    fn quote_ident(&self, value: &str) -> String {
+        match self {
+            SqlDialect::Standard => quote_identifier(value),
+            SqlDialect::MySql => quote_mysql_identifier(value),
+        }
+    }
+
+    fn quote_qualified(&self, schema: Option<&str>, table: &str) -> String {
+        match schema {
+            Some(schema) => format!("{}.{}", self.quote_ident(schema), self.quote_ident(table)),
+            None => self.quote_ident(table),
+        }
+    }
+
+    fn literal(&self, value: Option<&str>) -> String {
+        match value {
+            None => "NULL".to_string(),
+            Some(value) => match self {
+                SqlDialect::Standard => format!("'{}'", value.replace('\'', "''")),
+                SqlDialect::MySql => {
+                    format!("'{}'", value.replace('\\', "\\\\").replace('\'', "''"))
+                }
+            },
+        }
+    }
+}
+
+fn build_row_mutation_sql(
+    dialect: SqlDialect,
+    schema: Option<&str>,
+    table_name: &str,
+    operation: &str,
+    values: &[DatabaseCellValue],
+    primary_key: &[DatabaseCellValue],
+) -> AppResult<String> {
+    let qualified = dialect.quote_qualified(schema, table_name);
+
+    let predicate = |cell: &DatabaseCellValue| match cell.value.as_deref() {
+        None => format!("{} IS NULL", dialect.quote_ident(&cell.column)),
+        Some(value) => format!(
+            "{} = {}",
+            dialect.quote_ident(&cell.column),
+            dialect.literal(Some(value))
+        ),
+    };
+
+    match operation {
+        "insert" => {
+            if values.is_empty() {
+                return Err(AppError::Validation(
+                    "insert requires at least one column value".to_string(),
+                ));
+            }
+            let columns = values
+                .iter()
+                .map(|cell| dialect.quote_ident(&cell.column))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let literals = values
+                .iter()
+                .map(|cell| dialect.literal(cell.value.as_deref()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            Ok(format!(
+                "INSERT INTO {} ({}) VALUES ({})",
+                qualified, columns, literals
+            ))
+        }
+        "update" => {
+            if values.is_empty() {
+                return Err(AppError::Validation(
+                    "update requires at least one column value".to_string(),
+                ));
+            }
+            if primary_key.is_empty() {
+                return Err(AppError::Validation(
+                    "update requires a primary key to identify the row".to_string(),
+                ));
+            }
+            let assignments = values
+                .iter()
+                .map(|cell| {
+                    format!(
+                        "{} = {}",
+                        dialect.quote_ident(&cell.column),
+                        dialect.literal(cell.value.as_deref())
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            let where_clause = primary_key
+                .iter()
+                .map(predicate)
+                .collect::<Vec<_>>()
+                .join(" AND ");
+            Ok(format!(
+                "UPDATE {} SET {} WHERE {}",
+                qualified, assignments, where_clause
+            ))
+        }
+        "delete" => {
+            if primary_key.is_empty() {
+                return Err(AppError::Validation(
+                    "delete requires a primary key to identify the row".to_string(),
+                ));
+            }
+            let where_clause = primary_key
+                .iter()
+                .map(predicate)
+                .collect::<Vec<_>>()
+                .join(" AND ");
+            Ok(format!("DELETE FROM {} WHERE {}", qualified, where_clause))
+        }
+        other => Err(AppError::Validation(format!(
+            "unsupported row operation: {}",
+            other
+        ))),
+    }
+}
+
 fn returns_rows(sql: &str) -> bool {
     let keyword = sql
         .split_whitespace()
@@ -2534,6 +2769,100 @@ mod tests {
             })
             .await;
         assert!(matches!(missing, Err(AppError::NotFound(_))));
+        let _ = fs::remove_file(path);
+    }
+
+    #[tokio::test]
+    async fn sqlite_row_mutation_inserts_updates_and_deletes_by_primary_key() {
+        let (service, workspace_id) = service_with_workspace().await;
+        let path = sqlite_fixture().await;
+        let connection = service
+            .save_connection(sqlite_input(&workspace_id, &path))
+            .await
+            .expect("save connection");
+
+        let insert = service
+            .mutate_table_row(DatabaseRowMutationInput {
+                workspace_id: workspace_id.clone(),
+                connection_id: connection.id.clone(),
+                schema: None,
+                table_name: "deploys".to_string(),
+                operation: "insert".to_string(),
+                values: vec![
+                    DatabaseCellValue {
+                        column: "id".to_string(),
+                        value: Some("99".to_string()),
+                    },
+                    DatabaseCellValue {
+                        column: "service".to_string(),
+                        // Embedded quote must be escaped, not break the statement.
+                        value: Some("ai'gent".to_string()),
+                    },
+                    DatabaseCellValue {
+                        column: "version".to_string(),
+                        value: Some("9.9.9".to_string()),
+                    },
+                ],
+                primary_key: vec![],
+            })
+            .await
+            .expect("insert row");
+        assert_eq!(insert.affected_rows, 1);
+
+        let update = service
+            .mutate_table_row(DatabaseRowMutationInput {
+                workspace_id: workspace_id.clone(),
+                connection_id: connection.id.clone(),
+                schema: None,
+                table_name: "deploys".to_string(),
+                operation: "update".to_string(),
+                values: vec![DatabaseCellValue {
+                    column: "version".to_string(),
+                    value: Some("10.0.0".to_string()),
+                }],
+                primary_key: vec![DatabaseCellValue {
+                    column: "id".to_string(),
+                    value: Some("99".to_string()),
+                }],
+            })
+            .await
+            .expect("update row");
+        assert_eq!(update.affected_rows, 1);
+
+        // Update/delete without a primary key must be rejected outright.
+        let unsafe_update = service
+            .mutate_table_row(DatabaseRowMutationInput {
+                workspace_id: workspace_id.clone(),
+                connection_id: connection.id.clone(),
+                schema: None,
+                table_name: "deploys".to_string(),
+                operation: "update".to_string(),
+                values: vec![DatabaseCellValue {
+                    column: "version".to_string(),
+                    value: Some("0".to_string()),
+                }],
+                primary_key: vec![],
+            })
+            .await;
+        assert!(matches!(unsafe_update, Err(AppError::Validation(_))));
+
+        let delete = service
+            .mutate_table_row(DatabaseRowMutationInput {
+                workspace_id: workspace_id.clone(),
+                connection_id: connection.id.clone(),
+                schema: None,
+                table_name: "deploys".to_string(),
+                operation: "delete".to_string(),
+                values: vec![],
+                primary_key: vec![DatabaseCellValue {
+                    column: "id".to_string(),
+                    value: Some("99".to_string()),
+                }],
+            })
+            .await
+            .expect("delete row");
+        assert_eq!(delete.affected_rows, 1);
+
         let _ = fs::remove_file(path);
     }
 

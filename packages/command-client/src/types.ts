@@ -364,6 +364,26 @@ export type DatabaseTableStructure = {
   ddl?: string | null;
 };
 
+export type DatabaseCellValue = {
+  column: string;
+  value: string | null;
+};
+
+export type DatabaseRowMutationInput = {
+  workspaceId: string;
+  connectionId: string;
+  schema?: string | null;
+  tableName: string;
+  operation: "insert" | "update" | "delete";
+  values?: DatabaseCellValue[];
+  primaryKey?: DatabaseCellValue[];
+};
+
+export type DatabaseRowMutationResult = {
+  affectedRows: number;
+  sql: string;
+};
+
 export type DatabaseQueryInput = {
   workspaceId: string;
   connectionId: string;
