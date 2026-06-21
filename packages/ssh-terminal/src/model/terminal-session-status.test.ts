@@ -1,8 +1,15 @@
 import { describe, expect, it } from "vitest";
 import type { SshSessionSummary } from "@unfour/command-client";
-import { shouldRenderTerminalPane } from "./terminal-session-status";
+import {
+  shouldRenderTerminalPane,
+  terminalSessionStatus,
+  terminalSessionStatusLabel,
+} from "./terminal-session-status";
 
-function session(status: SshSessionSummary["status"]): SshSessionSummary {
+function session(
+  status: SshSessionSummary["status"],
+  overrides: Partial<SshSessionSummary> = {},
+): SshSessionSummary {
   return {
     authKind: "password",
     cols: 120,
@@ -16,8 +23,45 @@ function session(status: SshSessionSummary["status"]): SshSessionSummary {
     updatedAt: "2026-01-01T00:00:00Z",
     username: "dev",
     workspaceId: "workspace-1",
+    ...overrides,
   };
 }
+
+describe("terminalSessionStatus", () => {
+  it("maps failed sessions to error and missing sessions to disconnected", () => {
+    expect(terminalSessionStatus(null)).toBe("disconnected");
+    expect(terminalSessionStatus(session("failed"))).toBe("error");
+  });
+
+  it("collapses degraded and reconnecting into a connecting state", () => {
+    expect(terminalSessionStatus(session("degraded"))).toBe("connecting");
+    expect(terminalSessionStatus(session("reconnecting"))).toBe("connecting");
+  });
+
+  it("passes through connected and disconnected states", () => {
+    expect(terminalSessionStatus(session("connected"))).toBe("connected");
+    expect(terminalSessionStatus(session("disconnected"))).toBe("disconnected");
+  });
+});
+
+describe("terminalSessionStatusLabel", () => {
+  it("returns disconnected when there is no session", () => {
+    expect(terminalSessionStatusLabel(null)).toBe("disconnected");
+  });
+
+  it("shows the reconnect attempt count while reconnecting", () => {
+    expect(
+      terminalSessionStatusLabel(session("reconnecting", { reconnectAttempt: 2 })),
+    ).toBe("reconnecting 2/3");
+  });
+
+  it("describes degraded connections and passes other statuses through", () => {
+    expect(terminalSessionStatusLabel(session("degraded"))).toBe(
+      "connection degraded",
+    );
+    expect(terminalSessionStatusLabel(session("connected"))).toBe("connected");
+  });
+});
 
 describe("terminal session status helpers", () => {
   it("renders live and reconnecting sessions in the terminal pane", () => {
