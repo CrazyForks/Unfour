@@ -838,18 +838,23 @@ function DatabaseConnectionDialog({
               </div>
             )}
           </DialogBody>
-          <DialogFooter>
+          <DialogFooter className="justify-between">
             <IconButton disabled={!selectedConnectionId} label={t("database.connection.deleteLabel", "Delete database connection")} onClick={onDelete}>
               <Trash2 size={13} />
             </IconButton>
-            <Button disabled={!selectedConnectionId || testPending} onClick={onTest} size="sm" type="button" variant="outline">
-              <CheckCircle2 size={13} />
-              {testPending ? t("common.actions.connecting") : t("common.actions.connect")}
-            </Button>
-            <Button disabled={savePending} size="sm" type="submit">
-              <Save size={13} />
-              {t("common.actions.save")}
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button onClick={() => onOpenChange(false)} size="sm" type="button" variant="ghost">
+                {t("common.confirm.cancel")}
+              </Button>
+              <Button disabled={!selectedConnectionId || testPending} onClick={onTest} size="sm" type="button" variant="outline">
+                <CheckCircle2 size={13} />
+                {testPending ? t("common.actions.connecting") : t("common.actions.connect")}
+              </Button>
+              <Button disabled={savePending} size="sm" type="submit">
+                <Save size={13} />
+                {t("common.actions.save")}
+              </Button>
+            </div>
           </DialogFooter>
         </form>
       </DialogContent>
