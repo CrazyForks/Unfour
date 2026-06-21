@@ -1,4 +1,4 @@
-import { CheckCircle2, Database, Plus, RefreshCw, Save, Table2, Trash2, XCircle } from "lucide-react";
+import { CheckCircle2, Save, Trash2, XCircle } from "lucide-react";
 import { FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -15,19 +15,22 @@ import type {
 } from "@unfour/command-client";
 import { useWorkspaceStore } from "@unfour/workspace-core";
 import {
-  Badge,
   Button,
   ConfirmDialog,
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
   ErrorState,
   IconButton,
   Input,
   Select,
   StatusBadge,
-  Toolbar,
-  ToolbarGroup,
   useI18n,
 } from "@unfour/ui";
-import { DatabaseConnectionTree } from "./components/DatabaseConnectionTree";
+import { DatabaseSidebar } from "./components/DatabaseSidebar";
 import { DatabaseErrorDetails } from "./components/DatabaseErrorDetails";
 import { DatabaseModuleToolbar } from "./components/DatabaseModuleToolbar";
 import { DatabaseStatusBar } from "./components/DatabaseStatusBar";
@@ -51,7 +54,13 @@ import { describeDatabaseError, formatDatabaseError, isConfirmationRequired } fr
 const DEFAULT_PREVIEW_PAGE_SIZE = 100;
 const MAX_HISTORY_ENTRIES = 25;
 
-export function DatabasePage({ workspaceId }: { workspaceId: string }) {
+export function DatabasePage({
+  onShellSidebarChange,
+  workspaceId,
+}: {
+  onShellSidebarChange?: (sidebar: ReactNode | null) => void;
+  workspaceId: string;
+}) {
   const { t } = useI18n();
   const queryClient = useQueryClient();
   const {
@@ -59,6 +68,7 @@ export function DatabasePage({ workspaceId }: { workspaceId: string }) {
     setSelectedDatabaseConnection,
   } = useWorkspaceStore();
   const layout = useDatabaseLayout();
+  const [editorOpen, setEditorOpen] = useState(false);
   const [clientError, setClientError] = useState<unknown>(null);
   const [connectionStates, setConnectionStates] = useState<Record<string, DatabaseConnectionSessionState>>({});
   const [testResult, setTestResult] = useState<DatabaseTestResult | null>(null);
@@ -172,6 +182,7 @@ export function DatabasePage({ workspaceId }: { workspaceId: string }) {
     mutationFn: saveDatabaseConnection,
     onSuccess: (connection) => {
       setSelectedDatabaseConnection(connection.id);
+      setEditorOpen(false);
       setConnectionState(connection.id, {
         message: t("database.connection.savedBrowseSchema"),
         status: "disconnected",
@@ -548,6 +559,95 @@ export function DatabasePage({ workspaceId }: { workspaceId: string }) {
     layout.setActiveTabId("sql-editor");
   }
 
+  function handleNewConnection() {
+    newConnection();
+    setEditorOpen(true);
+  }
+
+  function handleEditConnection(connection: DatabaseConnection) {
+    selectConnection(connection.id);
+    setEditorOpen(true);
+  }
+
+  // Keep the latest handlers in a ref (render-time write, matching the existing
+  // prevSelectedConnectionIdRef pattern) so the pushed shell sidebar can use
+  // stable callback identities and only re-render on data changes.
+  const sidebarActionsRef = useRef<{
+    connect: (connection: DatabaseConnection) => void;
+    delete: (connection: DatabaseConnection) => void;
+    disconnect: (connection: DatabaseConnection) => void;
+    edit: (connection: DatabaseConnection) => void;
+    newConnection: () => void;
+    newQuery: () => void;
+    previewTable: (table: DatabaseTable) => void;
+    refresh: () => void;
+    refreshSchema: (connection: DatabaseConnection) => void;
+    selectConnection: (connection: DatabaseConnection) => void;
+    selectTable: (table: DatabaseTable) => void;
+  } | null>(null);
+  sidebarActionsRef.current = {
+    connect: connectConnection,
+    delete: setDeleteConfirm,
+    disconnect: disconnectConnection,
+    edit: handleEditConnection,
+    newConnection: handleNewConnection,
+    newQuery: startNewQuery,
+    previewTable: (table) => browseTablePage(table, 0, tableView?.pageSize ?? DEFAULT_PREVIEW_PAGE_SIZE),
+    refresh: refreshConnectionsAndSchema,
+    refreshSchema: refreshConnectionSchema,
+    selectConnection: (connection) => selectConnection(connection.id),
+    selectTable,
+  };
+
+  const sidebarHandlers = useMemo(
+    () => ({
+      onConnect: (connection: DatabaseConnection) => sidebarActionsRef.current?.connect(connection),
+      onDeleteConnection: (connection: DatabaseConnection) => sidebarActionsRef.current?.delete(connection),
+      onDisconnect: (connection: DatabaseConnection) => sidebarActionsRef.current?.disconnect(connection),
+      onEditConnection: (connection: DatabaseConnection) => sidebarActionsRef.current?.edit(connection),
+      onNewConnection: () => sidebarActionsRef.current?.newConnection(),
+      onNewQuery: () => sidebarActionsRef.current?.newQuery(),
+      onPreviewTable: (table: DatabaseTable) => sidebarActionsRef.current?.previewTable(table),
+      onRefresh: () => sidebarActionsRef.current?.refresh(),
+      onRefreshSchema: (connection: DatabaseConnection) => sidebarActionsRef.current?.refreshSchema(connection),
+      onSelectConnection: (connection: DatabaseConnection) => sidebarActionsRef.current?.selectConnection(connection),
+      onSelectTable: (table: DatabaseTable) => sidebarActionsRef.current?.selectTable(table),
+    }),
+    [],
+  );
+
+  const schemaLoadingFlag = schemaEnabled && schemaQuery.isFetching;
+  const shellSidebar = useMemo(
+    () => (
+      <DatabaseSidebar
+        connectionStates={connectionStates}
+        connections={connections}
+        schema={visibleSchema}
+        schemaLoading={schemaLoadingFlag}
+        selectedConnectionId={selectedConnectionId}
+        selectedTableId={selectedTableId}
+        {...sidebarHandlers}
+      />
+    ),
+    [
+      connectionStates,
+      connections,
+      schemaLoadingFlag,
+      selectedConnectionId,
+      selectedTableId,
+      sidebarHandlers,
+      visibleSchema,
+    ],
+  );
+
+  useEffect(() => {
+    if (!onShellSidebarChange) {
+      return;
+    }
+    onShellSidebarChange(shellSidebar);
+    return () => onShellSidebarChange(null);
+  }, [onShellSidebarChange, shellSidebar]);
+
   const activeError = clientError ?? (layout.activeTabId === "table-data" ? browseMutation.error : executeMutation.error);
   const executePending = executeMutation.isPending || browseMutation.isPending;
 
@@ -569,64 +669,7 @@ export function DatabasePage({ workspaceId }: { workspaceId: string }) {
         selectedConnectionId={selectedConnectionId}
         sqlDirty={sql.trim().length > 0}
       />
-      <div className="grid min-h-0 flex-1 grid-cols-[300px_minmax(0,1fr)]">
-        <aside className="flex min-h-0 flex-col border-r border-[var(--u-color-border)] bg-[var(--u-color-surface-subtle)]">
-          <Toolbar className="h-8">
-            <ToolbarGroup>
-              <Database size={14} />
-              <span className="text-[12px] font-semibold text-[var(--u-color-text)]">
-                {t("database.sidebar.connections")}
-              </span>
-              <Badge tone="neutral">{connections.length}</Badge>
-            </ToolbarGroup>
-            <ToolbarGroup>
-              <IconButton label={t("database.connection.newLabel")} onClick={newConnection}>
-                <Plus size={13} />
-              </IconButton>
-              <IconButton label={t("database.connection.refreshLabel")} onClick={refreshConnectionsAndSchema}>
-                <RefreshCw size={13} />
-              </IconButton>
-            </ToolbarGroup>
-          </Toolbar>
-          <div className="min-h-0 flex-1 overflow-auto p-2">
-            <DatabaseConnectionTree
-              connectionStates={connectionStates}
-              connections={connections}
-              onConnect={connectConnection}
-              onDeleteConnection={setDeleteConfirm}
-              onDisconnect={disconnectConnection}
-              onEditConnection={(connection) => selectConnection(connection.id)}
-              onNewQuery={startNewQuery}
-              onPreviewTable={(table) => browseTablePage(table, 0, tableView?.pageSize ?? DEFAULT_PREVIEW_PAGE_SIZE)}
-              onRefresh={refreshConnectionsAndSchema}
-              onRefreshSchema={refreshConnectionSchema}
-              onSelectConnection={(connection) => selectConnection(connection.id)}
-              onSelectTable={selectTable}
-              schema={visibleSchema}
-              schemaLoading={schemaEnabled && schemaQuery.isFetching}
-              selectedConnectionId={selectedConnectionId}
-              selectedTableId={selectedTableId}
-            />
-          </div>
-          <ConnectionEditor
-            error={saveMutation.error ?? testMutation.error}
-            form={form}
-            onDelete={() => {
-              const target = connections.find((item) => item.id === selectedConnectionId);
-              if (target) {
-                setDeleteConfirm(target);
-              }
-            }}
-            onNew={newConnection}
-            onSubmit={submitConnection}
-            onTest={connectSelectedConnection}
-            onUpdate={updateForm}
-            result={testResult}
-            savePending={saveMutation.isPending}
-            selectedConnectionId={selectedConnectionId}
-            testPending={testMutation.isPending}
-          />
-        </aside>
+      <div className="min-h-0 flex-1">
         <DatabaseWorkspace
           activeResultTab={layout.resultTab}
           activeStructureTab={layout.inspectorTab}
@@ -659,6 +702,25 @@ export function DatabasePage({ workspaceId }: { workspaceId: string }) {
         />
       </div>
       <DatabaseStatusBar connection={selectedConnection} executing={executePending} session={selectedSession} />
+      <DatabaseConnectionDialog
+        error={saveMutation.error ?? testMutation.error}
+        form={form}
+        onDelete={() => {
+          const target = connections.find((item) => item.id === selectedConnectionId);
+          if (target) {
+            setDeleteConfirm(target);
+          }
+        }}
+        onOpenChange={setEditorOpen}
+        onSubmit={submitConnection}
+        onTest={connectSelectedConnection}
+        onUpdate={updateForm}
+        open={editorOpen}
+        result={testResult}
+        savePending={saveMutation.isPending}
+        selectedConnectionId={selectedConnectionId}
+        testPending={testMutation.isPending}
+      />
       <ConfirmDialog
         confirmLabel={t("common.actions.delete")}
         description={
@@ -674,14 +736,15 @@ export function DatabasePage({ workspaceId }: { workspaceId: string }) {
   );
 }
 
-function ConnectionEditor({
+function DatabaseConnectionDialog({
   error,
   form,
   onDelete,
-  onNew,
+  onOpenChange,
   onSubmit,
   onTest,
   onUpdate,
+  open,
   result,
   savePending,
   selectedConnectionId,
@@ -690,10 +753,11 @@ function ConnectionEditor({
   error: unknown;
   form: DatabaseConnectionInput;
   onDelete: () => void;
-  onNew: () => void;
+  onOpenChange: (open: boolean) => void;
   onSubmit: (event: FormEvent) => void;
   onTest: () => void;
   onUpdate: (patch: Partial<DatabaseConnectionInput>) => void;
+  open: boolean;
   result: DatabaseTestResult | null;
   savePending: boolean;
   selectedConnectionId: string | null;
@@ -702,98 +766,94 @@ function ConnectionEditor({
   const { t } = useI18n();
 
   return (
-    <form className="max-h-[46%] shrink-0 space-y-2 overflow-auto border-t border-[var(--u-color-border)] p-2" onSubmit={onSubmit}>
-      <Toolbar className="h-8 border border-[var(--u-color-border)]">
-        <ToolbarGroup>
-          <Table2 size={14} />
-          <span className="text-[12px] font-semibold text-[var(--u-color-text)]">
-            {t("database.connection.settings")}
-          </span>
-        </ToolbarGroup>
-        <ToolbarGroup>
-          <IconButton label={t("database.connection.newLabel")} onClick={onNew}>
-            <Plus size={13} />
-          </IconButton>
-        </ToolbarGroup>
-      </Toolbar>
-      <Field title={t("database.fields.name")}>
-        <Input onChange={(event) => onUpdate({ name: event.target.value })} value={form.name} />
-      </Field>
-      <Field title={t("database.fields.driver")}>
-        <Select
-          onChange={(event) =>
-            onUpdate({
-              driver: event.target.value as DatabaseConnectionInput["driver"],
-              sqlitePath: event.target.value === "sqlite" ? form.sqlitePath : null,
-              credentialRef: event.target.value === "sqlite" ? null : form.credentialRef,
-            })
-          }
-          options={[
-            { label: t("database.driver.sqlite"), value: "sqlite" },
-            { label: t("database.driver.postgres"), value: "postgres" },
-            { label: t("database.driver.mysql"), value: "mysql" },
-          ]}
-          value={form.driver}
-        />
-      </Field>
-      {form.driver === "sqlite" ? (
-        <Field title={t("database.fields.sqlitePath")}>
-          <Input onChange={(event) => onUpdate({ sqlitePath: event.target.value })} placeholder="E:\\data\\app.sqlite" value={form.sqlitePath ?? ""} />
-        </Field>
-      ) : (
-        <>
-          <div className="grid grid-cols-[1fr_76px] gap-2">
-            <Field title={t("database.fields.host")}>
-              <Input onChange={(event) => onUpdate({ host: event.target.value })} placeholder="127.0.0.1" value={form.host ?? ""} />
+    <Dialog onOpenChange={onOpenChange} open={open}>
+      <DialogContent title={t("database.connection.settings")}>
+        <DialogHeader>
+          <DialogTitle>{t("database.connection.settings")}</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={onSubmit}>
+          <DialogBody className="space-y-2">
+            <Field title={t("database.fields.name")}>
+              <Input onChange={(event) => onUpdate({ name: event.target.value })} value={form.name} />
             </Field>
-            <Field title={t("database.fields.port")}>
-              <Input
-                onChange={(event) => onUpdate({ port: event.target.value ? Number(event.target.value) : null })}
-                placeholder={form.driver === "postgres" ? "5432" : "3306"}
-                type="number"
-                value={form.port ?? ""}
+            <Field title={t("database.fields.driver")}>
+              <Select
+                onChange={(event) =>
+                  onUpdate({
+                    driver: event.target.value as DatabaseConnectionInput["driver"],
+                    sqlitePath: event.target.value === "sqlite" ? form.sqlitePath : null,
+                    credentialRef: event.target.value === "sqlite" ? null : form.credentialRef,
+                  })
+                }
+                options={[
+                  { label: t("database.driver.sqlite"), value: "sqlite" },
+                  { label: t("database.driver.postgres"), value: "postgres" },
+                  { label: t("database.driver.mysql"), value: "mysql" },
+                ]}
+                value={form.driver}
               />
             </Field>
-          </div>
-          <Field title={t("database.fields.database")}>
-            <Input onChange={(event) => onUpdate({ database: event.target.value })} value={form.database ?? ""} />
-          </Field>
-          <Field title={t("database.fields.username")}>
-            <Input onChange={(event) => onUpdate({ username: event.target.value })} value={form.username ?? ""} />
-          </Field>
-          <Field title={t("database.fields.credentialRef")}>
-            <Input onChange={(event) => onUpdate({ credentialRef: event.target.value })} value={form.credentialRef ?? ""} />
-          </Field>
-        </>
-      )}
-      <div className="flex items-center gap-1">
-        <Button disabled={savePending} size="sm" type="submit">
-          <Save size={13} />
-          {t("common.actions.save")}
-        </Button>
-        <Button disabled={!selectedConnectionId || testPending} onClick={onTest} size="sm" type="button" variant="outline">
-          <CheckCircle2 size={13} />
-          {testPending ? t("common.actions.connecting") : t("common.actions.connect")}
-        </Button>
-        <IconButton disabled={!selectedConnectionId} label={t("database.connection.deleteLabel", "Delete database connection")} onClick={onDelete}>
-          <Trash2 size={13} />
-        </IconButton>
-      </div>
-      {error ? (
-        <ErrorState className="min-h-[48px]">
-          <DatabaseErrorDetails error={error} />
-        </ErrorState>
-      ) : null}
-      {result && (
-        <div className="flex items-center gap-2 text-[12px] text-[var(--u-color-text-muted)]">
-          {result.ok ? <CheckCircle2 size={13} /> : <XCircle size={13} />}
-          <span className="min-w-0 flex-1 truncate">{String(result.message)}</span>
-          <StatusBadge tone={result.ok ? "success" : "warning"}>
-            {result.ok ? t("database.connection.connected") : t("database.connection.failed")}
-          </StatusBadge>
-        </div>
-      )}
-    </form>
+            {form.driver === "sqlite" ? (
+              <Field title={t("database.fields.sqlitePath")}>
+                <Input onChange={(event) => onUpdate({ sqlitePath: event.target.value })} placeholder="E:\\data\\app.sqlite" value={form.sqlitePath ?? ""} />
+              </Field>
+            ) : (
+              <>
+                <div className="grid grid-cols-[1fr_76px] gap-2">
+                  <Field title={t("database.fields.host")}>
+                    <Input onChange={(event) => onUpdate({ host: event.target.value })} placeholder="127.0.0.1" value={form.host ?? ""} />
+                  </Field>
+                  <Field title={t("database.fields.port")}>
+                    <Input
+                      onChange={(event) => onUpdate({ port: event.target.value ? Number(event.target.value) : null })}
+                      placeholder={form.driver === "postgres" ? "5432" : "3306"}
+                      type="number"
+                      value={form.port ?? ""}
+                    />
+                  </Field>
+                </div>
+                <Field title={t("database.fields.database")}>
+                  <Input onChange={(event) => onUpdate({ database: event.target.value })} value={form.database ?? ""} />
+                </Field>
+                <Field title={t("database.fields.username")}>
+                  <Input onChange={(event) => onUpdate({ username: event.target.value })} value={form.username ?? ""} />
+                </Field>
+                <Field title={t("database.fields.credentialRef")}>
+                  <Input onChange={(event) => onUpdate({ credentialRef: event.target.value })} value={form.credentialRef ?? ""} />
+                </Field>
+              </>
+            )}
+            {error ? (
+              <ErrorState className="min-h-[48px]">
+                <DatabaseErrorDetails error={error} />
+              </ErrorState>
+            ) : null}
+            {result && (
+              <div className="flex items-center gap-2 text-[12px] text-[var(--u-color-text-muted)]">
+                {result.ok ? <CheckCircle2 size={13} /> : <XCircle size={13} />}
+                <span className="min-w-0 flex-1 truncate">{String(result.message)}</span>
+                <StatusBadge tone={result.ok ? "success" : "warning"}>
+                  {result.ok ? t("database.connection.connected") : t("database.connection.failed")}
+                </StatusBadge>
+              </div>
+            )}
+          </DialogBody>
+          <DialogFooter>
+            <IconButton disabled={!selectedConnectionId} label={t("database.connection.deleteLabel", "Delete database connection")} onClick={onDelete}>
+              <Trash2 size={13} />
+            </IconButton>
+            <Button disabled={!selectedConnectionId || testPending} onClick={onTest} size="sm" type="button" variant="outline">
+              <CheckCircle2 size={13} />
+              {testPending ? t("common.actions.connecting") : t("common.actions.connect")}
+            </Button>
+            <Button disabled={savePending} size="sm" type="submit">
+              <Save size={13} />
+              {t("common.actions.save")}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 
