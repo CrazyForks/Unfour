@@ -20,6 +20,7 @@ dist-ssr
 target
 test-results
 playwright-report
+coverage
 *.local
 .codex-target*
 .superpowers/
