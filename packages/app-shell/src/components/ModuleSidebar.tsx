@@ -1,36 +1,24 @@
-import { Database } from "lucide-react";
 import type { ReactNode } from "react";
 import type { WorkspaceTab } from "@unfour/command-client";
-import {
-  Sidebar,
-  SidebarRow,
-  SidebarSection,
-  useI18n,
-} from "@unfour/ui";
+import { Sidebar } from "@unfour/ui";
 
 export function ModuleSidebar({
   activeTab,
-  activeTabId,
   apiSidebarContent,
   collapsed,
+  databaseSidebarContent,
   onWidthChange,
-  selectedDatabaseConnectionId,
-  setActiveTab,
   sshSidebarContent,
   width,
 }: {
   activeTab: WorkspaceTab;
-  activeTabId: string;
   apiSidebarContent?: ReactNode;
   collapsed: boolean;
+  databaseSidebarContent?: ReactNode;
   onWidthChange: (width: number) => void;
-  selectedDatabaseConnectionId: string | null;
-  setActiveTab: (tabId: string) => void;
   sshSidebarContent?: ReactNode;
   width: number;
 }) {
-  const { t } = useI18n();
-
   if (collapsed) {
     return null;
   }
@@ -44,17 +32,7 @@ export function ModuleSidebar({
     >
       {activeTab.kind === "api" && apiSidebarContent}
       {activeTab.kind === "ssh" && sshSidebarContent}
-      {activeTab.kind === "database" && (
-        <SidebarSection title={t("app.nav.database")}>
-          <SidebarRow
-            active={activeTabId === "database-main" && !selectedDatabaseConnectionId}
-            onClick={() => setActiveTab("database-main")}
-          >
-            <Database size={14} />
-            <span className="truncate">{t("app.sidebar.sqlWorkspace")}</span>
-          </SidebarRow>
-        </SidebarSection>
-      )}
+      {activeTab.kind === "database" && databaseSidebarContent}
     </Sidebar>
   );
 }

@@ -33,13 +33,13 @@ export function DesktopApp() {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [apiSidebarContent, setApiSidebarContent] = useState<ReactNode>(null);
   const [sshSidebarContent, setSshSidebarContent] = useState<ReactNode>(null);
+  const [databaseSidebarContent, setDatabaseSidebarContent] = useState<ReactNode>(null);
   const [rightInspectorCollapsed, setRightInspectorCollapsed] = useState(true);
   const [rightInspectorWidth, setRightInspectorWidth] = useState(300);
   const [sidebarWidth, setSidebarWidth] = useState(248);
   const {
     activeTabId,
     activeWorkspaceId,
-    selectedDatabaseConnectionId,
     setActiveTab,
     setActiveWorkspace,
     setSelectedApiRequest,
@@ -77,6 +77,9 @@ export function DesktopApp() {
   }, []);
   const handleSshSidebarChange = useCallback((content: ReactNode | null) => {
     setSshSidebarContent(content);
+  }, []);
+  const handleDatabaseSidebarChange = useCallback((content: ReactNode | null) => {
+    setDatabaseSidebarContent(content);
   }, []);
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? tabs[0];
   return (
@@ -137,12 +140,10 @@ export function DesktopApp() {
         sidebar={
           <ModuleSidebar
             activeTab={activeTab}
-            activeTabId={activeTabId}
             apiSidebarContent={apiSidebarContent}
             collapsed={sidebarCollapsed}
+            databaseSidebarContent={databaseSidebarContent}
             onWidthChange={setSidebarWidth}
-            selectedDatabaseConnectionId={selectedDatabaseConnectionId}
-            setActiveTab={setActiveTab}
             sshSidebarContent={sshSidebarContent}
             width={sidebarWidth}
           />
@@ -185,7 +186,10 @@ export function DesktopApp() {
               />
             )}
             {activeTab.kind === "database" && activeWorkspace && (
-              <DatabasePage workspaceId={activeWorkspace.id} />
+              <DatabasePage
+                onShellSidebarChange={handleDatabaseSidebarChange}
+                workspaceId={activeWorkspace.id}
+              />
             )}
           </MainWorkspace>
         }
