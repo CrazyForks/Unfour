@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { ConnectionStatus, StatusBar } from "@unfour/ui";
+import { ConnectionStatus, StatusBar, useI18n } from "@unfour/ui";
 import { useWorkspaceStore } from "@unfour/workspace-core";
 import { useSshConnections } from "../hooks/useSshConnections";
 import { useTerminalSessions } from "../hooks/useTerminalSessions";
@@ -17,6 +17,7 @@ export function TerminalStatusBar({
   workspaceId: string;
   workspaceName: string;
 }) {
+  const { t } = useI18n();
   const selectedSshConnectionId = useWorkspaceStore((state) => state.selectedSshConnectionId);
   const activeSessionId = useTerminalStore((state) => state.activeSessionId);
   const connectionsQuery = useSshConnections(workspaceId);
@@ -36,13 +37,19 @@ export function TerminalStatusBar({
         <span className="truncate">{workspaceName}</span>
         <span className="truncate">{sshEndpointLabel(selectedConnection)}</span>
         <ConnectionStatus
-          label={terminalSessionStatusLabel(activeSession)}
+          label={terminalSessionStatusLabel(activeSession, t)}
           status={terminalSessionStatus(activeSession)}
+          variant="dot"
         />
       </div>
       <div className="flex shrink-0 items-center gap-3">
-        <span>{activeSession ? `${activeSession.cols}x${activeSession.rows}` : "no pty"}</span>
-        <span>{selectedConnection?.authKind ?? "no auth"}</span>
+        <span>
+          {activeSession
+            ? `${activeSession.cols}×${activeSession.rows}`
+            : t("ssh.status.noPty")}
+        </span>
+        <span>{selectedConnection?.authKind ?? t("ssh.status.noAuth")}</span>
+        <span>{t("ssh.status.encoding")}</span>
       </div>
     </StatusBar>
   );

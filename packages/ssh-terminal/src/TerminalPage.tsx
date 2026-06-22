@@ -100,20 +100,6 @@ export function TerminalPage({
     () => sessions.find((item) => item.sessionId === activeSessionId) ?? null,
     [activeSessionId, sessions],
   );
-  const selectedConnectionSession = useMemo(() => {
-    if (!selectedConnectionId) {
-      return null;
-    }
-    return (
-      sessions.find(
-        (item) =>
-          item.connectionId === selectedConnectionId &&
-          ["connected", "degraded", "reconnecting"].includes(item.status),
-      ) ??
-      sessions.find((item) => item.connectionId === selectedConnectionId) ??
-      null
-    );
-  }, [selectedConnectionId, sessions]);
   const sessionTabs = useMemo(
     () => buildTerminalSessionTabs({ connections, sessions }),
     [connections, sessions],
@@ -284,22 +270,6 @@ export function TerminalPage({
       queryClient.invalidateQueries({ queryKey: ["ssh-sessions", workspaceId] });
     },
   });
-  const selectedConnectionStatus = useMemo(() => {
-    if (connectMutation.isPending) {
-      return "connecting" as const;
-    }
-    if (connectMutation.error && connectMutation.variables === selectedConnectionId) {
-      return "failed" as const;
-    }
-    return selectedConnectionSession?.status ?? "disconnected";
-  }, [
-    connectMutation.error,
-    connectMutation.isPending,
-    connectMutation.variables,
-    selectedConnectionId,
-    selectedConnectionSession?.status,
-  ]);
-
   const closeMutation = useMutation({
     mutationFn: (sessionId: string) => closeSshSession({ workspaceId, sessionId }),
     onSuccess: (session) => {
@@ -453,6 +423,11 @@ export function TerminalPage({
     connectMutation.mutate(trustDialogState.connectionId);
   }
 
+  function retryConnection(connectionId: string) {
+    connectMutation.reset();
+    connectMutation.mutate(connectionId);
+  }
+
   function requestCloseSession(sessionId: string) {
     const session = sessions.find((item) => item.sessionId === sessionId);
     const needsConfirmation =
@@ -548,7 +523,6 @@ export function TerminalPage({
           activeSession={activeSession}
           activeSessionId={activeSessionId}
           actionError={actionError}
-          canStartSession={Boolean(selectedConnectionId)}
           error={blockingError}
           events={terminalEvents}
           emptyMessage={
@@ -557,11 +531,12 @@ export function TerminalPage({
               : t("ssh.empty.noConnections")
           }
           onCloseSession={requestCloseSession}
+          onEditConnection={openConnectionSettings}
           onNewConnection={newConnection}
           onNewSession={connectSelectedConnection}
+          onRetry={retryConnection}
           onSelectSession={setActiveSessionId}
           selectedConnection={selectedConnection}
-          selectedConnectionStatus={selectedConnectionStatus}
           sessions={sessionTabs}
           splitMode={split.mode}
         />

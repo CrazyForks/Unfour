@@ -206,12 +206,12 @@ export function SshConnectionTree({
           ? terminalSessionStatus(activeSession)
           : "disconnected";
     const connectionStatusLabel = connectionFailed
-      ? "failed"
+      ? t("ssh.sessionStatus.failed")
       : connecting
-        ? "connecting"
+        ? t("ssh.sessionStatus.connecting")
         : activeSession
-          ? terminalSessionStatusLabel(activeSession)
-          : "disconnected";
+          ? terminalSessionStatusLabel(activeSession, t)
+          : t("ssh.sessionStatus.disconnected");
     const menu = (
       <>
         <ContextMenuItem onSelect={() => connect(connection)}>{t("ssh.tree.connect")}</ContextMenuItem>
@@ -256,46 +256,67 @@ export function SshConnectionTree({
 
     return {
       actions: (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <IconButton label={t("ssh.tree.actionsLabel", { name: connection.name })}>
-              <MoreHorizontal size={13} />
-            </IconButton>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent>
-            <DropdownMenuItem onSelect={() => connect(connection)}>
-              <Plug size={13} />
-              {t("ssh.tree.connect")}
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => select(connection)}>
-              <ExternalLink size={13} />
-              {t("ssh.tree.open")}
-            </DropdownMenuItem>
-            {onEditConnection && (
-              <DropdownMenuItem onSelect={() => onEditConnection(connection)}>
-                <Pencil size={13} />
-                {t("ssh.tree.editConnection")}
+        <span className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+          <IconButton
+            label={t("ssh.tree.connect")}
+            onClick={() => connect(connection)}
+            size="compact"
+          >
+            <Plug size={13} />
+          </IconButton>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <IconButton
+                label={t("ssh.tree.actionsLabel", { name: connection.name })}
+                size="compact"
+              >
+                <MoreHorizontal size={13} />
+              </IconButton>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuItem onSelect={() => connect(connection)}>
+                <Plug size={13} />
+                {t("ssh.tree.connect")}
               </DropdownMenuItem>
-            )}
-            <DropdownMenuItem onSelect={() => void navigator.clipboard?.writeText(connection.host)}>
-              <Copy size={13} />
-              {t("ssh.tree.copyHost")}
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              className="text-[var(--u-color-danger)]"
-              onSelect={() => setConfirm({ kind: "delete", connection })}
-            >
-              <Trash2 size={13} />
-              {t("ssh.tree.deleteConnection")}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+              <DropdownMenuItem onSelect={() => select(connection)}>
+                <ExternalLink size={13} />
+                {t("ssh.tree.open")}
+              </DropdownMenuItem>
+              {onEditConnection && (
+                <DropdownMenuItem onSelect={() => onEditConnection(connection)}>
+                  <Pencil size={13} />
+                  {t("ssh.tree.editConnection")}
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuItem onSelect={() => void navigator.clipboard?.writeText(connection.host)}>
+                <Copy size={13} />
+                {t("ssh.tree.copyHost")}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="text-[var(--u-color-danger)]"
+                onSelect={() => setConfirm({ kind: "delete", connection })}
+              >
+                <Trash2 size={13} />
+                {t("ssh.tree.deleteConnection")}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </span>
       ),
       contextMenu: menu,
       icon: <TerminalSquare size={13} />,
       id: connection.id,
-      label: connection.name,
-      meta: <ConnectionStatus label={connectionStatusLabel} status={connectionStatus} />,
+      label: (
+        <span className="truncate">
+          {connection.name}{" "}
+          <span className="font-mono text-[10.5px] text-[var(--u-color-text-soft)]">
+            {connection.username}@{connection.host}
+          </span>
+        </span>
+      ),
+      meta: (
+        <ConnectionStatus dotOnly label={connectionStatusLabel} status={connectionStatus} variant="dot" />
+      ),
       title: `${connection.name} ${connection.username}@${connection.host}`,
     };
   });
@@ -311,11 +332,17 @@ export function SshConnectionTree({
       children: sessions.map((session) => ({
         icon: <TerminalSquare size={13} />,
         id: `session:${session.sessionId}`,
-        label: `${session.username}@${session.host}`,
+        label: (
+          <span className="truncate font-mono text-[11.5px]">
+            {session.username}@{session.host}
+          </span>
+        ),
         meta: (
           <ConnectionStatus
-            label={terminalSessionStatusLabel(session)}
+            dotOnly
+            label={terminalSessionStatusLabel(session, t)}
             status={terminalSessionStatus(session)}
+            variant="dot"
           />
         ),
         title: `${session.username}@${session.host} ${session.cols}x${session.rows}`,
@@ -337,6 +364,18 @@ export function SshConnectionTree({
         <TreeView
           defaultExpandedIds={["ssh-connections", "ssh-sessions"]}
           items={items}
+          onActivate={(item) => {
+            const connection = connections.find((candidate) => candidate.id === item.id);
+            if (connection) {
+              connect(connection);
+              return;
+            }
+
+            if (item.id.startsWith("session:")) {
+              setActiveSessionId(item.id.slice("session:".length));
+              onOpenTerminal?.();
+            }
+          }}
           onSelect={(item) => {
             const connection = connections.find((candidate) => candidate.id === item.id);
             if (connection) {

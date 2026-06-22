@@ -46,6 +46,10 @@ export {
   PopoverClose,
   PopoverTrigger,
 } from "./popover-primitives";
+export {
+  SegmentedControl,
+  type SegmentedControlOption,
+} from "./segmented";
 export { Select, type SelectOption } from "./select";
 export {
   ActivityBar,
@@ -72,7 +76,12 @@ export {
   type ThemeContextValue,
 } from "./theme";
 export { initializeTheme } from "./theme-init";
-export { ConnectionStatus, StatusBadge, type StatusTone } from "./status";
+export {
+  ConnectionStatus,
+  StatusBadge,
+  type ConnectionStatusValue,
+  type StatusTone,
+} from "./status";
 export { Tabs, type WorkspaceTab } from "./tabs";
 export { Toolbar, ToolbarGroup } from "./toolbar";
 export { TreeView, type TreeViewItem } from "./tree-view";

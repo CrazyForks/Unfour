@@ -1,30 +1,36 @@
-import type { SshSessionEvent, SshSessionSummary } from "@unfour/command-client";
-import { SplitPane, cn } from "@unfour/ui";
+import { RefreshCw } from "lucide-react";
+import type {
+  SshConnection,
+  SshSessionEvent,
+  SshSessionSummary,
+} from "@unfour/command-client";
+import { Button, SplitPane, cn, useI18n } from "@unfour/ui";
 import type { TerminalSplitMode } from "../model/types";
 import { TerminalPane } from "./TerminalPane";
+import { TerminalPaneHeader } from "./TerminalPaneHeader";
+
+export type TerminalPaneModel = {
+  connection?: SshConnection | null;
+  events: SshSessionEvent[];
+  session: SshSessionSummary;
+};
 
 export function TerminalSplitView({
-  activeSession,
-  activeEvents,
-  secondaryEvents,
-  secondarySession,
+  onRetry,
+  primary,
+  secondary,
   splitMode,
 }: {
-  activeSession: SshSessionSummary | null;
-  activeEvents: SshSessionEvent[];
-  secondaryEvents: SshSessionEvent[];
-  secondarySession: SshSessionSummary | null;
+  onRetry: (connectionId: string) => void;
+  primary: TerminalPaneModel;
+  secondary: TerminalPaneModel | null;
   splitMode: TerminalSplitMode;
 }) {
+  const { t } = useI18n();
   const split = splitMode !== "single";
 
   const primaryPane = (
-    <TerminalPane
-      active
-      events={activeEvents}
-      inputDisabled={activeSession?.status !== "connected"}
-      session={activeSession}
-    />
+    <PaneShell active model={primary} onRetry={onRetry} />
   );
 
   if (!split) {
@@ -40,19 +46,70 @@ export function TerminalSplitView({
       resizable
     >
       {primaryPane}
-      <div className={cn("flex min-h-0 min-w-0 flex-1")}>
-        {secondarySession ? (
-          <TerminalPane
-            events={secondaryEvents}
-            readOnly
-            session={secondarySession}
-          />
+      <div className={cn("flex min-h-0 min-w-0 flex-1 flex-col")}>
+        {secondary ? (
+          <PaneShell model={secondary} onRetry={onRetry} readOnly />
         ) : (
           <div className="flex min-h-0 flex-1 items-center justify-center bg-[var(--u-color-terminal-bg)] p-3 font-mono text-[12px] text-[var(--u-color-terminal-muted)]">
-            Open another session to populate this pane.
+            {t("ssh.pane.secondaryPlaceholder")}
           </div>
         )}
       </div>
     </SplitPane>
+  );
+}
+
+function PaneShell({
+  active,
+  model,
+  onRetry,
+  readOnly,
+}: {
+  active?: boolean;
+  model: TerminalPaneModel;
+  onRetry: (connectionId: string) => void;
+  readOnly?: boolean;
+}) {
+  const { t } = useI18n();
+  const { connection, events, session } = model;
+
+  return (
+    <div
+      className={cn(
+        "flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--u-color-terminal-bg)]",
+        active && "ring-1 ring-inset ring-[var(--u-color-focus)]",
+      )}
+    >
+      <TerminalPaneHeader connection={connection} session={session} />
+      {session.status === "failed" ? (
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 bg-[var(--u-color-terminal-bg)] p-6 text-center">
+          <div className="space-y-1">
+            <div className="text-[13px] font-semibold text-[var(--u-color-terminal-text)]">
+              {t("ssh.pane.failedTitle")}
+            </div>
+            <div className="text-[12px] text-[var(--u-color-terminal-muted)]">
+              {t("ssh.pane.failedDetail", { host: session.host })}
+            </div>
+          </div>
+          <Button
+            onClick={() => onRetry(session.connectionId)}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            <RefreshCw size={14} />
+            {t("ssh.pane.retry")}
+          </Button>
+        </div>
+      ) : (
+        <TerminalPane
+          active={active}
+          events={events}
+          inputDisabled={session.status !== "connected"}
+          readOnly={readOnly}
+          session={session}
+        />
+      )}
+    </div>
   );
 }

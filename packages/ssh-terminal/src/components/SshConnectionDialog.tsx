@@ -1,5 +1,5 @@
 import type { FormEvent, ReactNode } from "react";
-import { Save, Trash2 } from "lucide-react";
+import { KeyRound, Lock, Save, Trash2 } from "lucide-react";
 import type { SshConnectionInput } from "@unfour/command-client";
 import {
   Button,
@@ -14,7 +14,8 @@ import {
   DialogXClose,
   ErrorState,
   Input,
-  Select,
+  SegmentedControl,
+  useI18n,
 } from "@unfour/ui";
 import { CredentialReferenceControl } from "./CredentialReferenceControl";
 import { HostKeyFingerprint } from "./HostKeyFingerprint";
@@ -43,21 +44,23 @@ export function SshConnectionDialog({
   pending?: boolean;
   workspaceId: string;
 }) {
+  const { t } = useI18n();
+
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
       <DialogContent>
         <form className="flex min-h-0 flex-col" onSubmit={onSubmit}>
           <DialogHeader>
             <div className="min-w-0">
-              <DialogTitle>{form.id ? "Edit SSH Connection" : "New SSH Connection"}</DialogTitle>
-              <DialogDescription>
-                Connection metadata is saved here; secrets stay behind credential references.
-              </DialogDescription>
+              <DialogTitle>
+                {form.id ? t("ssh.dialog.editTitle") : t("ssh.dialog.title")}
+              </DialogTitle>
+              <DialogDescription>{t("ssh.dialog.description")}</DialogDescription>
             </div>
             <DialogXClose />
           </DialogHeader>
           <DialogBody className="space-y-3">
-            <FieldGroup title="Name">
+            <FieldGroup title={t("ssh.dialog.name")}>
               <Input
                 autoFocus
                 onChange={(event) => onUpdate({ name: event.target.value })}
@@ -65,10 +68,10 @@ export function SshConnectionDialog({
               />
             </FieldGroup>
             <div className="grid grid-cols-[minmax(0,1fr)_84px] gap-2">
-              <FieldGroup title="Host">
+              <FieldGroup title={t("ssh.dialog.host")}>
                 <Input onChange={(event) => onUpdate({ host: event.target.value })} value={form.host} />
               </FieldGroup>
-              <FieldGroup title="Port">
+              <FieldGroup title={t("ssh.dialog.port")}>
                 <Input
                   onChange={(event) =>
                     onUpdate({ port: event.target.value ? Number(event.target.value) : null })
@@ -78,32 +81,40 @@ export function SshConnectionDialog({
                 />
               </FieldGroup>
             </div>
-            <FieldGroup title="Username">
+            <FieldGroup title={t("ssh.dialog.username")}>
               <Input
                 onChange={(event) => onUpdate({ username: event.target.value })}
                 value={form.username}
               />
             </FieldGroup>
-            <FieldGroup title="Authentication Type">
-              <Select
-                onChange={(event) =>
+            <FieldGroup title={t("ssh.dialog.authentication")}>
+              <SegmentedControl<SshConnectionInput["authKind"]>
+                onChange={(authKind) =>
                   onUpdate({
-                    authKind: event.target.value as SshConnectionInput["authKind"],
-                    keyPath: event.target.value === "private-key" ? form.keyPath : null,
+                    authKind,
+                    keyPath: authKind === "private-key" ? form.keyPath : null,
                   })
                 }
                 options={[
-                  { label: "Password", value: "password" },
-                  { label: "Private key", value: "private-key" },
+                  {
+                    icon: <Lock size={14} />,
+                    label: t("ssh.dialog.authPassword"),
+                    value: "password",
+                  },
+                  {
+                    icon: <KeyRound size={14} />,
+                    label: t("ssh.dialog.authPrivateKey"),
+                    value: "private-key",
+                  },
                 ]}
                 value={form.authKind}
               />
             </FieldGroup>
             {form.authKind === "private-key" && (
-              <FieldGroup title="Private Key Path">
+              <FieldGroup title={t("ssh.dialog.keyPath")}>
                 <Input
                   onChange={(event) => onUpdate({ keyPath: event.target.value })}
-                  placeholder="C:\\Users\\me\\.ssh\\id_ed25519"
+                  placeholder={t("ssh.dialog.keyPathPlaceholder")}
                   value={form.keyPath ?? ""}
                 />
               </FieldGroup>
@@ -118,6 +129,9 @@ export function SshConnectionDialog({
             {Boolean(form.host) && (
               <HostKeyFingerprint host={form.host} port={form.port ?? 22} />
             )}
+            <p className="text-[11.5px] leading-relaxed text-[var(--u-color-text-muted)]">
+              {t("ssh.dialog.hint")}
+            </p>
             {Boolean(error) && (
               <ErrorState className="min-h-0 justify-start py-2 text-left">
                 {formatTerminalError(error)}
@@ -132,16 +146,16 @@ export function SshConnectionDialog({
               variant="ghost"
             >
               <Trash2 size={14} />
-              Delete
+              {t("ssh.dialog.delete")}
             </Button>
             <DialogClose asChild>
               <Button type="button" variant="outline">
-                Cancel
+                {t("ssh.dialog.cancel")}
               </Button>
             </DialogClose>
             <Button disabled={pending} type="submit">
               <Save size={14} />
-              Save
+              {t("ssh.dialog.save")}
             </Button>
           </DialogFooter>
         </form>

@@ -46,7 +46,8 @@ describe("WorkspaceMenu", () => {
     );
 
     const firstTrigger = screen.getByRole("button", { name: /default workspace/i });
-    expect(firstTrigger).toHaveClass("w-[220px]");
+    expect(firstTrigger).toHaveClass("w-[180px]");
+    expect(firstTrigger.querySelector("svg")).toHaveClass("ml-auto");
 
     rerender(
       <WorkspaceMenu
@@ -59,6 +60,7 @@ describe("WorkspaceMenu", () => {
     const secondTrigger = screen.getByRole("button", {
       name: /a much longer workspace name/i,
     });
-    expect(secondTrigger).toHaveClass("w-[220px]");
+    expect(secondTrigger).toHaveClass("w-[180px]");
+    expect(secondTrigger.querySelector("svg")).toHaveClass("ml-auto");
   });
 });

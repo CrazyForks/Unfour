@@ -8,7 +8,7 @@ import {
   rotateCredential,
   type CredentialMetadata,
 } from "@unfour/command-client";
-import { ErrorState, IconButton, Input, StatusBadge } from "@unfour/ui";
+import { ErrorState, IconButton, Input, StatusBadge, useI18n } from "@unfour/ui";
 import { formatTerminalError } from "../model/errors";
 
 export function CredentialReferenceControl({
@@ -24,6 +24,7 @@ export function CredentialReferenceControl({
   value?: string | null;
   workspaceId: string;
 }) {
+  const { t } = useI18n();
   const [credentialLabel, setCredentialLabel] = useState(label);
   const [lastSyncedLabel, setLastSyncedLabel] = useState(label);
   if (label !== lastSyncedLabel) {
@@ -52,7 +53,7 @@ export function CredentialReferenceControl({
     onSuccess: (created) => {
       setMetadata(created);
       setSecret("");
-      setStatus("Credential reference created");
+      setStatus(t("ssh.dialog.credentialCreated"));
       onChange(created.credentialRef);
     },
   });
@@ -60,7 +61,7 @@ export function CredentialReferenceControl({
     mutationFn: () => inspectCredential({ workspaceId, credentialRef }),
     onSuccess: (inspected) => {
       setMetadata(inspected);
-      setStatus("Credential reference verified");
+      setStatus(t("ssh.dialog.credentialVerified"));
     },
   });
   const rotateMutation = useMutation({
@@ -68,7 +69,7 @@ export function CredentialReferenceControl({
     onSuccess: (rotated) => {
       setMetadata(rotated);
       setSecret("");
-      setStatus("Credential rotated");
+      setStatus(t("ssh.dialog.credentialRotated"));
     },
   });
   const deleteMutation = useMutation({
@@ -76,7 +77,7 @@ export function CredentialReferenceControl({
     onSuccess: () => {
       setMetadata(null);
       setSecret("");
-      setStatus("Credential deleted");
+      setStatus(t("ssh.dialog.credentialDeleted"));
       onChange(null);
     },
   });
@@ -95,11 +96,11 @@ export function CredentialReferenceControl({
     <div className="space-y-2 rounded-[var(--u-radius-md)] border border-[var(--u-color-border)] bg-[var(--u-color-surface-subtle)] p-2">
       <div className="flex items-center gap-2 text-[12px] font-semibold uppercase text-[var(--u-color-text-soft)]">
         <KeyRound size={13} />
-        Credential
+        {t("ssh.dialog.credential")}
       </div>
       <Input
         onChange={(event) => onChange(event.target.value.trim() || null)}
-        placeholder="Create or paste a credential reference"
+        placeholder={t("ssh.dialog.credentialRefPlaceholder")}
         value={credentialRef}
       />
       <div className="grid grid-cols-2 gap-2">
@@ -110,14 +111,14 @@ export function CredentialReferenceControl({
         />
         <Input
           onChange={(event) => setSecret(event.target.value)}
-          placeholder="Secret value"
+          placeholder={t("ssh.dialog.credentialSecretPlaceholder")}
           type="password"
           value={secret}
         />
       </div>
       <div className="grid grid-cols-4 gap-1.5">
         <IconButton
-          label="Create credential"
+          label={t("ssh.dialog.credentialCreate")}
           disabled={!secret || isPending}
           onClick={() => createMutation.mutate()}
           type="button"
@@ -125,7 +126,7 @@ export function CredentialReferenceControl({
           <Plus size={13} />
         </IconButton>
         <IconButton
-          label="Check credential"
+          label={t("ssh.dialog.credentialCheck")}
           disabled={!credentialRef || isPending}
           onClick={() => inspectMutation.mutate()}
           type="button"
@@ -133,7 +134,7 @@ export function CredentialReferenceControl({
           <CheckCircle2 size={13} />
         </IconButton>
         <IconButton
-          label="Rotate credential"
+          label={t("ssh.dialog.credentialRotate")}
           disabled={!credentialRef || !secret || isPending}
           onClick={() => rotateMutation.mutate()}
           type="button"
@@ -141,7 +142,7 @@ export function CredentialReferenceControl({
           <RefreshCw size={13} />
         </IconButton>
         <IconButton
-          label="Delete credential"
+          label={t("ssh.dialog.credentialDelete")}
           disabled={!credentialRef || isPending}
           onClick={() => deleteMutation.mutate()}
           type="button"

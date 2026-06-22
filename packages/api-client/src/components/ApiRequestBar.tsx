@@ -8,10 +8,13 @@ import { RequestActionsMenu } from "./RequestActionsMenu";
 
 export function ApiRequestBar({
   activeEnvironmentId,
+  onCreateEnvironment,
   onDelete,
   onDuplicate,
+  onEditEnvironment,
   onExport,
   onImport,
+  onManageEnvironments,
   onSave,
   onSelectEnvironment,
   onSend,
@@ -21,10 +24,13 @@ export function ApiRequestBar({
   workspaceId,
 }: {
   activeEnvironmentId: string | null;
+  onCreateEnvironment: () => void;
   onDelete: () => void;
   onDuplicate: () => void;
+  onEditEnvironment: (environmentId: string) => void;
   onExport: () => void;
   onImport: () => void;
+  onManageEnvironments: () => void;
   onSave: () => void;
   onSelectEnvironment: (environmentId: string | null) => void;
   onSend: () => void;
@@ -83,6 +89,9 @@ export function ApiRequestBar({
         </Button>
         <EnvironmentControl
           activeEnvironmentId={activeEnvironmentId}
+          onCreateEnvironment={onCreateEnvironment}
+          onEditEnvironment={onEditEnvironment}
+          onManageEnvironments={onManageEnvironments}
           onSelectEnvironment={onSelectEnvironment}
           workspaceId={workspaceId}
         />

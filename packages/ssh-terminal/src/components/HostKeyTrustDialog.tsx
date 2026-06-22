@@ -11,6 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogXClose,
+  useI18n,
 } from "@unfour/ui";
 
 export function HostKeyTrustDialog({
@@ -32,6 +33,7 @@ export function HostKeyTrustDialog({
   pending?: boolean;
   port: number;
 }) {
+  const { t } = useI18n();
   const isMismatch = Boolean(mismatchError);
   const isFirstTrust = !existingFingerprint && !isMismatch;
 
@@ -50,10 +52,10 @@ export function HostKeyTrustDialog({
             <div className="min-w-0">
               <DialogTitle>
                 {isMismatch
-                  ? "Host Key Verification Failed"
+                  ? t("ssh.trust.mismatchTitle")
                   : isFirstTrust
-                    ? "Confirm New Host Trust"
-                    : "Host Key Verified"}
+                    ? t("ssh.trust.verifyTitle")
+                    : t("ssh.trust.verifiedTitle")}
               </DialogTitle>
               <DialogDescription>
                 {host}:{port}
@@ -72,14 +74,9 @@ export function HostKeyTrustDialog({
                     size={16}
                   />
                   <div className="space-y-1 text-[13px]">
-                    <p className="font-semibold">
-                      The server&apos;s host key has changed.
-                    </p>
+                    <p className="font-semibold">{t("ssh.trust.mismatchHeading")}</p>
                     <p className="text-[var(--u-color-text-soft)]">
-                      This could indicate a man-in-the-middle attack. The
-                      connection was refused. If you trust the new key, reset
-                      the stored fingerprint in the connection settings before
-                      reconnecting.
+                      {t("ssh.trust.mismatchBody")}
                     </p>
                   </div>
                 </div>
@@ -87,7 +84,7 @@ export function HostKeyTrustDialog({
               {existingFingerprint && (
                 <div className="space-y-1.5 rounded border border-[var(--u-color-border)] p-2">
                   <span className="text-[11px] font-semibold uppercase text-[var(--u-color-text-soft)]">
-                    Previously Trusted Fingerprint
+                    {t("ssh.trust.previousFingerprint")}
                   </span>
                   <code className="block break-all text-[12px] text-[var(--u-color-text)]">
                     {existingFingerprint.fingerprint}
@@ -107,35 +104,32 @@ export function HostKeyTrustDialog({
                     size={16}
                   />
                   <div className="space-y-1 text-[13px]">
-                    <p className="font-semibold">
-                      You have not connected to this host before.
-                    </p>
+                    <p className="font-semibold">{t("ssh.trust.firstTrustHeading")}</p>
                     <p className="text-[var(--u-color-text-soft)]">
-                      When you connect, the server&apos;s host-key fingerprint
-                      will be recorded and trusted for future connections. If the
-                      fingerprint changes later, you will be warned.
+                      {t("ssh.trust.firstTrustBody")}
                     </p>
                   </div>
                 </div>
               </div>
               <p className="text-[12px] text-[var(--u-color-text-soft)]">
-                Do you want to proceed and trust this host?
+                {t("ssh.trust.firstTrustQuestion")}
               </p>
             </>
           ) : (
             <>
               <div className="space-y-1.5 rounded border border-[var(--u-color-border)] p-2">
                 <span className="text-[11px] font-semibold uppercase text-[var(--u-color-text-soft)]">
-                  Trusted Host-Key Fingerprint
+                  {t("ssh.trust.trustedFingerprint")}
                 </span>
                 <code className="block break-all text-[12px] text-[var(--u-color-text)]">
                   {existingFingerprint?.fingerprint}
                 </code>
                 <span className="block text-[11px] text-[var(--u-color-text-soft)]">
-                  Trusted since{" "}
-                  {existingFingerprint
-                    ? new Date(existingFingerprint.createdAt).toLocaleDateString()
-                    : "unknown"}
+                  {t("ssh.trust.trustedSince", {
+                    date: existingFingerprint
+                      ? new Date(existingFingerprint.createdAt).toLocaleDateString()
+                      : t("ssh.trust.trustedSinceUnknown"),
+                  })}
                 </span>
               </div>
             </>
@@ -144,14 +138,14 @@ export function HostKeyTrustDialog({
         <DialogFooter>
           <DialogClose asChild>
             <Button type="button" variant="outline">
-              {isMismatch ? "Close" : "Cancel"}
+              {isMismatch ? t("ssh.trust.close") : t("ssh.trust.cancel")}
             </Button>
           </DialogClose>
           {isMismatch ? null : (
             <DialogClose asChild>
               <Button disabled={pending} onClick={onConfirm} type="button">
                 <ShieldCheck size={14} />
-                {isFirstTrust ? "Trust & Connect" : "Connect"}
+                {isFirstTrust ? t("ssh.trust.trustConnect") : t("ssh.trust.connect")}
               </Button>
             </DialogClose>
           )}

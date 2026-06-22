@@ -1,62 +1,40 @@
 import { useState } from "react";
-import { ArrowLeft, Check, ChevronDown, Layers, Pencil, Plus, Trash2 } from "lucide-react";
+import { Check, ChevronDown, Layers, Pencil, Plus, Settings2 } from "lucide-react";
 import {
   Button,
-  IconButton,
   Popover,
   PopoverContent,
   PopoverTrigger,
   cn,
   useI18n,
 } from "@unfour/ui";
-import type { KeyValue } from "@unfour/command-client";
 import { useApiEnvironments } from "../hooks/useApiEnvironments";
-import { nextEnvironmentName } from "../request-utils";
-import { EnvironmentEditor } from "./EnvironmentEditor";
 
 /**
- * Request-bar environment control: a single button that both switches the
- * active environment and edits its variables inline, without leaving the
- * request context. Activation flows through the parent (shared with send
- * resolution); CRUD goes through `useApiEnvironments` (same query cache).
+ * Request-bar environment control: a compact switcher for send resolution.
+ * Environment creation/editing lives in the dedicated API Environments tab.
  */
 export function EnvironmentControl({
   activeEnvironmentId,
+  onCreateEnvironment,
+  onEditEnvironment,
+  onManageEnvironments,
   onSelectEnvironment,
   workspaceId,
 }: {
   activeEnvironmentId: string | null;
+  onCreateEnvironment: () => void;
+  onEditEnvironment: (environmentId: string) => void;
+  onManageEnvironments: () => void;
   onSelectEnvironment: (environmentId: string | null) => void;
   workspaceId: string;
 }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const { activeEnvironment, createMut, deleteMut, environments, updateMut } =
-    useApiEnvironments(workspaceId);
-
-  const editing = environments.find((env) => env.id === editingId) ?? null;
+  const { activeEnvironment, environments } = useApiEnvironments(workspaceId);
 
   function close() {
     setOpen(false);
-    setEditingId(null);
-    updateMut.reset();
-  }
-
-  function handleSave(name: string, variables: KeyValue[]) {
-    if (!editing) {
-      return;
-    }
-    updateMut.mutate(
-      { id: editing.id, name, variables },
-      { onSuccess: () => setEditingId(null) },
-    );
-  }
-
-  function handleCreate() {
-    createMut.mutate(nextEnvironmentName(t("api.environment.defaultName"), environments), {
-      onSuccess: (environment) => setEditingId(environment.id),
-    });
   }
 
   return (
@@ -84,78 +62,74 @@ export function EnvironmentControl({
         </button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-[280px]">
-        {editing ? (
-          <div className="flex flex-col">
-            <div className="flex items-center gap-1 border-b border-[var(--u-color-border)] px-2 py-1.5">
-              <IconButton
-                label={t("api.environment.back")}
-                onClick={() => setEditingId(null)}
-                size="compact"
-              >
-                <ArrowLeft size={14} />
-              </IconButton>
-              <span className="min-w-0 flex-1 truncate text-[12px] font-semibold text-[var(--u-color-text)]">
-                {editing.name}
-              </span>
-            </div>
-            <div className="max-h-[60vh] overflow-y-auto p-2.5">
-              <EnvironmentEditor
-                environment={editing}
-                environments={environments}
-                onSave={handleSave}
-                saveError={
-                  updateMut.isError
-                    ? updateMut.error instanceof Error
-                      ? updateMut.error.message
-                      : String(updateMut.error)
-                    : null
-                }
-                saving={updateMut.isPending}
-              />
-            </div>
-          </div>
-        ) : (
-          <div className="flex flex-col py-1">
+        <div className="flex flex-col py-1">
+          <EnvironmentRow
+            active={activeEnvironmentId === null}
+            label={t("api.environment.none")}
+            muted
+            onActivate={() => {
+              onSelectEnvironment(null);
+              close();
+            }}
+          />
+          {environments.length > 0 && (
+            <div className="my-1 border-t border-[var(--u-color-border)]" />
+          )}
+          {environments.map((environment) => (
             <EnvironmentRow
-              active={activeEnvironmentId === null}
-              label={t("api.environment.none")}
-              muted
+              active={activeEnvironmentId === environment.id}
+              key={environment.id}
+              label={environment.name}
               onActivate={() => {
-                onSelectEnvironment(null);
+                onSelectEnvironment(environment.id);
                 close();
               }}
             />
-            {environments.length > 0 && (
-              <div className="my-1 border-t border-[var(--u-color-border)]" />
-            )}
-            {environments.map((environment) => (
-              <EnvironmentRow
-                active={activeEnvironmentId === environment.id}
-                key={environment.id}
-                label={environment.name}
-                onActivate={() => {
-                  onSelectEnvironment(environment.id);
-                  close();
-                }}
-                onDelete={() => deleteMut.mutate(environment.id)}
-                onEdit={() => setEditingId(environment.id)}
-              />
-            ))}
-            <div className="mt-1 border-t border-[var(--u-color-border)] px-2 pt-1.5">
+          ))}
+          <div className="mt-1 space-y-1 border-t border-[var(--u-color-border)] px-2 pt-1.5">
+            <Button
+              className="w-full justify-start"
+              onClick={() => {
+                onManageEnvironments();
+                close();
+              }}
+              size="sm"
+              type="button"
+              variant="ghost"
+            >
+              <Settings2 size={13} />
+              {t("api.environment.manageEnvironments")}
+            </Button>
+            <Button
+              className="w-full justify-start"
+              onClick={() => {
+                onCreateEnvironment();
+                close();
+              }}
+              size="sm"
+              type="button"
+              variant="ghost"
+            >
+              <Plus size={13} />
+              {t("api.environment.newEnvironment")}
+            </Button>
+            {activeEnvironment && (
               <Button
                 className="w-full justify-start"
-                disabled={createMut.isPending}
-                onClick={handleCreate}
+                onClick={() => {
+                  onEditEnvironment(activeEnvironment.id);
+                  close();
+                }}
                 size="sm"
                 type="button"
                 variant="ghost"
               >
-                <Plus size={13} />
-                {t("api.environment.newEnvironment")}
+                <Pencil size={13} />
+                {t("api.environment.editCurrentEnvironment")}
               </Button>
-            </div>
+            )}
           </div>
-        )}
+        </div>
       </PopoverContent>
     </Popover>
   );
@@ -166,18 +140,12 @@ function EnvironmentRow({
   label,
   muted,
   onActivate,
-  onDelete,
-  onEdit,
 }: {
   active: boolean;
   label: string;
   muted?: boolean;
   onActivate: () => void;
-  onDelete?: () => void;
-  onEdit?: () => void;
 }) {
-  const { t } = useI18n();
-
   return (
     <div
       className={cn(
@@ -209,28 +177,6 @@ function EnvironmentRow({
           {label}
         </span>
       </button>
-      {onEdit && (
-        <button
-          aria-label={t("api.environment.edit")}
-          className="grid h-6 w-6 shrink-0 place-items-center rounded-[var(--u-radius-sm)] text-[var(--u-color-text-soft)] hover:bg-[var(--u-color-surface-hover)] hover:text-[var(--u-color-text)]"
-          onClick={onEdit}
-          title={t("api.environment.edit")}
-          type="button"
-        >
-          <Pencil size={13} />
-        </button>
-      )}
-      {onDelete && (
-        <button
-          aria-label={t("api.environment.delete")}
-          className="grid h-6 w-6 shrink-0 place-items-center rounded-[var(--u-radius-sm)] text-[var(--u-color-text-soft)] hover:bg-[var(--u-color-surface-hover)] hover:text-[var(--u-color-danger)]"
-          onClick={onDelete}
-          title={t("api.environment.delete")}
-          type="button"
-        >
-          <Trash2 size={13} />
-        </button>
-      )}
     </div>
   );
 }

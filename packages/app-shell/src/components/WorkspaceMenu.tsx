@@ -33,7 +33,7 @@ export function WorkspaceMenu({
         <DropdownMenu.Trigger asChild>
           <Button
             className={cn(
-              "w-[220px] justify-start gap-1 border-transparent bg-[var(--u-color-surface)] px-2 font-semibold shadow-none hover:bg-[var(--u-color-surface-hover)]",
+              "w-[180px] justify-start gap-1 border-transparent bg-[var(--u-color-surface)] px-2 font-semibold shadow-none hover:bg-[var(--u-color-surface-hover)]",
               className,
             )}
             size="sm"
@@ -41,10 +41,10 @@ export function WorkspaceMenu({
             variant="outline"
           >
             <span className="h-4 w-4 shrink-0 rounded-[5px] bg-[linear-gradient(135deg,var(--u-color-primary),var(--u-color-primary-hover))]" />
-            <span className="min-w-0 truncate">
+            <span className="min-w-0  truncate">
               {activeWorkspace?.name ?? t("app.workspace.none")}
             </span>
-            <ChevronDown className="shrink-0 text-[var(--u-color-text-muted)]" size={14} />
+            <ChevronDown className="ml-auto shrink-0 text-[var(--u-color-text-muted)]" size={14} />
           </Button>
         </DropdownMenu.Trigger>
         <DropdownMenu.Portal>

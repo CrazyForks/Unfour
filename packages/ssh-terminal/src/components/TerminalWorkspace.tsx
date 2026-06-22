@@ -1,95 +1,81 @@
-import { FilePlus2, TerminalSquare } from "lucide-react";
+import { FilePlus2, Pencil, Plug, TerminalSquare } from "lucide-react";
 import type {
   SshConnection,
   SshSessionEvent,
   SshSessionSummary,
 } from "@unfour/command-client";
-import {
-  Button,
-  ConnectionStatus,
-  EmptyState,
-  ErrorState,
-  StatusBadge,
-  Tabs,
-  useI18n,
-} from "@unfour/ui";
+import { Button, EmptyState, ErrorState, Tabs, useI18n } from "@unfour/ui";
 import type { TerminalSplitMode, TerminalSessionTabState } from "../model/types";
 import { formatTerminalError } from "../model/errors";
 import { sshEndpointLabel } from "../model/ssh-connection-state";
-import {
-  shouldRenderTerminalPane,
-  terminalSessionStatus,
-  terminalSessionStatusLabel,
-} from "../model/terminal-session-status";
 import { TerminalSearchBar } from "./TerminalSearchBar";
 import { TerminalSessionTabMeta } from "./TerminalSessionTab";
-import { TerminalSplitView } from "./TerminalSplitView";
+import { TerminalSplitView, type TerminalPaneModel } from "./TerminalSplitView";
 
 export function TerminalWorkspace({
   activeSession,
   activeSessionId,
   actionError,
-  canStartSession,
   emptyMessage,
   error,
   events,
+  onEditConnection,
   onNewConnection,
   onNewSession,
   onCloseSession,
+  onRetry,
   onSelectSession,
   selectedConnection,
-  selectedConnectionStatus,
   sessions,
   splitMode,
 }: {
   activeSession: SshSessionSummary | null;
   activeSessionId: string | null;
   actionError?: unknown;
-  canStartSession: boolean;
   emptyMessage: string;
   error?: unknown;
   events: SshSessionEvent[];
+  onEditConnection: () => void;
   onNewConnection: () => void;
   onNewSession: () => void;
   onCloseSession: (sessionId: string) => void;
+  onRetry: (connectionId: string) => void;
   onSelectSession: (sessionId: string) => void;
   selectedConnection: SshConnection | null;
-  selectedConnectionStatus: "connecting" | SshSessionSummary["status"] | "disconnected";
   sessions: TerminalSessionTabState[];
   splitMode: TerminalSplitMode;
 }) {
   const { t } = useI18n();
   const hasSessions = sessions.length > 0;
-  const secondarySession =
+  const secondaryTab =
     sessions.find(
       (item) =>
         item.session.sessionId !== activeSessionId && item.session.status === "connected",
-    )?.session ??
-    sessions.find((item) => item.session.sessionId !== activeSessionId)?.session ??
+    ) ??
+    sessions.find((item) => item.session.sessionId !== activeSessionId) ??
     null;
-  const activeEvents = events.filter(
-    (event) => event.sessionId === activeSession?.sessionId,
-  );
-  const secondaryEvents = events.filter(
-    (event) => event.sessionId === secondarySession?.sessionId,
-  );
-  const renderTerminalPane = shouldRenderTerminalPane(
-    activeSession,
-    activeEvents.length,
-  );
-  const emptyTitle =
-    activeSession && !renderTerminalPane
-      ? t("ssh.empty.noInteractiveSession")
-      : t("ssh.empty.noSessionOpen");
+  const activeTab =
+    sessions.find((item) => item.session.sessionId === activeSession?.sessionId) ?? null;
+
+  const primaryModel: TerminalPaneModel | null = activeSession
+    ? {
+        connection: activeTab?.connection ?? selectedConnection,
+        events: events.filter((event) => event.sessionId === activeSession.sessionId),
+        session: activeSession,
+      }
+    : null;
+  const secondaryModel: TerminalPaneModel | null = secondaryTab
+    ? {
+        connection: secondaryTab.connection,
+        events: events.filter(
+          (event) => event.sessionId === secondaryTab.session.sessionId,
+        ),
+        session: secondaryTab.session,
+      }
+    : null;
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
-      <TerminalWorkspaceHeader
-        activeSession={activeSession}
-        actionError={actionError}
-        selectedConnection={selectedConnection}
-        selectedConnectionStatus={selectedConnectionStatus}
-      />
       {hasSessions ? (
         <Tabs
           activeId={activeSessionId ?? sessions[0]?.session.sessionId ?? ""}
@@ -102,48 +88,47 @@ export function TerminalWorkspace({
               item.session.sessionId !== activeSessionId,
             meta: <TerminalSessionTabMeta session={item.session} />,
             modified: item.modified,
-            title: item.title,
+            title: `${item.session.username}@${item.session.host}`,
           }))}
         />
       ) : null}
+      {Boolean(actionError) && (
+        <div className="shrink-0 truncate border-b border-[var(--u-color-border)] bg-[var(--u-color-danger-soft)] px-3 py-1 text-[12px] text-[var(--u-color-danger)]">
+          {formatTerminalError(actionError)}
+        </div>
+      )}
       <div className="relative flex min-h-0 flex-1">
         <TerminalSearchBar />
         {error ? (
           <ErrorState className="h-full min-h-0 flex-1 rounded-none border-0">
             {formatTerminalError(error)}
           </ErrorState>
-        ) : renderTerminalPane ? (
+        ) : primaryModel ? (
           <TerminalSplitView
-            activeSession={activeSession}
-            activeEvents={activeEvents}
-            secondaryEvents={secondaryEvents}
-            secondarySession={secondarySession}
+            onRetry={onRetry}
+            primary={primaryModel}
+            secondary={secondaryModel}
             splitMode={splitMode}
+          />
+        ) : selectedConnection ? (
+          <ReadyToConnectState
+            connection={selectedConnection}
+            onEditConnection={onEditConnection}
+            onNewSession={onNewSession}
           />
         ) : (
           <EmptyState className="h-full min-h-0 flex-1 rounded-none border-0">
             <div className="flex max-w-[520px] flex-col items-center gap-3">
               <div className="space-y-1">
                 <div className="text-[13px] font-semibold text-[var(--u-color-text)]">
-                  {emptyTitle}
+                  {t("ssh.empty.noSessionOpen")}
                 </div>
                 <div>{emptyMessage}</div>
               </div>
-              <div className="flex flex-wrap justify-center gap-2">
-                <Button onClick={onNewConnection} size="sm" type="button" variant="outline">
-                  <FilePlus2 size={14} />
-                  {t("ssh.actions.newConnection")}
-                </Button>
-                <Button
-                  disabled={!canStartSession}
-                  onClick={onNewSession}
-                  size="sm"
-                  type="button"
-                >
-                  <TerminalSquare size={14} />
-                  {t("ssh.actions.openSession")}
-                </Button>
-              </div>
+              <Button onClick={onNewConnection} size="sm" type="button" variant="outline">
+                <FilePlus2 size={14} />
+                {t("ssh.actions.newConnection")}
+              </Button>
             </div>
           </EmptyState>
         )}
@@ -152,69 +137,44 @@ export function TerminalWorkspace({
   );
 }
 
-function TerminalWorkspaceHeader({
-  activeSession,
-  actionError,
-  selectedConnection,
-  selectedConnectionStatus,
+function ReadyToConnectState({
+  connection,
+  onEditConnection,
+  onNewSession,
 }: {
-  activeSession: SshSessionSummary | null;
-  actionError?: unknown;
-  selectedConnection: SshConnection | null;
-  selectedConnectionStatus: "connecting" | SshSessionSummary["status"] | "disconnected";
+  connection: SshConnection;
+  onEditConnection: () => void;
+  onNewSession: () => void;
 }) {
   const { t } = useI18n();
-  const sessionLabel = activeSession
-    ? `${activeSession.username}@${activeSession.host}`
-    : null;
-  const endpoint = selectedConnection
-    ? sshEndpointLabel(selectedConnection)
-    : sessionLabel ?? t("ssh.status.noConnectionSelected");
-  const status =
-    selectedConnectionStatus === "connecting"
-      ? "connecting"
-      : activeSession
-        ? terminalSessionStatus(activeSession)
-        : selectedConnectionStatus === "failed"
-          ? "error"
-          : selectedConnectionStatus === "degraded" ||
-              selectedConnectionStatus === "reconnecting"
-            ? "connecting"
-            : selectedConnectionStatus;
-  const statusLabel =
-    selectedConnectionStatus === "connecting"
-      ? "connecting"
-      : activeSession
-        ? terminalSessionStatusLabel(activeSession)
-        : selectedConnectionStatus;
-
   return (
-    <div className="flex min-h-[34px] shrink-0 items-center gap-3 border-b border-[var(--u-color-border)] bg-[var(--u-color-surface-subtle)] px-3 text-[12px]">
-      <div className="flex min-w-0 flex-1 items-center gap-2">
-        <span className="min-w-0 truncate font-semibold text-[var(--u-color-text)]">
-          {selectedConnection?.name ?? sessionLabel ?? t("ssh.title")}
-        </span>
-        <span className="min-w-0 truncate text-[var(--u-color-text-muted)]">
-          {endpoint}
-        </span>
-      </div>
-      <div className="flex shrink-0 items-center gap-2">
-        <ConnectionStatus
-          label={statusLabel}
-          status={status}
-        />
-        {activeSession && (
-          <StatusBadge>
-            {activeSession.cols}x{activeSession.rows}
-          </StatusBadge>
-        )}
-        <StatusBadge>{selectedConnection?.authKind ?? activeSession?.authKind ?? t("ssh.status.noAuth")}</StatusBadge>
-      </div>
-      {Boolean(actionError) && (
-        <div className="min-w-0 max-w-[38%] truncate text-[var(--u-color-danger)]">
-          {formatTerminalError(actionError)}
+    <EmptyState className="h-full min-h-0 flex-1 rounded-none border-0">
+      <div className="flex max-w-[520px] flex-col items-center gap-3">
+        <div className="grid h-[52px] w-[52px] place-items-center rounded-[var(--u-radius-lg)] bg-[var(--u-color-primary-soft)] text-[var(--u-color-primary)]">
+          <Plug size={24} />
         </div>
-      )}
-    </div>
+        <div className="space-y-1">
+          <div className="text-[14px] font-semibold text-[var(--u-color-text)]">
+            {t("ssh.pane.readyTitle")}
+          </div>
+          <div>
+            {t("ssh.pane.readyDetail", {
+              endpoint: sshEndpointLabel(connection),
+              name: connection.name,
+            })}
+          </div>
+        </div>
+        <div className="flex flex-wrap justify-center gap-2">
+          <Button onClick={onEditConnection} size="sm" type="button" variant="outline">
+            <Pencil size={14} />
+            {t("ssh.pane.editConnection")}
+          </Button>
+          <Button onClick={onNewSession} size="sm" type="button">
+            <TerminalSquare size={14} />
+            {t("ssh.pane.openSession")}
+          </Button>
+        </div>
+      </div>
+    </EmptyState>
   );
 }

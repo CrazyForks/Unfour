@@ -57,12 +57,15 @@ export function TreeView({
   className,
   defaultExpandedIds = [],
   items,
+  onActivate,
   onSelect,
   selectedId,
 }: {
   className?: string;
   defaultExpandedIds?: string[];
   items: TreeViewItem[];
+  /** Fired on double-click of a row label (e.g. "double-click to connect"). */
+  onActivate?: (item: TreeViewItem) => void;
   onSelect?: (item: TreeViewItem) => void;
   selectedId?: string | null;
 }) {
@@ -214,6 +217,7 @@ export function TreeView({
           item={item}
           key={item.id}
           level={0}
+          onActivate={onActivate}
           onFocusRow={setFocusedId}
           onSelect={onSelect}
           rovingId={rovingId}
@@ -229,6 +233,7 @@ function TreeRow({
   expandedIds,
   item,
   level,
+  onActivate,
   onFocusRow,
   onSelect,
   rovingId,
@@ -238,6 +243,7 @@ function TreeRow({
   expandedIds: Set<string>;
   item: TreeViewItem;
   level: number;
+  onActivate?: (item: TreeViewItem) => void;
   onFocusRow: (id: string) => void;
   onSelect?: (item: TreeViewItem) => void;
   rovingId: string | null;
@@ -281,13 +287,14 @@ function TreeRow({
         className="min-w-0 flex-1 truncate text-left disabled:cursor-not-allowed"
         disabled={item.disabled}
         onClick={() => onSelect?.(item)}
+        onDoubleClick={() => onActivate?.(item)}
         tabIndex={-1}
         type="button"
       >
         {item.label}
       </button>
       {item.meta && <span className="shrink-0">{item.meta}</span>}
-      {item.actions && <span className="shrink-0 opacity-80">{item.actions}</span>}
+      {item.actions && <span className="shrink-0">{item.actions}</span>}
     </div>
   );
 
@@ -309,6 +316,7 @@ function TreeRow({
               item={child}
               key={child.id}
               level={level + 1}
+              onActivate={onActivate}
               onFocusRow={onFocusRow}
               onSelect={onSelect}
               rovingId={rovingId}

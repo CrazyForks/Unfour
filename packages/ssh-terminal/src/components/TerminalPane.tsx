@@ -269,17 +269,12 @@ export function TerminalPane({
   return (
     <div
       className={cn(
-        "flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--u-color-terminal-bg)]",
-        active && "ring-1 ring-inset ring-[var(--u-color-focus)]",
+        "min-h-0 flex-1 overflow-hidden bg-[var(--u-color-terminal-bg)] p-2",
         className,
       )}
-    >
-      <div
-        className="min-h-0 flex-1 overflow-hidden p-2"
-        onClick={() => terminalRef.current?.focus()}
-        ref={hostRef}
-      />
-    </div>
+      onClick={() => terminalRef.current?.focus()}
+      ref={hostRef}
+    />
   );
 }
 

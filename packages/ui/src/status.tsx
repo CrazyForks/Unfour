@@ -32,28 +32,79 @@ export function StatusBadge({
   );
 }
 
+export type ConnectionStatusValue =
+  | "connected"
+  | "connecting"
+  | "reconnecting"
+  | "disconnected"
+  | "error"
+  | "closed"
+  | "unknown";
+
+const dotToneClass: Record<StatusTone, string> = {
+  danger: "bg-[var(--u-color-danger)]",
+  neutral: "bg-[var(--u-color-text-soft)]",
+  success: "bg-[var(--u-color-success)]",
+  warning: "bg-[var(--u-color-warning)]",
+};
+
+function connectionTone(status: ConnectionStatusValue): StatusTone {
+  switch (status) {
+    case "connected":
+      return "success";
+    case "connecting":
+    case "reconnecting":
+      return "warning";
+    case "error":
+      return "danger";
+    default:
+      return "neutral";
+  }
+}
+
 export function ConnectionStatus({
   connected,
+  dotOnly,
   label,
   status,
+  variant = "badge",
 }: {
   connected?: boolean;
+  /** Render only the status dot; the label is exposed via `title`. Implies `variant="dot"`. */
+  dotOnly?: boolean;
   label?: string;
-  status?: "connected" | "connecting" | "disconnected" | "error" | "closed" | "unknown";
+  status?: ConnectionStatusValue;
+  /** `"badge"` (default) keeps the legacy pill look; `"dot"` renders a colored dot + label. */
+  variant?: "badge" | "dot";
 }) {
   const resolvedStatus = status ?? (connected ? "connected" : "disconnected");
-  const tone: StatusTone =
-    resolvedStatus === "connected"
-      ? "success"
-      : resolvedStatus === "connecting"
-        ? "warning"
-        : resolvedStatus === "error"
-          ? "danger"
-          : "neutral";
+  const tone = connectionTone(resolvedStatus);
+  const text = label ?? resolvedStatus;
 
-  return (
-    <StatusBadge tone={tone}>
-      {label ?? resolvedStatus}
-    </StatusBadge>
-  );
+  if (variant === "dot" || dotOnly) {
+    const pulse = resolvedStatus === "connecting" || resolvedStatus === "reconnecting";
+    return (
+      <span
+        className={cn(
+          "inline-flex items-center gap-1.5 text-[11px] font-medium",
+          tone === "success" && "text-[var(--u-color-success)]",
+          tone === "warning" && "text-[var(--u-color-warning)]",
+          tone === "danger" && "text-[var(--u-color-danger)]",
+          tone === "neutral" && "text-[var(--u-color-text-soft)]",
+        )}
+        title={text}
+      >
+        <span
+          className={cn(
+            "h-[7px] w-[7px] shrink-0 rounded-full",
+            dotToneClass[tone],
+            pulse && "animate-pulse",
+          )}
+        />
+        {!dotOnly && <span className="truncate">{text}</span>}
+      </span>
+    );
+  }
+
+  return <StatusBadge tone={tone}>{text}</StatusBadge>;
 }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Button, EmptyState, SplitPane, useI18n } from "@unfour/ui";
+import { Button, ConfirmDialog, EmptyState, SplitPane, useI18n } from "@unfour/ui";
 import { useApiRequestTabs } from "./hooks/useApiRequestTabs";
 import { useApiCollections } from "./hooks/useApiCollections";
 import {
@@ -17,6 +17,16 @@ import { ApiResponseViewer } from "./components/ApiResponseViewer";
 import { ApiSaveDialog, type SaveIdentity } from "./components/ApiSaveDialog";
 import { ApiCloseRequestDialog } from "./components/ApiCloseRequestDialog";
 import { ApiClientSidebar } from "./components/ApiClientSidebar";
+import {
+  EnvironmentManagerPage,
+  type EnvironmentManagerInitialMode,
+} from "./components/EnvironmentManagerPage";
+
+type ApiWorkspaceView = "request" | "environments";
+type EnvironmentManagerOpenMode =
+  | { kind: "manage" }
+  | { kind: "new" }
+  | { environmentId: string; kind: "edit" };
 
 export function ApiDebuggerPage({
   onActiveSavedRequestChange,
@@ -58,6 +68,13 @@ export function ApiDebuggerPage({
     useApiCollections(workspaceId);
   const [saveDialogTabId, setSaveDialogTabId] = useState<string | null>(null);
   const [closeDialogTabId, setCloseDialogTabId] = useState<string | null>(null);
+  const [workspaceView, setWorkspaceView] = useState<ApiWorkspaceView>("request");
+  const [environmentTabOpen, setEnvironmentTabOpen] = useState(false);
+  const [environmentTabDirty, setEnvironmentTabDirty] = useState(false);
+  const [environmentCloseDialogOpen, setEnvironmentCloseDialogOpen] = useState(false);
+  const [environmentInitialMode, setEnvironmentInitialMode] =
+    useState<EnvironmentManagerInitialMode>({ kind: "manage", nonce: 0 });
+  const [selectedEnvironmentId, setSelectedEnvironmentId] = useState<string | null>(null);
   const closeAfterSaveRef = useRef<string | null>(null);
   const pendingCloseQueueRef = useRef<string[]>([]);
   const urlInputRef = useRef<HTMLInputElement>(null);
@@ -77,6 +94,49 @@ export function ApiDebuggerPage({
     [saveTab],
   );
 
+  const openEnvironmentManager = useCallback(
+    (mode: EnvironmentManagerOpenMode = { kind: "manage" }) => {
+      const nextSelectedEnvironmentId =
+        mode.kind === "edit"
+          ? mode.environmentId
+          : mode.kind === "new"
+            ? null
+            : activeEnvironment?.id ?? selectedEnvironmentId;
+      setSelectedEnvironmentId(nextSelectedEnvironmentId ?? null);
+      setEnvironmentInitialMode((current) =>
+        ({ ...mode, nonce: current.nonce + 1 }) as EnvironmentManagerInitialMode,
+      );
+      setEnvironmentTabOpen(true);
+      setWorkspaceView("environments");
+    },
+    [activeEnvironment?.id, selectedEnvironmentId],
+  );
+
+  const closeEnvironmentTab = useCallback(() => {
+    setEnvironmentTabOpen(false);
+    setEnvironmentTabDirty(false);
+    setEnvironmentCloseDialogOpen(false);
+    setWorkspaceView("request");
+  }, []);
+
+  const requestCloseEnvironmentTab = useCallback(() => {
+    if (environmentTabDirty) {
+      setEnvironmentCloseDialogOpen(true);
+      return;
+    }
+    closeEnvironmentTab();
+  }, [closeEnvironmentTab, environmentTabDirty]);
+
+  const handleNewRequest = useCallback(() => {
+    newRequest();
+    setWorkspaceView("request");
+  }, [newRequest]);
+
+  const handleSelectTab = useCallback((tabId: string) => {
+    selectTab(tabId);
+    setWorkspaceView("request");
+  }, [selectTab]);
+
   useEffect(
     () => onActiveSavedRequestChange?.(activeTab?.savedRequestId ?? null),
     [activeTab?.savedRequestId, onActiveSavedRequestChange],
@@ -86,6 +146,7 @@ export function ApiDebuggerPage({
     if (!openIntent) {
       return;
     }
+    setWorkspaceView("request");
     if (openIntent.kind === "new") {
       newRequest();
       return;
@@ -115,6 +176,7 @@ export function ApiDebuggerPage({
       return;
     }
     pendingIntentAction.current = null;
+    setWorkspaceView("request");
     if (pending.action === "send") {
       sendTab(activeTab);
     } else {
@@ -248,6 +310,7 @@ export function ApiDebuggerPage({
 
   const handleSidebarIntent = useCallback(
     (intent: ApiOpenIntent) => {
+      setWorkspaceView("request");
       if (intent.kind === "new") {
         newRequest();
         return;
@@ -277,8 +340,15 @@ export function ApiDebuggerPage({
   const sidebar = useMemo(
     () => (
       <ApiClientSidebar
-        onNewRequest={newRequest}
+        environmentPanelActive={workspaceView === "environments"}
+        onEditEnvironment={(environmentId) =>
+          openEnvironmentManager({ kind: "edit", environmentId })
+        }
+        onNewEnvironment={() => openEnvironmentManager({ kind: "new" })}
+        onNewRequest={handleNewRequest}
+        onOpenEnvironments={() => openEnvironmentManager()}
         onOpenIntent={handleSidebarIntent}
+        selectedEnvironmentId={selectedEnvironmentId}
         selectedId={activeTab?.savedRequestId ?? null}
         shellSlot={usesShellSidebar}
         workspaceId={workspaceId}
@@ -286,9 +356,12 @@ export function ApiDebuggerPage({
     ),
     [
       activeTab?.savedRequestId,
+      handleNewRequest,
       handleSidebarIntent,
-      newRequest,
+      openEnvironmentManager,
+      selectedEnvironmentId,
       usesShellSidebar,
+      workspaceView,
       workspaceId,
     ],
   );
@@ -356,21 +429,35 @@ export function ApiDebuggerPage({
         {!usesShellSidebar && sidebar}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <ApiRequestTabs
-            activeId={state.activeTabId}
+            activeId={workspaceView === "environments" ? null : state.activeTabId}
+            environmentTab={{
+              active: workspaceView === "environments",
+              dirty: environmentTabDirty,
+              onClose: requestCloseEnvironmentTab,
+              onSelect: () => setWorkspaceView("environments"),
+              open: environmentTabOpen,
+            }}
             onClose={requestClose}
             onCloseAll={() => requestCloseMany(state.tabs)}
             onCloseLeft={requestCloseTabsLeftOf}
             onCloseRight={requestCloseTabsRightOf}
             onCloseSaved={requestCloseSavedTabs}
-            onNew={newRequest}
-            onSelect={selectTab}
+            onNew={handleNewRequest}
+            onSelect={handleSelectTab}
             tabs={state.tabs}
           />
-          {!activeTab ? (
+          {workspaceView === "environments" && environmentTabOpen ? (
+            <EnvironmentManagerPage
+              initialMode={environmentInitialMode}
+              onDirtyChange={setEnvironmentTabDirty}
+              onSelectionChange={setSelectedEnvironmentId}
+              workspaceId={workspaceId}
+            />
+          ) : !activeTab ? (
             <EmptyState className="m-3 flex-1">
               <div className="space-y-2">
                 <div>{t("api.empty.noRequestOpen")}</div>
-                <Button onClick={newRequest} type="button">
+                <Button onClick={handleNewRequest} type="button">
                   {t("common.actions.newRequest")}
                 </Button>
               </div>
@@ -379,6 +466,7 @@ export function ApiDebuggerPage({
             <>
               <ApiRequestBar
                 activeEnvironmentId={activeEnvironment?.id ?? null}
+                onCreateEnvironment={() => openEnvironmentManager({ kind: "new" })}
                 onDelete={() =>
                   activeTab.savedRequestId &&
                   deleteMutation.mutate(activeTab.savedRequestId)
@@ -387,8 +475,12 @@ export function ApiDebuggerPage({
                   activeTab.savedRequestId &&
                   duplicateMutation.mutate(activeTab.savedRequestId)
                 }
+                onEditEnvironment={(environmentId) =>
+                  openEnvironmentManager({ kind: "edit", environmentId })
+                }
                 onExport={exportCollection}
                 onImport={() => importInputRef.current?.click()}
+                onManageEnvironments={() => openEnvironmentManager()}
                 onSave={() => requestSave(activeTab)}
                 onSelectEnvironment={activateEnvironment}
                 onSend={() => sendTab(activeTab)}
@@ -477,6 +569,14 @@ export function ApiDebuggerPage({
         onSave={() => closeDialogTab && void saveThenClose(closeDialogTab)}
         open={Boolean(closeDialogTab)}
         title={closeDialogTab ? requestTabTitle(closeDialogTab) : ""}
+      />
+      <ConfirmDialog
+        confirmLabel={t("api.environment.discard")}
+        description={t("api.environment.discardChangesDescription")}
+        onConfirm={closeEnvironmentTab}
+        onOpenChange={setEnvironmentCloseDialogOpen}
+        open={environmentCloseDialogOpen}
+        title={t("api.environment.discardChangesTitle")}
       />
     </div>
   );

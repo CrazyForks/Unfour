@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Shield, ShieldAlert, Trash2 } from "lucide-react";
 import type { SshHostFingerprintInfo } from "@unfour/command-client";
 import { getSshHostFingerprint, resetSshHostFingerprint } from "@unfour/command-client";
-import { Button } from "@unfour/ui";
+import { Button, useI18n } from "@unfour/ui";
 
 export function HostKeyFingerprint({
   host,
@@ -11,6 +11,7 @@ export function HostKeyFingerprint({
   host: string;
   port: number;
 }) {
+  const { t } = useI18n();
   const trimmedHost = host.trim();
   const validPort = port > 0;
 
@@ -80,7 +81,7 @@ export function HostKeyFingerprint({
     return (
       <div className="flex items-center gap-2 text-[12px] text-[var(--u-color-text-soft)]">
         <Shield size={14} />
-        <span>Loading host-key fingerprint...</span>
+        <span>{t("ssh.dialog.fingerprintLoading")}</span>
       </div>
     );
   }
@@ -98,7 +99,7 @@ export function HostKeyFingerprint({
     return (
       <div className="flex items-center gap-2 text-[12px] text-[var(--u-color-text-soft)]">
         <Shield size={14} />
-        <span>No trusted fingerprint recorded yet. It will be saved on first connection.</span>
+        <span>{t("ssh.dialog.fingerprintNone")}</span>
       </div>
     );
   }
@@ -107,7 +108,7 @@ export function HostKeyFingerprint({
     <div className="space-y-1.5 rounded border border-[var(--u-color-border)] p-2">
       <div className="flex items-center justify-between">
         <span className="text-[12px] font-semibold uppercase text-[var(--u-color-text-soft)]">
-          Trusted Host-Key Fingerprint
+          {t("ssh.dialog.fingerprintTitle")}
         </span>
         <Button
           disabled={loading}
@@ -117,14 +118,16 @@ export function HostKeyFingerprint({
           variant="ghost"
         >
           <Trash2 size={12} />
-          Reset
+          {t("ssh.dialog.fingerprintReset")}
         </Button>
       </div>
       <code className="block break-all text-[12px] text-[var(--u-color-text)]">
         {info.fingerprint}
       </code>
       <span className="block text-[11px] text-[var(--u-color-text-soft)]">
-        Trusted since {new Date(info.createdAt).toLocaleDateString()}
+        {t("ssh.dialog.fingerprintTrustedSince", {
+          date: new Date(info.createdAt).toLocaleDateString(),
+        })}
       </span>
     </div>
   );
