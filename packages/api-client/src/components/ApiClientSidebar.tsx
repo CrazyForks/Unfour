@@ -1,12 +1,22 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Circle, Clock, FolderOpen, Plus, Settings2, Trash2 } from "lucide-react";
+import { Circle, Clock, FolderOpen, MoreHorizontal, Plus, Settings2, Trash2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import {
   listApiHistory,
   type ApiEnvironment,
   type ApiHistoryItem,
 } from "@unfour/command-client";
-import { Button, ConfirmDialog, cn, useI18n } from "@unfour/ui";
+import {
+  Button,
+  ConfirmDialog,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  IconButton,
+  cn,
+  useI18n,
+} from "@unfour/ui";
 import { useApiEnvironments } from "../hooks/useApiEnvironments";
 import type { ApiOpenIntent } from "../model/types";
 import { ApiCollectionTree } from "./ApiCollectionTree";
@@ -264,15 +274,27 @@ function EnvironmentRow({
           strokeWidth={2}
         />
       </button>
-      <button
-        aria-label={t("api.environment.delete")}
-        className="inline-flex shrink-0 items-center justify-center text-[var(--u-color-text-muted)] opacity-0 transition-opacity hover:text-[var(--u-color-danger)] group-hover:opacity-100"
-        onClick={onDelete}
-        title={t("api.environment.delete")}
-        type="button"
-      >
-        <Trash2 size={12} />
-      </button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <IconButton
+            aria-label={t("api.environment.actions")}
+            className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
+            label={t("api.environment.actions")}
+            size="compact"
+          >
+            <MoreHorizontal size={13} />
+          </IconButton>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem
+            className="text-[var(--u-color-danger)]"
+            onSelect={onDelete}
+          >
+            <Trash2 size={13} />
+            {t("api.environment.delete")}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }
