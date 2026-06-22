@@ -204,14 +204,14 @@ body {
   button:disabled {
     cursor: not-allowed;
   }
-}
 
-button:focus-visible,
-input:focus-visible,
-select:focus-visible,
-textarea:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--focus) 55%, transparent);
-  outline-offset: 2px;
+  button:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--focus) 55%, transparent);
+    outline-offset: 2px;
+  }
 }
 
 .app-shell {
