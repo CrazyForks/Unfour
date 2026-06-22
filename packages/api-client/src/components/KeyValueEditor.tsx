@@ -29,7 +29,7 @@ export function KeyValueEditor({
   }
 
   const cellInputClass =
-    "h-[32px] rounded-none border-0 bg-transparent px-0 text-[12px] hover:border-0 focus:border-0 focus:ring-0 disabled:bg-transparent disabled:text-[var(--u-color-text-soft)]";
+    "h-[32px] rounded-none border-0 bg-transparent px-0 text-[12px] hover:border-0 focus:border-0 focus:ring-0 focus-visible:outline-none disabled:bg-transparent disabled:text-[var(--u-color-text-soft)]";
   const rows = [...items, { key: "", value: "", enabled: true }];
   const duplicateKeys = findDuplicateKeys(items);
 
@@ -60,7 +60,7 @@ export function KeyValueEditor({
         </div>
         {rows.map((item, index) => (
           <div
-            className="grid min-h-[34px] grid-cols-[28px_minmax(120px,1fr)_minmax(120px,1fr)_32px] items-center gap-2 border-b border-[var(--u-color-border)] px-2 last:border-b-0 last:[&:last-child]:rounded-b-[var(--u-radius-sm)]"
+            className="grid min-h-[34px] grid-cols-[28px_minmax(120px,1fr)_minmax(120px,1fr)_32px] items-center gap-2 overflow-hidden border-b border-[var(--u-color-border)] px-2 last:border-b-0 last-of-type:rounded-b-[var(--u-radius-sm)]"
             key={`${title}-${index}`}
           >
             <input
