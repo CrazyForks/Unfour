@@ -252,7 +252,7 @@ function TreeRow({
       aria-expanded={hasChildren ? expanded : undefined}
       aria-selected={selectedId === item.id || undefined}
       className={cn(
-        "group flex h-[var(--u-size-sidebar-row)] min-w-0 items-center gap-1 rounded-[var(--u-radius-sm)] px-1 text-[12px] text-[var(--u-color-text-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_srgb,var(--u-color-focus)_32%,transparent)]",
+        "group flex h-[var(--u-size-sidebar-row)] min-w-0 items-center gap-0.5 rounded-[var(--u-radius-sm)] px-1 text-[12px] text-[var(--u-color-text-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_srgb,var(--u-color-focus)_32%,transparent)]",
         selectedId === item.id &&
           "bg-[var(--u-color-primary-soft)] font-semibold text-[var(--u-color-primary)]",
         item.disabled ? "opacity-60" : "hover:bg-[var(--u-color-surface-hover)] hover:text-[var(--u-color-text)]",
@@ -266,17 +266,17 @@ function TreeRow({
     >
       <button
         aria-label={expanded ? "Collapse" : "Expand"}
-        className="grid h-5 w-5 shrink-0 place-items-center rounded-[var(--u-radius-sm)] text-[var(--u-color-text-soft)] hover:bg-[var(--u-color-surface-hover)]"
+        className="grid h-4 w-4 shrink-0 place-items-center rounded-[var(--u-radius-sm)] text-[var(--u-color-text-soft)] hover:bg-[var(--u-color-surface-hover)]"
         disabled={!hasChildren}
         onClick={() => hasChildren && toggle(item.id)}
         tabIndex={-1}
         type="button"
       >
         {hasChildren && (
-          <ChevronRight className={cn("transition-transform", expanded && "rotate-90")} size={13} />
+          <ChevronRight className={cn("transition-transform", expanded && "rotate-90")} size={12} />
         )}
       </button>
-      {item.icon && <span className="grid h-5 w-5 shrink-0 place-items-center">{item.icon}</span>}
+      {item.icon && <span className="grid h-4 w-4 shrink-0 place-items-center">{item.icon}</span>}
       <button
         className="min-w-0 flex-1 truncate text-left disabled:cursor-not-allowed"
         disabled={item.disabled}

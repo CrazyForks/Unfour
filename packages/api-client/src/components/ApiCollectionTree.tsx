@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Folder, FolderOpen, FolderPlus, Plus, Search, Send } from "lucide-react";
+import { Folder, FolderOpen, FolderPlus, MoreHorizontal, Plus, Search, Send } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Button,
@@ -11,6 +11,10 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
   Input,
   SidebarRow,
   SidebarSection,
@@ -24,6 +28,7 @@ import {
   listApiHistory,
   listSavedApiRequests,
   moveApiRequest,
+  updateApiRequest,
   type ApiCollection,
   type ApiSavedRequest,
 } from "@unfour/command-client";
@@ -31,6 +36,7 @@ import {
   collectTreeRequests,
   groupRequestsByCollection,
   parseKeyValues,
+  savedRequestToInput,
   type FolderNode,
 } from "../request-utils";
 import { methodBadgeLabel, methodToneClass } from "../model/request-tabs";
@@ -38,13 +44,16 @@ import type { ApiOpenIntent } from "../model/types";
 import { useApiCollections } from "../hooks/useApiCollections";
 import { ApiHistoryTree } from "./ApiHistoryTree";
 
+type Translate = (key: string, params?: Record<string, string | number>) => string;
+
 type RequestMenuContext = {
   collections: ApiCollection[];
   duplicate: (requestId: string) => void;
   move: (request: ApiSavedRequest, collectionId: string | null) => void;
   onOpenIntent: (intent: ApiOpenIntent) => void;
   remove: (requestId: string) => void;
-  t: (key: string) => string;
+  rename: (request: ApiSavedRequest) => void;
+  t: Translate;
 };
 
 type NameTarget =
@@ -72,6 +81,8 @@ export function ApiCollectionTree({
   const [nameValue, setNameValue] = useState("");
   const [renameTarget, setRenameTarget] = useState<ApiCollection | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [renameRequestTarget, setRenameRequestTarget] = useState<ApiSavedRequest | null>(null);
+  const [renameRequestValue, setRenameRequestValue] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<ApiCollection | null>(null);
   const queryClient = useQueryClient();
   const { addFolderMut, collections, createMut, deleteMut, renameMut } =
@@ -109,6 +120,21 @@ export function ApiCollectionTree({
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: ["api-saved", workspaceId] }),
   });
+  const updateRequestMutation = useMutation({
+    mutationFn: ({
+      name,
+      request,
+    }: {
+      name: string;
+      request: ApiSavedRequest;
+    }) =>
+      updateApiRequest(workspaceId, request.id, {
+        ...savedRequestToInput(request, workspaceId),
+        name,
+      }),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ["api-saved", workspaceId] }),
+  });
 
   const searchText = search.trim().toLowerCase();
   const savedRequests = (savedQuery.data ?? []).filter((request) =>
@@ -139,6 +165,10 @@ export function ApiCollectionTree({
       }),
     onOpenIntent,
     remove: deleteMutation.mutate,
+    rename: (request) => {
+      setRenameRequestTarget(request);
+      setRenameRequestValue(request.name);
+    },
     t,
   };
 
@@ -150,7 +180,7 @@ export function ApiCollectionTree({
   const addFolderAction = (collectionId: string, parentPath: string) => (
     <button
       aria-label={t("api.collection.addFolder")}
-      className="grid h-5 w-5 place-items-center rounded-[var(--u-radius-sm)] text-[var(--u-color-text-soft)] opacity-0 hover:bg-[var(--u-color-surface-hover)] hover:text-[var(--u-color-text)] group-hover:opacity-100"
+      className="grid h-4 w-4 place-items-center rounded-[var(--u-radius-sm)] text-[var(--u-color-text-soft)] opacity-0 hover:bg-[var(--u-color-surface-hover)] hover:text-[var(--u-color-text)] group-hover:opacity-100"
       onClick={(event) => {
         event.stopPropagation();
         openFolderDialog(collectionId, parentPath);
@@ -158,7 +188,7 @@ export function ApiCollectionTree({
       title={t("api.collection.addFolder")}
       type="button"
     >
-      <FolderPlus size={12} />
+      <FolderPlus size={11} />
     </button>
   );
 
@@ -400,6 +430,41 @@ export function ApiCollectionTree({
       </Dialog>
 
       <Dialog
+        onOpenChange={(next) => !next && setRenameRequestTarget(null)}
+        open={Boolean(renameRequestTarget)}
+      >
+        <DialogContent title={t("api.request.renameTitle")}>
+          <DialogHeader>
+            <DialogTitle>{t("api.request.renameTitle")}</DialogTitle>
+          </DialogHeader>
+          <DialogBody>
+            <Input
+              autoFocus
+              onChange={(event) => setRenameRequestValue(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  confirmRequestRename();
+                }
+              }}
+              value={renameRequestValue}
+            />
+          </DialogBody>
+          <DialogFooter>
+            <Button onClick={() => setRenameRequestTarget(null)} type="button" variant="ghost">
+              {t("api.save.cancel")}
+            </Button>
+            <Button
+              disabled={!renameRequestValue.trim() || updateRequestMutation.isPending}
+              onClick={confirmRequestRename}
+              type="button"
+            >
+              {t("api.save.save")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
         onOpenChange={(next) => !next && setDeleteTarget(null)}
         open={Boolean(deleteTarget)}
       >
@@ -459,6 +524,17 @@ export function ApiCollectionTree({
     );
   }
 
+  function confirmRequestRename() {
+    const name = renameRequestValue.trim();
+    if (!renameRequestTarget || !name) {
+      return;
+    }
+    updateRequestMutation.mutate(
+      { name, request: renameRequestTarget },
+      { onSuccess: () => setRenameRequestTarget(null) },
+    );
+  }
+
   function confirmDelete() {
     if (!deleteTarget) {
       return;
@@ -501,19 +577,29 @@ function requestTreeItem(
       </span>
     ),
     title: request.url,
+    actions: <RequestActionMenu ctx={ctx} open={open} request={request} />,
     contextMenu: (
       <>
-        <ContextMenuItem onSelect={() => open()}>Open</ContextMenuItem>
-        <ContextMenuItem onSelect={() => open("send")}>Send</ContextMenuItem>
+        <ContextMenuItem onSelect={() => open()}>
+          {ctx.t("api.request.openInTab")}
+        </ContextMenuItem>
+        <ContextMenuItem onSelect={() => open("send")}>
+          {ctx.t("api.actions.send")}
+        </ContextMenuItem>
+        <ContextMenuItem onSelect={() => ctx.rename(request)}>
+          {ctx.t("api.request.rename")}
+        </ContextMenuItem>
         <ContextMenuItem onSelect={() => ctx.duplicate(request.id)}>
-          Duplicate
+          {ctx.t("api.actions.duplicate")}
         </ContextMenuItem>
         <ContextMenuItem
           onSelect={() => void navigator.clipboard?.writeText(request.url)}
         >
-          Copy URL
+          {ctx.t("api.request.copyUrl")}
         </ContextMenuItem>
-        <ContextMenuItem onSelect={() => exportRequest(request)}>Export</ContextMenuItem>
+        <ContextMenuItem onSelect={() => exportRequest(request)}>
+          {ctx.t("api.actions.export")}
+        </ContextMenuItem>
         {(request.collectionId || moveTargets.length > 0) && (
           <ContextMenuItem disabled>{ctx.t("api.collection.moveTo")}</ContextMenuItem>
         )}
@@ -534,11 +620,65 @@ function requestTreeItem(
           className="text-[var(--u-color-danger)]"
           onSelect={() => ctx.remove(request.id)}
         >
-          Delete
+          {ctx.t("api.actions.deleteRequest")}
         </ContextMenuItem>
       </>
     ),
   };
+}
+
+function RequestActionMenu({
+  ctx,
+  open,
+  request,
+}: {
+  ctx: RequestMenuContext;
+  open: (action?: "open" | "send") => void;
+  request: ApiSavedRequest;
+}) {
+  const label = ctx.t("api.request.actionsLabel", { name: request.name });
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          aria-label={label}
+          className="grid h-5 w-5 place-items-center rounded-[var(--u-radius-sm)] text-[var(--u-color-text-soft)] opacity-0 hover:bg-[var(--u-color-surface-hover)] hover:text-[var(--u-color-text)] focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100"
+          onClick={(event) => event.stopPropagation()}
+          onPointerDown={(event) => event.stopPropagation()}
+          title={label}
+          type="button"
+        >
+          <MoreHorizontal size={13} />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onSelect={() => open()}>
+          {ctx.t("api.request.openInTab")}
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => open("send")}>
+          {ctx.t("api.actions.send")}
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => ctx.rename(request)}>
+          {ctx.t("api.request.rename")}
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => ctx.duplicate(request.id)}>
+          {ctx.t("api.actions.duplicate")}
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => void navigator.clipboard?.writeText(request.url)}>
+          {ctx.t("api.request.copyUrl")}
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => exportRequest(request)}>
+          {ctx.t("api.actions.export")}
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          className="text-[var(--u-color-danger)]"
+          onSelect={() => ctx.remove(request.id)}
+        >
+          {ctx.t("api.actions.deleteRequest")}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 }
 
 function MethodMeta({ method }: { method: string }) {

@@ -176,6 +176,11 @@
       "saving": "保存中"
     },
     "request": {
+      "actionsLabel": "{name} 的请求操作",
+      "copyUrl": "复制 URL",
+      "openInTab": "在标签页打开",
+      "rename": "重命名请求",
+      "renameTitle": "重命名请求",
       "method": "HTTP 方法",
       "name": "请求名称",
       "namePlaceholder": "请求名称",

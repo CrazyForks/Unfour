@@ -176,6 +176,11 @@
       "saving": "Saving"
     },
     "request": {
+      "actionsLabel": "Request actions for {name}",
+      "copyUrl": "Copy URL",
+      "openInTab": "Open in tab",
+      "rename": "Rename request",
+      "renameTitle": "Rename request",
       "method": "HTTP method",
       "name": "Request name",
       "namePlaceholder": "Request name",

@@ -33,7 +33,7 @@ export function WorkspaceMenu({
         <DropdownMenu.Trigger asChild>
           <Button
             className={cn(
-              "max-w-[240px] justify-start gap-1 border-transparent bg-[var(--u-color-surface)] px-2 font-semibold shadow-none hover:bg-[var(--u-color-surface-hover)]",
+              "w-[220px] justify-start gap-1 border-transparent bg-[var(--u-color-surface)] px-2 font-semibold shadow-none hover:bg-[var(--u-color-surface-hover)]",
               className,
             )}
             size="sm"
