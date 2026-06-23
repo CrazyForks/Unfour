@@ -13,6 +13,7 @@ import {
   type SshConnection,
   type SshConnectionInput,
   type SshHostFingerprintInfo,
+  type SshSessionEvent,
   type SshSessionSummary,
 } from "@unfour/command-client";
 import { useWorkspaceStore } from "@unfour/workspace-core";
@@ -115,6 +116,22 @@ export function TerminalPage({
   useEffect(() => {
     let disposed = false;
     let unlisten: (() => void) | null = null;
+    // Live output is coalesced into the store roughly once per frame. The
+    // visible terminal is painted directly by each TerminalPane's own listener,
+    // so this copy only backs copy-log, search, and tab-switch scrollback and
+    // does not need per-chunk granularity (which previously caused a full
+    // re-render per keystroke echo).
+    let pending: SshSessionEvent[] = [];
+    let flushTimer: ReturnType<typeof setTimeout> | null = null;
+    const flushPending = () => {
+      flushTimer = null;
+      if (!pending.length) {
+        return;
+      }
+      const batch = pending;
+      pending = [];
+      appendTerminalEvents(batch);
+    };
     listen<{
       sessionId: string;
       data: string;
@@ -126,17 +143,18 @@ export function TerminalPage({
         return;
       }
       if (payload.data) {
-        appendTerminalEvents([
-          {
-            sessionId: payload.sessionId,
-            kind:
-              payload.status === "disconnected" || payload.status === "failed"
-                ? "close"
-                : "output",
-            data: payload.data,
-            createdAt: new Date().toISOString(),
-          },
-        ]);
+        pending.push({
+          sessionId: payload.sessionId,
+          kind:
+            payload.status === "disconnected" || payload.status === "failed"
+              ? "close"
+              : "output",
+          data: payload.data,
+          createdAt: new Date().toISOString(),
+        });
+        if (flushTimer === null) {
+          flushTimer = setTimeout(flushPending, 16);
+        }
       }
       if (payload.status) {
         queryClient.setQueryData<SshSessionSummary[]>(
@@ -167,6 +185,10 @@ export function TerminalPage({
       });
     return () => {
       disposed = true;
+      if (flushTimer !== null) {
+        clearTimeout(flushTimer);
+      }
+      flushPending();
       unlisten?.();
     };
   }, [appendTerminalEvents, queryClient, workspaceId]);

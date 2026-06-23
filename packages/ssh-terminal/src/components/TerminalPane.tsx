@@ -233,19 +233,19 @@ export function TerminalPane({
       return;
     }
 
-    if (renderedSessionIdRef.current !== (session?.sessionId ?? null)) {
+    const sessionId = session?.sessionId ?? null;
+    const sessionChanged = renderedSessionIdRef.current !== sessionId;
+    if (sessionChanged) {
       terminal.reset();
       renderedEventsRef.current = 0;
-      renderedSessionIdRef.current = session?.sessionId ?? null;
-    }
-
-    if (events.length < renderedEventsRef.current) {
+      renderedSessionIdRef.current = sessionId;
+    } else if (events.length < renderedEventsRef.current) {
+      // The session's events were cleared/truncated; redraw from scratch.
       terminal.reset();
       renderedEventsRef.current = 0;
     }
 
     if (events.length === 0 && renderedEventsRef.current === 0) {
-      terminal.reset();
       terminal.write(
         session
           ? session.status === "connected"
@@ -256,16 +256,54 @@ export function TerminalPane({
       return;
     }
 
-    const nextEvents = events.slice(renderedEventsRef.current);
-    nextEvents.forEach((event) => {
-      const data =
-        event.kind === "input"
-          ? `$ ${redactTerminalLog(event.data)}`
-          : redactTerminalLog(event.data);
-      terminal.write(event.kind === "output" ? data : ensureNewline(data));
-    });
+    // Replay the full backlog when (re)entering a session. Afterwards, under the
+    // Tauri runtime live output is painted straight to xterm by the listener
+    // below, so skip the diff-write here to avoid duplicating it. Mock mode (no
+    // event stream) keeps rendering incremental output through this path.
+    if (sessionChanged || !isTauriRuntime()) {
+      events.slice(renderedEventsRef.current).forEach((event) => {
+        const data =
+          event.kind === "input"
+            ? `$ ${redactTerminalLog(event.data)}`
+            : redactTerminalLog(event.data);
+        terminal.write(event.kind === "output" ? data : ensureNewline(data));
+      });
+    }
     renderedEventsRef.current = events.length;
   }, [events, session]);
+
+  // Live terminal output: write directly to xterm so keystroke echo appears
+  // instantly, independent of React state updates and re-renders. Tauri runtime
+  // only; the effect above replays history and covers mock mode.
+  useEffect(() => {
+    const sessionId = session?.sessionId;
+    if (!sessionId || !isTauriRuntime()) {
+      return;
+    }
+    let disposed = false;
+    let unlisten: (() => void) | null = null;
+    listen<{ sessionId: string; data?: string }>("ssh://terminal-data", (event) => {
+      const payload = event.payload;
+      if (payload?.sessionId !== sessionId || !payload.data) {
+        return;
+      }
+      terminalRef.current?.write(redactTerminalLog(payload.data));
+    })
+      .then((dispose) => {
+        if (disposed) {
+          dispose();
+        } else {
+          unlisten = dispose;
+        }
+      })
+      .catch(() => {
+        /* mock mode has no Tauri event transport */
+      });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [session?.sessionId]);
 
   return (
     <div
