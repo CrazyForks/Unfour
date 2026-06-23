@@ -1,6 +1,6 @@
 import type { SshConnection, SshSessionSummary } from "@unfour/command-client";
 import { describe, expect, it } from "vitest";
-import { buildTerminalSessionTabs } from "./terminal-tabs";
+import { buildTerminalSessionTabs, shouldShowTerminalSessionTab } from "./terminal-tabs";
 
 function connection(overrides: Partial<SshConnection> & { id: string }): SshConnection {
   return {
@@ -85,5 +85,45 @@ describe("buildTerminalSessionTabs", () => {
       "Prod DB 2",
       "Prod DB 3",
     ]);
+  });
+});
+
+describe("shouldShowTerminalSessionTab", () => {
+  it("hides disconnected restored history by default", () => {
+    expect(
+      shouldShowTerminalSessionTab({
+        activeSessionId: null,
+        dismissedSessionIds: [],
+        session: session({
+          sessionId: "s1",
+          connectionId: "c1",
+          status: "disconnected",
+        }),
+      }),
+    ).toBe(false);
+  });
+
+  it("keeps the current disconnected session visible for review", () => {
+    expect(
+      shouldShowTerminalSessionTab({
+        activeSessionId: "s1",
+        dismissedSessionIds: [],
+        session: session({
+          sessionId: "s1",
+          connectionId: "c1",
+          status: "disconnected",
+        }),
+      }),
+    ).toBe(true);
+  });
+
+  it("hides explicitly dismissed sessions", () => {
+    expect(
+      shouldShowTerminalSessionTab({
+        activeSessionId: "s1",
+        dismissedSessionIds: ["s1"],
+        session: session({ sessionId: "s1", connectionId: "c1" }),
+      }),
+    ).toBe(false);
   });
 });

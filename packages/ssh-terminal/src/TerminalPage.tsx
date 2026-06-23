@@ -33,7 +33,7 @@ import {
   defaultSshConnectionInput,
   sshConnectionToInput,
 } from "./model/ssh-connection-state";
-import { buildTerminalSessionTabs } from "./model/terminal-tabs";
+import { buildTerminalSessionTabs, shouldShowTerminalSessionTab } from "./model/terminal-tabs";
 
 export function TerminalPage({
   onShellSidebarChange,
@@ -93,11 +93,14 @@ export function TerminalPage({
   const sessionsQuery = useTerminalSessions(workspaceId);
   const connections = useMemo(() => connectionsQuery.data ?? [], [connectionsQuery.data]);
   const sessions = useMemo(() => sessionsQuery.data ?? [], [sessionsQuery.data]);
-  // Sessions the user explicitly closed: the backend keeps them in its list as
-  // history, so hide them from the tab strip until a new session reuses the id.
+  // The backend returns disconnected sessions as history. Keep the tab strip focused on
+  // active work, while preserving the currently selected session if it disconnects.
   const visibleSessions = useMemo(
-    () => sessions.filter((session) => !dismissedSessionIds.includes(session.sessionId)),
-    [dismissedSessionIds, sessions],
+    () =>
+      sessions.filter((session) =>
+        shouldShowTerminalSessionTab({ activeSessionId, dismissedSessionIds, session }),
+      ),
+    [activeSessionId, dismissedSessionIds, sessions],
   );
   const selectedConnection = useMemo(
     () => connections.find((item) => item.id === selectedConnectionId) ?? null,

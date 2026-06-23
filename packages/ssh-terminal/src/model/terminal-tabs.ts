@@ -1,6 +1,26 @@
 import type { SshConnection, SshSessionSummary } from "@unfour/command-client";
 import type { TerminalSessionTabState } from "./types";
 
+export function shouldShowTerminalSessionTab({
+  activeSessionId,
+  dismissedSessionIds,
+  session,
+}: {
+  activeSessionId: string | null;
+  dismissedSessionIds: string[];
+  session: SshSessionSummary;
+}) {
+  if (dismissedSessionIds.includes(session.sessionId)) {
+    return false;
+  }
+
+  if (session.status === "disconnected" && session.sessionId !== activeSessionId) {
+    return false;
+  }
+
+  return true;
+}
+
 export function buildTerminalSessionTabs({
   connections,
   sessions,
