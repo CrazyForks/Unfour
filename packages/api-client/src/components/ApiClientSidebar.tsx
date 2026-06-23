@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Circle, Clock, FolderOpen, Plus, Settings2 } from "lucide-react";
+import { Circle, Clock, FolderOpen, MoreHorizontal, Plus, Settings2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import {
   listApiHistory,
@@ -9,10 +9,16 @@ import {
 import {
   Button,
   cn,
+  ConfirmDialog,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
   useI18n,
 } from "@unfour/ui";
 import { useApiEnvironments } from "../hooks/useApiEnvironments";
 import type { ApiOpenIntent } from "../model/types";
+import { nextEnvironmentName } from "../request-utils";
 import { ApiCollectionTree } from "./ApiCollectionTree";
 import { ApiHistoryTree } from "./ApiHistoryTree";
 
@@ -144,7 +150,20 @@ function EnvironmentsPanel({
   workspaceId: string;
 }) {
   const { t } = useI18n();
-  const { activateMut, environments, isLoading } = useApiEnvironments(workspaceId);
+  const { activateMut, createMut, deleteMut, environments, isLoading, updateMut } =
+    useApiEnvironments(workspaceId);
+  const [deleteTarget, setDeleteTarget] = useState<ApiEnvironment | null>(null);
+
+  const handleDuplicate = (environment: ApiEnvironment) => {
+    const name = nextEnvironmentName(environment.name, environments);
+    createMut.mutateAsync(name).then((created) => {
+      updateMut.mutate({
+        id: created.id,
+        name,
+        variables: environment.variables,
+      });
+    }).catch(() => {/* create failed — query invalidation handles cleanup */});
+  };
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -175,6 +194,8 @@ function EnvironmentsPanel({
                 onActivate={() =>
                   activateMut.mutate(environment.isActive ? null : environment.id)
                 }
+                onDelete={() => setDeleteTarget(environment)}
+                onDuplicate={() => handleDuplicate(environment)}
                 onSelect={() => onEditEnvironment(environment.id)}
                 selected={selectedEnvironmentId === environment.id}
               />
@@ -182,6 +203,24 @@ function EnvironmentsPanel({
           </div>
         )}
       </div>
+      <ConfirmDialog
+        confirmLabel={t("common.actions.delete")}
+        description={
+          deleteTarget
+            ? t("api.environment.deleteConfirm", { name: deleteTarget.name })
+            : ""
+        }
+        onConfirm={() => {
+          if (deleteTarget) {
+            deleteMut.mutate(deleteTarget.id);
+          }
+          setDeleteTarget(null);
+        }}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        open={deleteTarget !== null}
+        pending={deleteMut.isPending}
+        title={t("api.environment.delete")}
+      />
     </div>
   );
 }
@@ -189,11 +228,15 @@ function EnvironmentsPanel({
 function EnvironmentRow({
   environment,
   onActivate,
+  onDelete,
+  onDuplicate,
   onSelect,
   selected,
 }: {
   environment: ApiEnvironment;
   onActivate: () => void;
+  onDelete: () => void;
+  onDuplicate: () => void;
   onSelect: () => void;
   selected: boolean;
 }) {
@@ -208,14 +251,6 @@ function EnvironmentRow({
           : "text-[var(--u-color-text-muted)] hover:bg-[var(--u-color-surface-hover)] hover:text-[var(--u-color-text)]",
       )}
     >
-      <button
-        aria-label={environment.name}
-        className="min-w-0 flex-1 truncate font-medium"
-        onClick={onSelect}
-        type="button"
-      >
-        {environment.name}
-      </button>
       <button
         aria-label={
           environment.isActive
@@ -242,6 +277,38 @@ function EnvironmentRow({
           strokeWidth={2}
         />
       </button>
+      <button
+        aria-label={environment.name}
+        className="min-w-0 flex-1 truncate font-medium"
+        onClick={onSelect}
+        type="button"
+      >
+        {environment.name}
+      </button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            aria-label={environment.name}
+            className="grid h-5 w-5 shrink-0 place-items-center rounded-[var(--u-radius-sm)] text-[var(--u-color-text-soft)] opacity-0 hover:bg-[var(--u-color-surface-hover)] hover:text-[var(--u-color-text)] focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100"
+            onClick={(event) => event.stopPropagation()}
+            onPointerDown={(event) => event.stopPropagation()}
+            type="button"
+          >
+            <MoreHorizontal size={13} />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onSelect={onDuplicate}>
+            {t("api.actions.duplicate")}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            className="text-[var(--u-color-danger)]"
+            onSelect={onDelete}
+          >
+            {t("api.environment.delete")}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }
