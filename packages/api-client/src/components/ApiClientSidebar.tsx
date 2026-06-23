@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Circle, Clock, FolderOpen, MoreHorizontal, Plus, Settings2, Trash2 } from "lucide-react";
+import { Circle, Clock, FolderOpen, Plus, Settings2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import {
   listApiHistory,
@@ -8,12 +8,6 @@ import {
 } from "@unfour/command-client";
 import {
   Button,
-  ConfirmDialog,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  IconButton,
   cn,
   useI18n,
 } from "@unfour/ui";
@@ -150,8 +144,7 @@ function EnvironmentsPanel({
   workspaceId: string;
 }) {
   const { t } = useI18n();
-  const { activateMut, deleteMut, environments, isLoading } = useApiEnvironments(workspaceId);
-  const [deleteTarget, setDeleteTarget] = useState<ApiEnvironment | null>(null);
+  const { activateMut, environments, isLoading } = useApiEnvironments(workspaceId);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -182,7 +175,6 @@ function EnvironmentsPanel({
                 onActivate={() =>
                   activateMut.mutate(environment.isActive ? null : environment.id)
                 }
-                onDelete={() => setDeleteTarget(environment)}
                 onSelect={() => onEditEnvironment(environment.id)}
                 selected={selectedEnvironmentId === environment.id}
               />
@@ -190,29 +182,6 @@ function EnvironmentsPanel({
           </div>
         )}
       </div>
-      <ConfirmDialog
-        confirmLabel={t("api.environment.delete")}
-        description={
-          deleteTarget
-            ? t("api.environment.deleteConfirm", { name: deleteTarget.name })
-            : undefined
-        }
-        onConfirm={() => {
-          if (deleteTarget) {
-            deleteMut.mutate(deleteTarget.id, {
-              onSuccess: () => setDeleteTarget(null),
-            });
-          }
-        }}
-        onOpenChange={(open) => {
-          if (!open) {
-            setDeleteTarget(null);
-          }
-        }}
-        open={Boolean(deleteTarget)}
-        pending={deleteMut.isPending}
-        title={t("api.environment.delete")}
-      />
     </div>
   );
 }
@@ -220,13 +189,11 @@ function EnvironmentsPanel({
 function EnvironmentRow({
   environment,
   onActivate,
-  onDelete,
   onSelect,
   selected,
 }: {
   environment: ApiEnvironment;
   onActivate: () => void;
-  onDelete: () => void;
   onSelect: () => void;
   selected: boolean;
 }) {
@@ -275,27 +242,6 @@ function EnvironmentRow({
           strokeWidth={2}
         />
       </button>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <IconButton
-            aria-label={t("api.environment.actions")}
-            className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
-            label={t("api.environment.actions")}
-            size="compact"
-          >
-            <MoreHorizontal size={13} />
-          </IconButton>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuItem
-            className="text-[var(--u-color-danger)]"
-            onSelect={onDelete}
-          >
-            <Trash2 size={13} />
-            {t("api.environment.delete")}
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
     </div>
   );
 }

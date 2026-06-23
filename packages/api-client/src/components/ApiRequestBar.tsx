@@ -3,41 +3,19 @@ import { Save, Send } from "lucide-react";
 import { Button, Input, useI18n } from "@unfour/ui";
 import type { ApiRequestTab } from "../model/request-tabs";
 import { httpMethods } from "../constants/http-methods";
-import { EnvironmentControl } from "./EnvironmentControl";
-import { RequestActionsMenu } from "./RequestActionsMenu";
 
 export function ApiRequestBar({
-  activeEnvironmentId,
-  onCreateEnvironment,
-  onDelete,
-  onDuplicate,
-  onEditEnvironment,
-  onExport,
-  onImport,
-  onManageEnvironments,
   onSave,
-  onSelectEnvironment,
   onSend,
   onUpdate,
   tab,
   urlInputRef,
-  workspaceId,
 }: {
-  activeEnvironmentId: string | null;
-  onCreateEnvironment: () => void;
-  onDelete: () => void;
-  onDuplicate: () => void;
-  onEditEnvironment: (environmentId: string) => void;
-  onExport: () => void;
-  onImport: () => void;
-  onManageEnvironments: () => void;
   onSave: () => void;
-  onSelectEnvironment: (environmentId: string | null) => void;
   onSend: () => void;
   onUpdate: (patch: Partial<ApiRequestTab["draft"]>) => void;
   tab: ApiRequestTab;
   urlInputRef?: Ref<HTMLInputElement>;
-  workspaceId: string;
 }) {
   const { t } = useI18n();
 
@@ -87,22 +65,6 @@ export function ApiRequestBar({
         >
           <Save size={14} />
         </Button>
-        <EnvironmentControl
-          activeEnvironmentId={activeEnvironmentId}
-          onCreateEnvironment={onCreateEnvironment}
-          onEditEnvironment={onEditEnvironment}
-          onManageEnvironments={onManageEnvironments}
-          onSelectEnvironment={onSelectEnvironment}
-          workspaceId={workspaceId}
-        />
-        <RequestActionsMenu
-          canDelete={Boolean(tab.savedRequestId)}
-          canDuplicate={Boolean(tab.savedRequestId)}
-          onDelete={onDelete}
-          onDuplicate={onDuplicate}
-          onExport={onExport}
-          onImport={onImport}
-        />
       </div>
       {tab.saveError && (
         <span

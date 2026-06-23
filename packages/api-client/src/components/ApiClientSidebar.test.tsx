@@ -106,9 +106,16 @@ describe("ApiClientSidebar environment panel", () => {
     expect(props.onOpenEnvironments).toHaveBeenCalledTimes(1);
     expect(await screen.findByRole("button", { name: "Local" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Staging" })).toBeInTheDocument();
-    expect(screen.getByText("Active")).toBeInTheDocument();
   });
 
+
+  it("does not show per-environment actions in the sidebar environment list", async () => {
+    renderSidebar({ environmentPanelActive: true });
+
+    expect(await screen.findByRole("button", { name: "Local" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Environment actions" })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: "Delete environment" })).toBeNull();
+  });
   it("uses the sidebar New button to open a new environment editor", async () => {
     const props = renderSidebar({ environmentPanelActive: true });
 

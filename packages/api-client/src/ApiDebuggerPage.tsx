@@ -8,9 +8,8 @@ import {
   type ApiRequestTab,
 } from "./model/request-tabs";
 import type { ApiOpenIntent } from "./model/types";
-import { formatError } from "./model/api-request-state";
-import { parseCollectionImport, parseKeyValues } from "./request-utils";
 import { ApiRequestTabs } from "./components/ApiRequestTabs";
+import { EnvironmentControl } from "./components/EnvironmentControl";
 import { ApiRequestBar } from "./components/ApiRequestBar";
 import { ApiRequestEditor } from "./components/ApiRequestEditor";
 import { ApiResponseViewer } from "./components/ApiResponseViewer";
@@ -47,10 +46,6 @@ export function ApiDebuggerPage({
     closeTab,
     closeTabs,
     collectionStatus,
-    deleteMutation,
-    duplicateMutation,
-    importCollectionMutation,
-    importInputRef,
     newRequest,
     openHistory,
     openSaved,
@@ -58,7 +53,6 @@ export function ApiDebuggerPage({
     savedRequests,
     selectTab,
     sendTab,
-    setCollectionStatus,
     setRequestTab,
     setResponseTab,
     state,
@@ -375,62 +369,26 @@ export function ApiDebuggerPage({
     return () => onShellSidebarChange(null);
   }, [onShellSidebarChange, sidebar]);
 
-  function exportCollection() {
-    const payload = {
-      version: 1,
-      exportedAt: new Date().toISOString(),
-      workspaceId,
-      savedRequests: savedRequests.map((item) => ({
-        name: item.name,
-        folderPath: item.folderPath,
-        method: item.method,
-        url: item.url,
-        headers: parseKeyValues(item.headersJson),
-        query: parseKeyValues(item.queryJson),
-        body: item.body,
-        bodyKind: item.bodyKind,
-      })),
-    };
-    downloadJson(
-      `unfour-api-collection-${new Date().toISOString().slice(0, 10)}.json`,
-      payload,
-    );
-    setCollectionStatus(t("api.import.exported", { count: payload.savedRequests.length }));
-  }
-
-  async function importCollection(file: File | undefined) {
-    if (!file) {
-      return;
-    }
-    try {
-      const requests = parseCollectionImport(JSON.parse(await file.text()), workspaceId);
-      if (!requests.length) {
-        setCollectionStatus(t("api.import.empty"));
-        return;
-      }
-      importCollectionMutation.mutate(requests);
-    } catch (error) {
-      setCollectionStatus(formatError(error));
-    }
-  }
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-[var(--u-color-bg)]">
-      <input
-        accept="application/json"
-        className="sr-only"
-        onChange={(event) => {
-          void importCollection(event.target.files?.[0]);
-          event.target.value = "";
-        }}
-        ref={importInputRef}
-        type="file"
-      />
       <div className="flex min-h-0 flex-1">
         {!usesShellSidebar && sidebar}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <ApiRequestTabs
             activeId={workspaceView === "environments" ? null : state.activeTabId}
+            endControl={
+              <EnvironmentControl
+                activeEnvironmentId={activeEnvironment?.id ?? null}
+                onCreateEnvironment={() => openEnvironmentManager({ kind: "new" })}
+                onEditEnvironment={(environmentId) =>
+                  openEnvironmentManager({ kind: "edit", environmentId })
+                }
+                onManageEnvironments={() => openEnvironmentManager()}
+                onSelectEnvironment={activateEnvironment}
+                workspaceId={workspaceId}
+              />
+            }
             environmentTab={{
               active: workspaceView === "environments",
               dirty: environmentTabDirty,
@@ -466,29 +424,11 @@ export function ApiDebuggerPage({
           ) : (
             <>
               <ApiRequestBar
-                activeEnvironmentId={activeEnvironment?.id ?? null}
-                onCreateEnvironment={() => openEnvironmentManager({ kind: "new" })}
-                onDelete={() =>
-                  activeTab.savedRequestId &&
-                  deleteMutation.mutate(activeTab.savedRequestId)
-                }
-                onDuplicate={() =>
-                  activeTab.savedRequestId &&
-                  duplicateMutation.mutate(activeTab.savedRequestId)
-                }
-                onEditEnvironment={(environmentId) =>
-                  openEnvironmentManager({ kind: "edit", environmentId })
-                }
-                onExport={exportCollection}
-                onImport={() => importInputRef.current?.click()}
-                onManageEnvironments={() => openEnvironmentManager()}
                 onSave={() => requestSave(activeTab)}
-                onSelectEnvironment={activateEnvironment}
                 onSend={() => sendTab(activeTab)}
                 onUpdate={(patch) => updateDraft(activeTab.id, patch)}
                 tab={activeTab}
                 urlInputRef={urlInputRef}
-                workspaceId={workspaceId}
               />
               {collectionStatus && (
                 <div className="shrink-0 border-b border-[var(--u-color-border)] px-2 py-1 text-[12px] text-[var(--u-color-text-muted)]">
@@ -581,19 +521,4 @@ export function ApiDebuggerPage({
       />
     </div>
   );
-}
-
-function downloadJson(filename: string, value: unknown) {
-  const href = URL.createObjectURL(
-    new Blob([JSON.stringify(value, null, 2)], {
-      type: "application/json;charset=utf-8",
-    }),
-  );
-  const link = document.createElement("a");
-  link.href = href;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(href);
 }

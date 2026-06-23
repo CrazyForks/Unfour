@@ -127,19 +127,12 @@ describe("EnvironmentManagerPage", () => {
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
   });
 
-  it("confirms before deleting an environment from the actions menu", async () => {
+  it("does not expose per-environment row actions in the manager", async () => {
     renderManager({ kind: "edit", environmentId: "env-1", nonce: 1 });
 
+    expect(await screen.findByRole("heading", { name: "Local" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Environment actions" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Delete environment" })).toBeNull();
-
-    fireEvent.click(await screen.findByRole("button", { name: "Environment actions" }));
-    fireEvent.click(await screen.findByRole("menuitem", { name: "Delete environment" }));
-    expect(
-      screen.getByText('Delete environment "Local"? This cannot be undone.'),
-    ).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "Delete environment" }));
-
-    await waitFor(() => expect(deleteMock).toHaveBeenCalledWith("ws-1", "env-1"));
+    expect(deleteMock).not.toHaveBeenCalled();
   });
 });
