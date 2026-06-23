@@ -182,8 +182,6 @@ export function ApiRequestTabs({
             </button>
           </div>
         )}
-      </div>
-      <div className="flex shrink-0 items-center border-l border-[var(--u-color-border)] bg-[var(--u-color-surface-subtle)] px-2">
         <button
           aria-label={t("common.actions.newRequest")}
           className="grid h-full w-8 shrink-0 place-items-center text-[var(--u-color-text-muted)] hover:bg-[var(--u-color-surface-hover)] hover:text-[var(--u-color-text)]"
@@ -193,8 +191,12 @@ export function ApiRequestTabs({
         >
           +
         </button>
-        {endControl && <div className="ml-1 flex shrink-0 items-center">{endControl}</div>}
       </div>
+      {endControl && (
+        <div className="flex shrink-0 items-center border-l border-[var(--u-color-border)] bg-[var(--u-color-surface-subtle)] px-2">
+          <div className="flex shrink-0 items-center">{endControl}</div>
+        </div>
+      )}
     </div>
   );
 }
