@@ -55,10 +55,9 @@ export function ApiRequestTabs({
 
   return (
     <div className="flex h-[var(--u-size-tabbar)] shrink-0 items-stretch border-b border-[var(--u-color-border)] bg-[var(--u-color-surface-subtle)]">
-      <div className="flex min-w-0 flex-1 items-stretch">
       <div
         aria-label={t("api.tabs.openRequests")}
-        className="flex w-auto flex-auto min-w-0 items-stretch overflow-x-auto"
+        className="flex min-w-0 shrink items-stretch overflow-x-auto"
         role="tablist"
       >
         {tabs.map((tab, index) => {
@@ -193,7 +192,7 @@ export function ApiRequestTabs({
       >
         +
       </button>
-      </div>
+      <div className="min-w-0 flex-1" />
       {endControl && (
         <div className="flex shrink-0 items-center border-l border-[var(--u-color-border)] bg-[var(--u-color-surface-subtle)] px-2">
           <div className="flex shrink-0 items-center">{endControl}</div>

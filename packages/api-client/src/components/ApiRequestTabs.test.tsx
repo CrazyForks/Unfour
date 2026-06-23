@@ -45,7 +45,7 @@ afterEach(() => {
 
 describe("ApiRequestTabs", () => {
   it("keeps new-request and environment controls outside the scrollable tab list", () => {
-    render(
+    const { container } = render(
       <I18nProvider initialLocale="en">
         <ApiRequestTabs
           activeId="new:1"
@@ -71,5 +71,13 @@ describe("ApiRequestTabs", () => {
     expect(screen.getByRole("button", { name: "Active environment" })).toBeInTheDocument();
     expect(tablist).not.toContainElement(screen.getByRole("button", { name: "New Request" }));
     expect(tablist).not.toContainElement(screen.getByRole("button", { name: "Active environment" }));
+    // The new-request button sits immediately after the scrollable tab list so it
+    // stays adjacent to the tabs, while the environment control stays pinned last.
+    expect(tablist.nextElementSibling).toBe(
+      screen.getByRole("button", { name: "New Request" }),
+    );
+    expect(container.firstElementChild?.lastElementChild).toContainElement(
+      screen.getByRole("button", { name: "Active environment" }),
+    );
   });
 });
