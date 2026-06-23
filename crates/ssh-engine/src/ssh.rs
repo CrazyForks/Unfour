@@ -58,7 +58,12 @@ const PERSIST_FLUSH_INTERVAL: std::time::Duration = std::time::Duration::from_mi
 #[cfg(feature = "ssh-native")]
 struct NativeSshHandle {
     handle: std::sync::Arc<tokio::sync::Mutex<russh::client::Handle<SshClientHandler>>>,
-    channel: std::sync::Arc<tokio::sync::Mutex<russh::Channel<russh::client::Msg>>>,
+    // The channel is split into independent halves so that the supervisor's
+    // blocking `wait()` on the read half never holds a lock that keyboard input
+    // needs to write. The write half's methods take `&self`, so it can be shared
+    // without a mutex; only the supervisor touches the read half.
+    writer: std::sync::Arc<russh::ChannelWriteHalf<russh::client::Msg>>,
+    reader: std::sync::Arc<tokio::sync::Mutex<russh::ChannelReadHalf>>,
 }
 
 #[cfg(feature = "ssh-native")]
@@ -66,7 +71,8 @@ impl Clone for NativeSshHandle {
     fn clone(&self) -> Self {
         Self {
             handle: self.handle.clone(),
-            channel: self.channel.clone(),
+            writer: self.writer.clone(),
+            reader: self.reader.clone(),
         }
     }
 }
@@ -444,8 +450,8 @@ impl SshService {
                 state.native_handle.clone()
             };
             if let Some(native) = native_handle {
-                let channel = native.channel.lock().await;
-                channel
+                native
+                    .writer
                     .data_bytes(input.data.clone().into_bytes())
                     .await
                     .map_err(|e| {
@@ -509,8 +515,8 @@ impl SshService {
                 state.native_handle.clone()
             };
             if let Some(native) = native_handle {
-                let channel = native.channel.lock().await;
-                let _ = channel
+                let _ = native
+                    .writer
                     .window_change(input.cols as u32, input.rows as u32, 0, 0)
                     .await;
             }
@@ -566,10 +572,7 @@ impl SshService {
         #[cfg(feature = "ssh-native")]
         if let Some(native) = native_handle {
             // Close the channel first so the reader task terminates.
-            {
-                let channel = native.channel.lock().await;
-                let _ = channel.close().await;
-            }
+            let _ = native.writer.close().await;
             let handle = native.handle.lock().await;
             let _ = handle
                 .disconnect(russh::Disconnect::ByApplication, "session closed", "en")
@@ -629,8 +632,7 @@ impl SshService {
 
         #[cfg(feature = "ssh-native")]
         if let Some(native) = native_handle {
-            let channel = native.channel.lock().await;
-            let _ = channel.close().await;
+            let _ = native.writer.close().await;
         }
 
         let summary = {
@@ -964,10 +966,7 @@ impl SshService {
         #[cfg(feature = "ssh-native")]
         for native in native_handles {
             // Close the channel first.
-            {
-                let channel = native.channel.lock().await;
-                let _ = channel.close().await;
-            }
+            let _ = native.writer.close().await;
             let handle = native.handle.lock().await;
             let _ = handle
                 .disconnect(russh::Disconnect::ByApplication, "connection deleted", "en")
@@ -1140,9 +1139,11 @@ impl SshService {
             .await
             .map_err(|error| AppError::Config(format!("failed to start ssh shell: {}", error)))?;
 
+        let (reader, writer) = channel.split();
         Ok(NativeSshHandle {
             handle: Arc::new(tokio::sync::Mutex::new(handle)),
-            channel: Arc::new(tokio::sync::Mutex::new(channel)),
+            writer: Arc::new(writer),
+            reader: Arc::new(tokio::sync::Mutex::new(reader)),
         })
     }
 
@@ -1400,8 +1401,11 @@ impl SshService {
                             continue;
                         }
                         message = async {
-                            let mut channel = native.channel.lock().await;
-                            channel.wait().await
+                            // Only the supervisor reads, so this lock is
+                            // uncontended; crucially it is a different lock from
+                            // the write half, so blocking here never delays input.
+                            let mut reader = native.reader.lock().await;
+                            reader.wait().await
                         } => message,
                     };
                     match message {
