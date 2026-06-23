@@ -55,6 +55,8 @@ export function TerminalPage({
   const clearTerminalSessionEvents = useTerminalStore(
     (state) => state.clearTerminalSessionEvents,
   );
+  const dismissSession = useTerminalStore((state) => state.dismissSession);
+  const dismissedSessionIds = useTerminalStore((state) => state.dismissedSessionIds);
   const hydrateTerminalSession = useTerminalStore(
     (state) => state.hydrateTerminalSession,
   );
@@ -90,18 +92,24 @@ export function TerminalPage({
   const sessionsQuery = useTerminalSessions(workspaceId);
   const connections = useMemo(() => connectionsQuery.data ?? [], [connectionsQuery.data]);
   const sessions = useMemo(() => sessionsQuery.data ?? [], [sessionsQuery.data]);
+  // Sessions the user explicitly closed: the backend keeps them in its list as
+  // history, so hide them from the tab strip until a new session reuses the id.
+  const visibleSessions = useMemo(
+    () => sessions.filter((session) => !dismissedSessionIds.includes(session.sessionId)),
+    [dismissedSessionIds, sessions],
+  );
   const selectedConnection = useMemo(
     () => connections.find((item) => item.id === selectedConnectionId) ?? null,
     [connections, selectedConnectionId],
   );
   const prevSelectedConnectionIdRef = useRef(selectedConnectionId);
   const activeSession = useMemo(
-    () => sessions.find((item) => item.sessionId === activeSessionId) ?? null,
-    [activeSessionId, sessions],
+    () => visibleSessions.find((item) => item.sessionId === activeSessionId) ?? null,
+    [activeSessionId, visibleSessions],
   );
   const sessionTabs = useMemo(
-    () => buildTerminalSessionTabs({ connections, sessions }),
-    [connections, sessions],
+    () => buildTerminalSessionTabs({ connections, sessions: visibleSessions }),
+    [connections, visibleSessions],
   );
 
   useEffect(() => {
@@ -209,17 +217,20 @@ export function TerminalPage({
   }
 
   useEffect(() => {
-    if (!sessions.length) {
+    if (!visibleSessions.length) {
       if (activeSessionId) {
         setActiveSessionId(null);
       }
       return;
     }
 
-    if (!activeSessionId || !sessions.some((session) => session.sessionId === activeSessionId)) {
-      setActiveSessionId(sessions[0].sessionId);
+    if (
+      !activeSessionId ||
+      !visibleSessions.some((session) => session.sessionId === activeSessionId)
+    ) {
+      setActiveSessionId(visibleSessions[0].sessionId);
     }
-  }, [activeSessionId, sessions, setActiveSessionId]);
+  }, [activeSessionId, visibleSessions, setActiveSessionId]);
 
   const saveMutation = useMutation({
     mutationFn: saveSshConnection,
@@ -445,7 +456,12 @@ export function TerminalPage({
       setCloseConfirmSessionId(sessionId);
       return;
     }
-    closeMutation.mutate(sessionId);
+    // Already disconnected/failed: just drop the tab from view. The backend
+    // retains it as history, so re-closing would be a no-op.
+    if (session) {
+      closeMutation.mutate(sessionId);
+    }
+    dismissSession(sessionId);
   }
 
   const closeConfirmSession = closeConfirmSessionId
@@ -517,7 +533,9 @@ export function TerminalPage({
           activeSession={activeSession}
           activeSessionId={activeSessionId}
           actionError={actionError}
-          canSplit={sessions.filter((session) => session.status === "connected").length > 1}
+          canSplit={
+            visibleSessions.filter((session) => session.status === "connected").length > 1
+          }
           error={blockingError}
           events={terminalEvents}
           emptyMessage={
@@ -565,6 +583,7 @@ export function TerminalPage({
         onConfirm={() => {
           if (closeConfirmSessionId) {
             closeMutation.mutate(closeConfirmSessionId);
+            dismissSession(closeConfirmSessionId);
           }
           setCloseConfirmSessionId(null);
         }}

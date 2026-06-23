@@ -1193,10 +1193,17 @@ impl SshService {
                     .secret_store
                     .read_secret(connection.workspace_id.clone(), credential_ref.to_string())
                     .await
-                    .map_err(|_| {
-                        AppError::Config(
-                            "failed to read ssh credential from secret store".to_string(),
-                        )
+                    .map_err(|error| {
+                        // Surface the underlying cause (e.g. credential not found)
+                        // so the user knows the stored secret is missing rather
+                        // than facing an opaque failure. The credential for a
+                        // password connection must be created via the dialog's
+                        // "create credential" action before connecting.
+                        AppError::Config(format!(
+                            "failed to read ssh credential from secret store \
+                             (create the credential before connecting): {}",
+                            error
+                        ))
                     })?;
                 let result = handle
                     .authenticate_password(connection.username.clone(), password)

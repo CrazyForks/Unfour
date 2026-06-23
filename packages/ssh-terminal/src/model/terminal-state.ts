@@ -11,6 +11,7 @@ type SearchAddonLike = {
 
 type TerminalStore = {
   activeSessionId: string | null;
+  dismissedSessionIds: string[];
   exportedLog: string | null;
   searchOpen: boolean;
   searchQuery: string;
@@ -22,6 +23,7 @@ type TerminalStore = {
   activateWorkspace: (workspaceId: string) => void;
   appendTerminalEvents: (events: SshSessionEvent[]) => void;
   clearTerminalSessionEvents: (sessionId: string | null) => void;
+  dismissSession: (sessionId: string) => void;
   hydrateTerminalSession: (sessionId: string, events: SshSessionEvent[]) => void;
   resetTerminalEvents: () => void;
   setActiveSessionId: (sessionId: string | null) => void;
@@ -41,6 +43,7 @@ export function defaultTerminalInput() {
 
 export const useTerminalStore = create<TerminalStore>((set) => ({
   activeSessionId: null,
+  dismissedSessionIds: [],
   exportedLog: null,
   searchOpen: false,
   searchQuery: "",
@@ -55,6 +58,7 @@ export const useTerminalStore = create<TerminalStore>((set) => ({
         ? state
         : {
             activeSessionId: null,
+            dismissedSessionIds: [],
             exportedLog: null,
             searchOpen: false,
             searchQuery: "",
@@ -76,6 +80,17 @@ export const useTerminalStore = create<TerminalStore>((set) => ({
         ? state.terminalEvents.filter((event) => event.sessionId !== sessionId)
         : [],
     })),
+  dismissSession: (sessionId) =>
+    set((state) => ({
+      // The backend keeps closed sessions in its list as history, so a closed
+      // tab would otherwise reappear on the next poll. Track dismissed ids and
+      // filter them out of the visible tab strip.
+      activeSessionId: state.activeSessionId === sessionId ? null : state.activeSessionId,
+      dismissedSessionIds: state.dismissedSessionIds.includes(sessionId)
+        ? state.dismissedSessionIds
+        : [...state.dismissedSessionIds, sessionId],
+      terminalEvents: state.terminalEvents.filter((event) => event.sessionId !== sessionId),
+    })),
   hydrateTerminalSession: (sessionId, events) =>
     set((state) => {
       if (state.terminalEvents.some((event) => event.sessionId === sessionId)) {
@@ -88,6 +103,7 @@ export const useTerminalStore = create<TerminalStore>((set) => ({
   resetTerminalEvents: () =>
     set({
       activeSessionId: null,
+      dismissedSessionIds: [],
       exportedLog: null,
       terminalEvents: [],
       terminalInput: defaultTerminalInput(),
@@ -101,6 +117,7 @@ export const useTerminalStore = create<TerminalStore>((set) => ({
   startTerminalSession: (sessionId, events) =>
     set((state) => ({
       activeSessionId: sessionId,
+      dismissedSessionIds: state.dismissedSessionIds.filter((id) => id !== sessionId),
       exportedLog: null,
       terminalEvents: [
         ...state.terminalEvents.filter((event) => event.sessionId !== sessionId),

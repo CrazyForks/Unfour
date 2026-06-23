@@ -35,5 +35,10 @@ sqlx = { version = "0.8", default-features = false, features = ["chrono", "json"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 [features]
-default = []
+# Real SSH transport is enabled for the desktop binary so connected sessions
+# write to an actual PTY and stream output back. Without it, SSH runs in the
+# simulated fallback (used by the browser/test builds) where typed input is
+# never echoed. Disable explicitly with `--no-default-features` for a
+# dependency-light build.
+default = ["ssh-native"]
 ssh-native = ["unfour-app/ssh-native"]
