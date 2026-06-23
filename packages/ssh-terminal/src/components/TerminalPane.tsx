@@ -32,6 +32,7 @@ export function TerminalPane({
   const terminalRef = useRef<XTerm | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const searchAddonRef = useRef<SearchAddon | null>(null);
+  const lastSizeRef = useRef<{ cols: number; rows: number } | null>(null);
   const renderedEventsRef = useRef(0);
   const renderedSessionIdRef = useRef<string | null>(null);
 
@@ -87,9 +88,13 @@ export function TerminalPane({
   }, [appendTerminalEvents, inputDisabled, readOnly, session?.sessionId, session?.workspaceId]);
 
   useEffect(() => {
+    const nextSessionId = session?.sessionId ?? null;
+    if (sessionIdRef.current !== nextSessionId) {
+      lastSizeRef.current = null;
+    }
     inputDisabledRef.current = inputDisabled;
     readOnlyRef.current = readOnly;
-    sessionIdRef.current = session?.sessionId ?? null;
+    sessionIdRef.current = nextSessionId;
   }, [inputDisabled, readOnly, session?.sessionId]);
 
   // ------------------------------------------------------------------
@@ -119,10 +124,19 @@ export function TerminalPane({
     terminal.loadAddon(fitAddon);
     terminal.loadAddon(searchAddon);
     terminal.open(hostRef.current);
-    safeFit(fitAddon);
     terminalRef.current = terminal;
     fitAddonRef.current = fitAddon;
     searchAddonRef.current = searchAddon;
+
+    const syncFittedSize = () => {
+      fitAndSyncTerminalSize(terminal, fitAddon, lastSizeRef, (cols, rows) => {
+        const sid = sessionIdRef.current;
+        if (sid) {
+          onResizeRef.current?.(sid, cols, rows);
+        }
+      });
+    };
+    syncFittedSize();
 
     // ---------------------------------------------------------------
     // Capture keyboard input from xterm
@@ -162,12 +176,10 @@ export function TerminalPane({
     // ---------------------------------------------------------------
     // Detect resize changes from FitAddon
     // ---------------------------------------------------------------
-    let lastCols = terminal.cols;
-    let lastRows = terminal.rows;
     const resizeDisposable = terminal.onResize(({ cols, rows }) => {
-      if (cols !== lastCols || rows !== lastRows) {
-        lastCols = cols;
-        lastRows = rows;
+      const lastSize = lastSizeRef.current;
+      if (!lastSize || cols !== lastSize.cols || rows !== lastSize.rows) {
+        lastSizeRef.current = { cols, rows };
         const sid = sessionIdRef.current;
         if (sid) {
           onResizeRef.current?.(sid, cols, rows);
@@ -182,7 +194,7 @@ export function TerminalPane({
       typeof ResizeObserver === "undefined"
         ? null
         : new ResizeObserver(() => {
-            safeFit(fitAddon);
+            syncFittedSize();
           });
     resizeObserver?.observe(hostRef.current);
 
@@ -194,6 +206,7 @@ export function TerminalPane({
       terminalRef.current = null;
       fitAddonRef.current = null;
       searchAddonRef.current = null;
+      lastSizeRef.current = null;
       renderedEventsRef.current = 0;
     };
   }, []);
@@ -213,15 +226,21 @@ export function TerminalPane({
 
   useEffect(() => {
     const fitAddon = fitAddonRef.current;
-    if (fitAddon) {
+    const terminal = terminalRef.current;
+    if (fitAddon && terminal) {
       window.requestAnimationFrame(() => {
-        safeFit(fitAddon);
+        fitAndSyncTerminalSize(terminal, fitAddon, lastSizeRef, (cols, rows) => {
+          const sid = sessionIdRef.current;
+          if (sid) {
+            onResizeRef.current?.(sid, cols, rows);
+          }
+        });
         if (active) {
-          terminalRef.current?.focus();
+          terminal.focus();
         }
       });
     }
-  }, [active, readOnly, session?.cols, session?.rows]);
+  }, [active, readOnly, session?.cols, session?.rows, session?.sessionId]);
 
   // ------------------------------------------------------------------
   // Render polling-based events (fallback for non-Tauri / mock mode)
@@ -322,6 +341,21 @@ function safeFit(fitAddon: FitAddon) {
     fitAddon.fit();
   } catch {
     // The pane may be hidden during a shell resize. ResizeObserver retries once visible.
+  }
+}
+
+function fitAndSyncTerminalSize(
+  terminal: XTerm,
+  fitAddon: FitAddon,
+  lastSizeRef: { current: { cols: number; rows: number } | null },
+  notifyResize: (cols: number, rows: number) => void,
+) {
+  safeFit(fitAddon);
+  const nextSize = { cols: terminal.cols, rows: terminal.rows };
+  const lastSize = lastSizeRef.current;
+  if (!lastSize || nextSize.cols !== lastSize.cols || nextSize.rows !== lastSize.rows) {
+    lastSizeRef.current = nextSize;
+    notifyResize(nextSize.cols, nextSize.rows);
   }
 }
 
