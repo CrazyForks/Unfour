@@ -1,5 +1,5 @@
 import type { FormEvent, ReactNode } from "react";
-import { KeyRound, Lock, Save, ShieldOff, Trash2 } from "lucide-react";
+import { KeyRound, Lock, Plug, Save, ShieldOff } from "lucide-react";
 import type { SshConnectionInput } from "@unfour/command-client";
 import {
   Button,
@@ -17,29 +17,32 @@ import {
   SegmentedControl,
   useI18n,
 } from "@unfour/ui";
-import { HostKeyFingerprint } from "./HostKeyFingerprint";
 import { formatTerminalError } from "../model/errors";
 
 export function SshConnectionDialog({
-  canDelete,
+  canTest,
   error,
   form,
-  onDelete,
   onOpenChange,
   onSubmit,
+  onTest,
   onUpdate,
   open,
   pending,
+  testResult,
+  testing,
 }: {
-  canDelete: boolean;
+  canTest: boolean;
   error?: unknown;
   form: SshConnectionInput;
-  onDelete: () => void;
   onOpenChange: (open: boolean) => void;
   onSubmit: (event: FormEvent) => void;
+  onTest: () => void;
   onUpdate: (patch: Partial<SshConnectionInput>) => void;
   open: boolean;
   pending?: boolean;
+  testResult?: { ok: boolean; message: string } | null;
+  testing?: boolean;
 }) {
   const { t } = useI18n();
 
@@ -161,12 +164,6 @@ export function SshConnectionDialog({
                 {t("ssh.dialog.authNoneHint")}
               </p>
             )}
-            {Boolean(form.host) && (
-              <HostKeyFingerprint host={form.host} port={form.port ?? 22} />
-            )}
-            <p className="text-[11.5px] leading-relaxed text-[var(--u-color-text-muted)]">
-              {t("ssh.dialog.hint")}
-            </p>
             {Boolean(error) && (
               <ErrorState className="min-h-0 justify-start py-2 text-left">
                 {formatTerminalError(error)}
@@ -174,15 +171,29 @@ export function SshConnectionDialog({
             )}
           </DialogBody>
           <DialogFooter>
-            <Button
-              disabled={!canDelete || pending}
-              onClick={onDelete}
-              type="button"
-              variant="ghost"
-            >
-              <Trash2 size={14} />
-              {t("ssh.dialog.delete")}
-            </Button>
+            <div className="mr-auto flex min-w-0 items-center gap-2">
+              <Button
+                disabled={!canTest || testing || pending}
+                onClick={onTest}
+                type="button"
+                variant="outline"
+              >
+                <Plug size={14} />
+                {testing ? t("ssh.dialog.testing") : t("ssh.dialog.test")}
+              </Button>
+              {testResult && (
+                <span
+                  className="truncate text-[11.5px]"
+                  style={{
+                    color: testResult.ok
+                      ? "var(--u-color-success)"
+                      : "var(--u-color-danger)",
+                  }}
+                >
+                  {testResult.message}
+                </span>
+              )}
+            </div>
             <DialogClose asChild>
               <Button type="button" variant="outline">
                 {t("ssh.dialog.cancel")}

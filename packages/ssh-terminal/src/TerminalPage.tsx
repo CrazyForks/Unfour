@@ -4,7 +4,6 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   closeSshSession,
   connectSshSession,
-  deleteSshConnection,
   exportSshLog,
   getSshHostFingerprint,
   getSshSessionHistory,
@@ -30,6 +29,7 @@ import {
   sshConnectionToInput,
 } from "./model/ssh-connection-state";
 import { buildTerminalSessionTabs, shouldShowTerminalSessionTab } from "./model/terminal-tabs";
+import { formatTerminalError } from "./model/errors";
 
 export function TerminalPage({
   onShellSidebarChange,
@@ -57,7 +57,6 @@ export function TerminalPage({
   const hydrateTerminalSession = useTerminalStore(
     (state) => state.hydrateTerminalSession,
   );
-  const resetTerminalEvents = useTerminalStore((state) => state.resetTerminalEvents);
   const setActiveSessionId = useTerminalStore((state) => state.setActiveSessionId);
   const setExportedLog = useTerminalStore((state) => state.setExportedLog);
   const setSearchOpen = useTerminalStore((state) => state.setSearchOpen);
@@ -83,6 +82,9 @@ export function TerminalPage({
   const hydratedSessionIdsRef = useRef(new Set<string>());
   const [form, setForm] = useState<SshConnectionInput>(() =>
     defaultSshConnectionInput(workspaceId),
+  );
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(
+    null,
   );
 
   const connectionsQuery = useSshConnections(workspaceId);
@@ -272,15 +274,24 @@ export function TerminalPage({
     },
   });
 
-  const deleteMutation = useMutation({
-    mutationFn: (connectionId: string) => deleteSshConnection(workspaceId, connectionId),
-    onSuccess: () => {
-      setSelectedSshConnection(null);
-      setDialogOpen(false);
-      resetTerminalEvents();
-      queryClient.invalidateQueries({ queryKey: ["ssh-connections", workspaceId] });
-      queryClient.invalidateQueries({ queryKey: ["ssh-sessions", workspaceId] });
+  // Reuse the regular connect path to validate credentials, then immediately
+  // close the throwaway session so the test leaves no lingering tab/session.
+  const testMutation = useMutation({
+    mutationFn: async (connectionId: string) => {
+      const session = await connectSshSession({
+        workspaceId,
+        connectionId,
+        cols: 80,
+        rows: 24,
+      });
+      await closeSshSession({ workspaceId, sessionId: session.sessionId }).catch(() => {
+        // Best-effort cleanup; the backend reaps idle sessions regardless.
+      });
+      return session;
     },
+    onSuccess: () => setTestResult({ ok: true, message: t("ssh.dialog.testSuccess") }),
+    onError: (error) =>
+      setTestResult({ ok: false, message: formatTerminalError(error) }),
   });
 
   const connectMutation = useMutation({
@@ -335,7 +346,8 @@ export function TerminalPage({
 
   function newConnection() {
     connectMutation.reset();
-    deleteMutation.reset();
+    testMutation.reset();
+    setTestResult(null);
     saveMutation.reset();
     setSelectedSshConnection(null);
     setForm(defaultSshConnectionInput(workspaceId));
@@ -345,7 +357,8 @@ export function TerminalPage({
 
   function openConnectionSettings(connection?: SshConnection | null) {
     connectMutation.reset();
-    deleteMutation.reset();
+    testMutation.reset();
+    setTestResult(null);
     saveMutation.reset();
     const target = connection ?? selectedConnection;
     if (target) {
@@ -360,7 +373,8 @@ export function TerminalPage({
 
   function editConnection(connection: SshConnection) {
     connectMutation.reset();
-    deleteMutation.reset();
+    testMutation.reset();
+    setTestResult(null);
     saveMutation.reset();
     setSelectedSshConnection(connection.id);
     setForm(sshConnectionToInput(connection, workspaceId));
@@ -420,6 +434,13 @@ export function TerminalPage({
       // field means "keep the saved password".
       secret: form.secret ? form.secret : null,
     });
+  }
+
+  function testConnection() {
+    if (!form.id) return;
+    testMutation.reset();
+    setTestResult(null);
+    testMutation.mutate(form.id);
   }
 
   function connectSelectedConnection() {
@@ -596,7 +617,6 @@ export function TerminalPage({
           onCloseRight={closeSessionsToRight}
           onCloseSession={requestCloseSession}
           onDuplicate={retryConnection}
-          onExportLog={(sessionId) => exportMutation.mutate(sessionId)}
           onNewConnection={newConnection}
           onNewSession={connectSelectedConnection}
           onOpenPreferences={openConnectionSettings}
@@ -609,15 +629,17 @@ export function TerminalPage({
         />
       )}
       <SshConnectionDialog
-        canDelete={Boolean(form.id)}
-        error={saveMutation.error ?? deleteMutation.error}
+        canTest={Boolean(form.id)}
+        error={saveMutation.error}
         form={form}
-        onDelete={() => form.id && deleteMutation.mutate(form.id)}
         onOpenChange={setDialogOpen}
         onSubmit={submitConnection}
+        onTest={testConnection}
         onUpdate={updateForm}
         open={dialogOpen}
-        pending={saveMutation.isPending || deleteMutation.isPending}
+        pending={saveMutation.isPending}
+        testResult={testResult}
+        testing={testMutation.isPending}
       />
       <ConfirmDialog
         confirmLabel={t("ssh.actions.closeSession")}

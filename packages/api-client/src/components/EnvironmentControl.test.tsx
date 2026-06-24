@@ -56,8 +56,6 @@ function createWrapper() {
 function renderControl(overrides: Partial<Parameters<typeof EnvironmentControl>[0]> = {}) {
   const props = {
     activeEnvironmentId: "env-2",
-    onCreateEnvironment: vi.fn(),
-    onEditEnvironment: vi.fn(),
     onManageEnvironments: vi.fn(),
     onSelectEnvironment: vi.fn(),
     workspaceId: "ws-1",
@@ -99,14 +97,6 @@ describe("EnvironmentControl", () => {
     fireEvent.click(screen.getByRole("button", { name: "Active environment" }));
     fireEvent.click(await screen.findByRole("button", { name: "Manage environments" }));
     expect(props.onManageEnvironments).toHaveBeenCalledTimes(1);
-
-    fireEvent.click(screen.getByRole("button", { name: "Active environment" }));
-    fireEvent.click(await screen.findByRole("button", { name: "New environment" }));
-    expect(props.onCreateEnvironment).toHaveBeenCalledTimes(1);
-
-    fireEvent.click(screen.getByRole("button", { name: "Active environment" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Edit current environment" }));
-    expect(props.onEditEnvironment).toHaveBeenCalledWith("env-2");
 
     await waitFor(() => expect(listMock).toHaveBeenCalledWith("ws-1"));
   });

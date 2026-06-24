@@ -380,10 +380,6 @@ export function ApiDebuggerPage({
             endControl={
               <EnvironmentControl
                 activeEnvironmentId={activeEnvironment?.id ?? null}
-                onCreateEnvironment={() => openEnvironmentManager({ kind: "new" })}
-                onEditEnvironment={(environmentId) =>
-                  openEnvironmentManager({ kind: "edit", environmentId })
-                }
                 onManageEnvironments={() => openEnvironmentManager()}
                 onSelectEnvironment={activateEnvironment}
                 workspaceId={workspaceId}

@@ -3,7 +3,6 @@ import {
   ChevronsRight,
   CircleX,
   CopyPlus,
-  Download,
   Eraser,
   FilePlus2,
   Pencil,
@@ -48,7 +47,6 @@ export function TerminalWorkspace({
   onCloseRight,
   onCloseSession,
   onDuplicate,
-  onExportLog,
   onNewConnection,
   onNewSession,
   onOpenPreferences,
@@ -72,7 +70,6 @@ export function TerminalWorkspace({
   onCloseRight: (sessionId: string) => void;
   onCloseSession: (sessionId: string) => void;
   onDuplicate: (connectionId: string) => void;
-  onExportLog: (sessionId: string) => void;
   onNewConnection: () => void;
   onNewSession: () => void;
   onOpenPreferences: (connection?: SshConnection | null) => void;

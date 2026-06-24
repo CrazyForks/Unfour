@@ -503,6 +503,10 @@
       "passwordEditHint": "留空表示保留已保存的密码。",
       "port": "端口",
       "save": "保存",
+      "test": "测试连接",
+      "testFailed": "连接失败",
+      "testSuccess": "连接成功",
+      "testing": "测试中…",
       "title": "新建 SSH 连接",
       "username": "用户名"
     },

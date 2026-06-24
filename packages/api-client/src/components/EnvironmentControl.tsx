@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Check, ChevronDown, Layers, Pencil, Plus, Settings2 } from "lucide-react";
+import { Check, ChevronDown, Layers, Settings2 } from "lucide-react";
 import {
   Button,
   Popover,
@@ -16,15 +16,11 @@ import { useApiEnvironments } from "../hooks/useApiEnvironments";
  */
 export function EnvironmentControl({
   activeEnvironmentId,
-  onCreateEnvironment,
-  onEditEnvironment,
   onManageEnvironments,
   onSelectEnvironment,
   workspaceId,
 }: {
   activeEnvironmentId: string | null;
-  onCreateEnvironment: () => void;
-  onEditEnvironment: (environmentId: string) => void;
   onManageEnvironments: () => void;
   onSelectEnvironment: (environmentId: string | null) => void;
   workspaceId: string;

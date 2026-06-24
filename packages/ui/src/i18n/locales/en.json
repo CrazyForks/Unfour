@@ -505,6 +505,10 @@
       "passwordPlaceholder": "Password",
       "port": "Port",
       "save": "Save",
+      "test": "Test connection",
+      "testFailed": "Connection failed",
+      "testSuccess": "Connection succeeded",
+      "testing": "Testing…",
       "title": "New SSH Connection",
       "username": "Username"
     },
