@@ -1041,7 +1041,9 @@ impl SshService {
         let session_id = Uuid::new_v4().to_string();
         let cols = input.cols.unwrap_or(120).clamp(20, 300);
         let rows = input.rows.unwrap_or(32).clamp(8, 100);
-        let native_handle = self.open_native_transport(connection, cols, rows).await?;
+        let native_handle = self
+            .open_native_transport(connection, cols, rows, input.secret.as_deref())
+            .await?;
         let (cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);
 
         let summary = SshSessionSummary {
@@ -1091,6 +1093,7 @@ impl SshService {
         connection: &SshConnection,
         cols: u16,
         rows: u16,
+        override_secret: Option<&str>,
     ) -> AppResult<NativeSshHandle> {
         let config = Arc::new(native_client_config());
         let handler = SshClientHandler {
@@ -1125,7 +1128,8 @@ impl SshService {
             }
         };
 
-        self.authenticate_native(&mut handle, connection).await?;
+        self.authenticate_native(&mut handle, connection, override_secret)
+            .await?;
         let channel = handle
             .channel_open_session()
             .await
@@ -1189,7 +1193,8 @@ impl SshService {
             }
         };
 
-        self.authenticate_native(&mut handle, connection).await?;
+        self.authenticate_native(&mut handle, connection, None)
+            .await?;
         let mut channel = handle
             .channel_open_session()
             .await
@@ -1260,30 +1265,43 @@ impl SshService {
         &self,
         handle: &mut russh::client::Handle<SshClientHandler>,
         connection: &SshConnection,
+        override_secret: Option<&str>,
     ) -> AppResult<()> {
         match connection.auth_kind.as_str() {
             "password" => {
-                let credential_ref = connection.credential_ref.as_deref().ok_or_else(|| {
-                    AppError::Validation(
-                        "password auth requires a credential reference".to_string(),
-                    )
-                })?;
-                let password = self
-                    .secret_store
-                    .read_secret(connection.workspace_id.clone(), credential_ref.to_string())
-                    .await
-                    .map_err(|error| {
-                        // Surface the underlying cause (e.g. credential not found)
-                        // so the user knows the stored secret is missing rather
-                        // than facing an opaque failure. The credential for a
-                        // password connection must be created via the dialog's
-                        // "create credential" action before connecting.
-                        AppError::Config(format!(
-                            "failed to read ssh credential from secret store \
-                             (create the credential before connecting): {}",
-                            error
-                        ))
-                    })?;
+                // A transient override (e.g. testing a not-yet-saved password)
+                // takes precedence over the stored keychain credential and is
+                // never persisted.
+                let password = match override_secret {
+                    Some(secret) => secret.to_string(),
+                    None => {
+                        let credential_ref =
+                            connection.credential_ref.as_deref().ok_or_else(|| {
+                                AppError::Validation(
+                                    "password auth requires a credential reference".to_string(),
+                                )
+                            })?;
+                        self.secret_store
+                            .read_secret(
+                                connection.workspace_id.clone(),
+                                credential_ref.to_string(),
+                            )
+                            .await
+                            .map_err(|error| {
+                                // Surface the underlying cause (e.g. credential
+                                // not found) so the user knows the stored secret
+                                // is missing rather than facing an opaque
+                                // failure. The credential for a password
+                                // connection must be created via the dialog's
+                                // "create credential" action before connecting.
+                                AppError::Config(format!(
+                                    "failed to read ssh credential from secret store \
+                                     (create the credential before connecting): {}",
+                                    error
+                                ))
+                            })?
+                    }
+                };
                 let result = handle
                     .authenticate_password(connection.username.clone(), password)
                     .await
@@ -1464,6 +1482,7 @@ impl SshService {
                         &connection,
                         service.session_dimensions(&session_id).0,
                         service.session_dimensions(&session_id).1,
+                        None,
                     );
                     let result = tokio::select! {
                         changed = cancel_rx.changed() => {
@@ -2287,6 +2306,7 @@ mod tests {
                 connection_id: connection.id.clone(),
                 cols: Some(100),
                 rows: Some(30),
+                secret: None,
             })
             .await
             .expect("connect ssh session");
@@ -2365,6 +2385,7 @@ mod tests {
                 connection_id: connection.id.clone(),
                 cols: None,
                 rows: None,
+                secret: None,
             })
             .await
             .expect("connect ssh session");
@@ -2395,6 +2416,7 @@ mod tests {
                 connection_id: connection.id,
                 cols: None,
                 rows: None,
+                secret: None,
             })
             .await
             .expect("connect ssh session");
@@ -2447,6 +2469,7 @@ mod tests {
                 connection_id: connection.id,
                 cols: None,
                 rows: None,
+                secret: None,
             })
             .await
             .expect("connect ssh session");
@@ -2492,6 +2515,7 @@ mod tests {
                 connection_id: connection.id.clone(),
                 cols: None,
                 rows: None,
+                secret: None,
             })
             .await
             .expect("connect ssh session");
@@ -2568,6 +2592,7 @@ mod tests {
                 connection_id: connection.id.clone(),
                 cols: Some(80),
                 rows: Some(24),
+                secret: None,
             })
             .await
             .expect("connect ssh session");
@@ -2620,6 +2645,7 @@ mod tests {
                 connection_id: connection.id.clone(),
                 cols: None,
                 rows: None,
+                secret: None,
             })
             .await
             .expect("connect session a");
@@ -2630,6 +2656,7 @@ mod tests {
                 connection_id: connection.id.clone(),
                 cols: None,
                 rows: None,
+                secret: None,
             })
             .await
             .expect("connect session b");
@@ -2753,6 +2780,7 @@ mod tests {
                 connection_id: connection.id,
                 cols: None,
                 rows: None,
+                secret: None,
             })
             .await
             .expect("connect session");
@@ -2786,6 +2814,7 @@ mod tests {
                 connection_id: connection.id,
                 cols: None,
                 rows: None,
+                secret: None,
             })
             .await
             .expect("connect session");
@@ -2820,6 +2849,7 @@ mod tests {
                 connection_id: connection.id,
                 cols: None,
                 rows: None,
+                secret: None,
             })
             .await
             .expect("connect session");

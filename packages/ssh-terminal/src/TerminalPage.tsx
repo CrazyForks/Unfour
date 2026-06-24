@@ -19,6 +19,7 @@ import { ConfirmDialog, LoadingState, useI18n } from "@unfour/ui";
 import { TerminalWorkspace } from "./components/TerminalWorkspace";
 import { SshConnectionTree } from "./components/SshConnectionTree";
 import { SshConnectionDialog } from "./components/SshConnectionDialog";
+import { SshTestResultDialog } from "./components/SshTestResultDialog";
 import { HostKeyTrustDialog } from "./components/HostKeyTrustDialog";
 import { useSshConnections } from "./hooks/useSshConnections";
 import { useTerminalSessions } from "./hooks/useTerminalSessions";
@@ -276,20 +277,30 @@ export function TerminalPage({
 
   // Reuse the regular connect path to validate credentials, then immediately
   // close the throwaway session so the test leaves no lingering tab/session.
+  // A non-empty `secret` lets the user validate a not-yet-saved password without
+  // persisting it; an empty field falls back to the stored credential.
   const testMutation = useMutation({
-    mutationFn: async (connectionId: string) => {
+    mutationFn: async ({
+      connectionId,
+      secret,
+    }: {
+      connectionId: string;
+      secret: string | null;
+    }) => {
       const session = await connectSshSession({
         workspaceId,
         connectionId,
         cols: 80,
         rows: 24,
+        secret,
       });
       await closeSshSession({ workspaceId, sessionId: session.sessionId }).catch(() => {
         // Best-effort cleanup; the backend reaps idle sessions regardless.
       });
       return session;
     },
-    onSuccess: () => setTestResult({ ok: true, message: t("ssh.dialog.testSuccess") }),
+    onSuccess: () =>
+      setTestResult({ ok: true, message: t("ssh.dialog.testSuccessDetail") }),
     onError: (error) =>
       setTestResult({ ok: false, message: formatTerminalError(error) }),
   });
@@ -440,7 +451,9 @@ export function TerminalPage({
     if (!form.id) return;
     testMutation.reset();
     setTestResult(null);
-    testMutation.mutate(form.id);
+    // Pass the typed-but-unsaved secret through so the test validates the
+    // current form value; an empty field means "use the saved credential".
+    testMutation.mutate({ connectionId: form.id, secret: form.secret || null });
   }
 
   function connectSelectedConnection() {
@@ -638,8 +651,11 @@ export function TerminalPage({
         onUpdate={updateForm}
         open={dialogOpen}
         pending={saveMutation.isPending}
-        testResult={testResult}
         testing={testMutation.isPending}
+      />
+      <SshTestResultDialog
+        onOpenChange={(open) => !open && setTestResult(null)}
+        result={testResult}
       />
       <ConfirmDialog
         confirmLabel={t("ssh.actions.closeSession")}

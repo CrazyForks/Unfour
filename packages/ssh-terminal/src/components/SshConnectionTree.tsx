@@ -1,6 +1,7 @@
 import { useState } from "react";
 import {
   Copy,
+  CopyPlus,
   ExternalLink,
   MoreHorizontal,
   Pencil,
@@ -14,6 +15,7 @@ import {
   closeSshSession,
   connectSshSession,
   deleteSshConnection,
+  saveSshConnection,
   type SshConnection,
   type SshSessionSummary,
 } from "@unfour/command-client";
@@ -38,6 +40,7 @@ import {
 import { useSshConnections } from "../hooks/useSshConnections";
 import { useTerminalSessions } from "../hooks/useTerminalSessions";
 import { formatTerminalError } from "../model/errors";
+import { sshConnectionToInput } from "../model/ssh-connection-state";
 import { useTerminalStore } from "../model/terminal-state";
 import {
   terminalSessionStatus,
@@ -133,6 +136,21 @@ export function SshConnectionTree({
       setConfirm(null);
       queryClient.invalidateQueries({ queryKey: ["ssh-connections", workspaceId] });
       queryClient.invalidateQueries({ queryKey: ["ssh-sessions", workspaceId] });
+    },
+  });
+  // Clone a connection into a new record. The saved credential is shared by
+  // reusing its reference (the plaintext secret is never exposed to the client),
+  // so the copy can connect immediately without re-entering the password.
+  const duplicateMutation = useMutation({
+    mutationFn: (connection: SshConnection) =>
+      saveSshConnection({
+        ...sshConnectionToInput(connection, workspaceId),
+        id: undefined,
+        name: t("ssh.tree.copyName", { name: connection.name }),
+      }),
+    onSuccess: (created) => {
+      setSelectedSshConnection(created.id);
+      queryClient.invalidateQueries({ queryKey: ["ssh-connections", workspaceId] });
     },
   });
 
@@ -292,6 +310,13 @@ export function SshConnectionTree({
                 {t("ssh.tree.copyHost")}
               </DropdownMenuItem>
               <DropdownMenuItem
+                disabled={duplicateMutation.isPending}
+                onSelect={() => duplicateMutation.mutate(connection)}
+              >
+                <CopyPlus size={13} />
+                {t("ssh.tree.duplicateConnection")}
+              </DropdownMenuItem>
+              <DropdownMenuItem
                 className="text-[var(--u-color-danger)]"
                 onSelect={() => setConfirm({ kind: "delete", connection })}
               >
@@ -365,6 +390,11 @@ export function SshConnectionTree({
       {deleteMutation.error && (
         <StatusBadge className="max-w-full" tone="danger">
           {formatTerminalError(deleteMutation.error)}
+        </StatusBadge>
+      )}
+      {duplicateMutation.error && (
+        <StatusBadge className="max-w-full" tone="danger">
+          {formatTerminalError(duplicateMutation.error)}
         </StatusBadge>
       )}
       <ConfirmDialog

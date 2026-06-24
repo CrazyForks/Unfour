@@ -207,6 +207,12 @@ export type SshConnectInput = {
   connectionId: string;
   cols?: number | null;
   rows?: number | null;
+  /**
+   * Transient credential override for validating a not-yet-saved secret (e.g.
+   * the "test connection" action). When omitted, the saved keychain credential
+   * is used. Never persisted.
+   */
+  secret?: string | null;
 };
 
 export type SshSessionInput = {

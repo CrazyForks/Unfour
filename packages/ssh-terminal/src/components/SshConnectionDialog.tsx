@@ -29,7 +29,6 @@ export function SshConnectionDialog({
   onUpdate,
   open,
   pending,
-  testResult,
   testing,
 }: {
   canTest: boolean;
@@ -41,7 +40,6 @@ export function SshConnectionDialog({
   onUpdate: (patch: Partial<SshConnectionInput>) => void;
   open: boolean;
   pending?: boolean;
-  testResult?: { ok: boolean; message: string } | null;
   testing?: boolean;
 }) {
   const { t } = useI18n();
@@ -171,29 +169,16 @@ export function SshConnectionDialog({
             )}
           </DialogBody>
           <DialogFooter>
-            <div className="mr-auto flex min-w-0 items-center gap-2">
-              <Button
-                disabled={!canTest || testing || pending}
-                onClick={onTest}
-                type="button"
-                variant="outline"
-              >
-                <Plug size={14} />
-                {testing ? t("ssh.dialog.testing") : t("ssh.dialog.test")}
-              </Button>
-              {testResult && (
-                <span
-                  className="truncate text-[11.5px]"
-                  style={{
-                    color: testResult.ok
-                      ? "var(--u-color-success)"
-                      : "var(--u-color-danger)",
-                  }}
-                >
-                  {testResult.message}
-                </span>
-              )}
-            </div>
+            <Button
+              className="mr-auto"
+              disabled={!canTest || testing || pending}
+              onClick={onTest}
+              type="button"
+              variant="outline"
+            >
+              <Plug size={14} />
+              {testing ? t("ssh.dialog.testing") : t("ssh.dialog.test")}
+            </Button>
             <DialogClose asChild>
               <Button type="button" variant="outline">
                 {t("ssh.dialog.cancel")}

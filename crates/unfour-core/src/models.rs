@@ -270,6 +270,12 @@ pub struct SshConnectInput {
     pub connection_id: String,
     pub cols: Option<u16>,
     pub rows: Option<u16>,
+    /// Transient, in-memory credential override used to validate a not-yet-saved
+    /// secret (e.g. the "test connection" action in the edit dialog). When set,
+    /// it is used for authentication instead of the stored keychain credential
+    /// and is never persisted. `None` falls back to the saved credential.
+    #[serde(default)]
+    pub secret: Option<String>,
 }
 
 /// Input for a one-shot, read-only SSH diagnostic command. The `command` is
