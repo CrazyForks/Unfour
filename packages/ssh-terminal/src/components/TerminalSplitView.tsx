@@ -7,7 +7,6 @@ import type {
 import { Button, SplitPane, cn, useI18n } from "@unfour/ui";
 import type { TerminalSplitMode } from "../model/types";
 import { TerminalPane } from "./TerminalPane";
-import { TerminalPaneHeader } from "./TerminalPaneHeader";
 
 export type TerminalPaneModel = {
   connection?: SshConnection | null;
@@ -71,7 +70,7 @@ function PaneShell({
   readOnly?: boolean;
 }) {
   const { t } = useI18n();
-  const { connection, events, session } = model;
+  const { events, session } = model;
 
   return (
     <div
@@ -80,7 +79,6 @@ function PaneShell({
         active && "ring-1 ring-inset ring-[var(--u-color-focus)]",
       )}
     >
-      <TerminalPaneHeader connection={connection} session={session} />
       {session.status === "failed" ? (
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 bg-[var(--u-color-terminal-bg)] p-6 text-center">
           <div className="space-y-1">
