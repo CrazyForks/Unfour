@@ -100,34 +100,6 @@ export function EnvironmentControl({
               <Settings2 size={13} />
               {t("api.environment.manageEnvironments")}
             </Button>
-            <Button
-              className="w-full justify-start"
-              onClick={() => {
-                onCreateEnvironment();
-                close();
-              }}
-              size="sm"
-              type="button"
-              variant="ghost"
-            >
-              <Plus size={13} />
-              {t("api.environment.newEnvironment")}
-            </Button>
-            {activeEnvironment && (
-              <Button
-                className="w-full justify-start"
-                onClick={() => {
-                  onEditEnvironment(activeEnvironment.id);
-                  close();
-                }}
-                size="sm"
-                type="button"
-                variant="ghost"
-              >
-                <Pencil size={13} />
-                {t("api.environment.editCurrentEnvironment")}
-              </Button>
-            )}
           </div>
         </div>
       </PopoverContent>

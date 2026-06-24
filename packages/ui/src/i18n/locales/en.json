@@ -134,7 +134,6 @@
       "discard": "Discard changes",
       "discardChangesDescription": "Discard unsaved changes to this environment?",
       "discardChangesTitle": "Discard environment changes?",
-      "editCurrentEnvironment": "Edit current environment",
       "manageEnvironments": "Manage environments"
     },
     "keyValue": {

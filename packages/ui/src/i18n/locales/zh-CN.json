@@ -134,7 +134,6 @@
       "discard": "放弃更改",
       "discardChangesDescription": "放弃此环境中尚未保存的更改？",
       "discardChangesTitle": "放弃环境更改？",
-      "editCurrentEnvironment": "编辑当前环境",
       "manageEnvironments": "管理环境"
     },
     "keyValue": {
