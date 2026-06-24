@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { StatusBar, useI18n } from "@unfour/ui";
 import type { Workspace, WorkspaceTab } from "@unfour/command-client";
 import { Bell, CheckCircle2, Circle, GitBranch, Wifi } from "lucide-react";
@@ -7,11 +8,13 @@ export function StatusBarPlaceholder({
   activeTab,
   activeWorkspace,
   healthReady,
+  rightAccessory,
   syncStrategy,
 }: {
   activeTab: WorkspaceTab;
   activeWorkspace?: Workspace;
   healthReady: boolean;
+  rightAccessory?: ReactNode;
   syncStrategy: string;
 }) {
   const { t } = useI18n();
@@ -34,21 +37,22 @@ export function StatusBarPlaceholder({
         </span>
         <span className="opacity-90">{moduleLabel(activeTab, t)}</span>
       </div>
-      <div className="flex shrink-0 items-center gap-4">
-        <span className="flex items-center gap-1.5 opacity-90">
+      <div className="flex shrink-0 items-center gap-3">
+        <span className="hidden items-center gap-1.5 opacity-90 lg:flex">
           <GitBranch size={13} />
           main
         </span>
-        <span className="flex items-center gap-1.5">
+        <span className="hidden items-center gap-1.5 md:flex">
           <Wifi size={13} />
           {t("app.status.connected")}
         </span>
-        <span className="opacity-90">{syncStrategy}</span>
-        <span className="font-mono opacity-90">UTF-8</span>
-        <span className="font-mono opacity-90">
+        <span className="hidden opacity-90 xl:inline">{syncStrategy}</span>
+        <span className="hidden font-mono opacity-90 lg:inline">UTF-8</span>
+        <span className="hidden font-mono opacity-90 md:inline">
           {activeTab.kind === "api" ? "JSON" : moduleLabel(activeTab, t)}
         </span>
-        <Bell className="opacity-90" size={13} />
+        <Bell className="hidden opacity-90 sm:block" size={13} />
+        {rightAccessory}
       </div>
     </StatusBar>
   );

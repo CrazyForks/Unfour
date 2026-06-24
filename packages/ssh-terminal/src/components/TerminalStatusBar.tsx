@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, type ReactNode } from "react";
 import { ConnectionStatus, StatusBar, useI18n } from "@unfour/ui";
 import { useWorkspaceStore } from "@unfour/workspace-core";
 import { useSshConnections } from "../hooks/useSshConnections";
@@ -11,9 +11,11 @@ import {
 } from "../model/terminal-session-status";
 
 export function TerminalStatusBar({
+  rightAccessory,
   workspaceId,
   workspaceName,
 }: {
+  rightAccessory?: ReactNode;
   workspaceId: string;
   workspaceName: string;
 }) {
@@ -50,6 +52,7 @@ export function TerminalStatusBar({
         </span>
         <span>{selectedConnection?.authKind ?? t("ssh.status.noAuth")}</span>
         <span>{t("ssh.status.encoding")}</span>
+        {rightAccessory}
       </div>
     </StatusBar>
   );

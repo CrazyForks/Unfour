@@ -1,12 +1,4 @@
-import {
-  Languages,
-  Moon,
-  PanelBottom,
-  PanelLeft,
-  PanelRight,
-  Search,
-  Sun,
-} from "lucide-react";
+import { Languages, Moon, Sun } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { Workspace } from "@unfour/command-client";
 import {
@@ -28,28 +20,14 @@ import { WorkspaceMenu } from "./WorkspaceMenu";
 
 export function AppTitleBar({
   activeWorkspace,
-  bottomPanelCollapsed,
   healthReady,
   onActivateWorkspace,
-  onOpenCommandPalette,
-  onToggleBottomPanel,
-  onToggleInspector,
-  onToggleSidebar,
-  rightInspectorCollapsed,
-  sidebarCollapsed,
   syncStrategy,
   workspaces,
 }: {
   activeWorkspace?: Workspace;
-  bottomPanelCollapsed: boolean;
   healthReady: boolean;
   onActivateWorkspace: (workspaceId: string) => void;
-  onOpenCommandPalette: () => void;
-  onToggleBottomPanel: () => void;
-  onToggleInspector: () => void;
-  onToggleSidebar: () => void;
-  rightInspectorCollapsed: boolean;
-  sidebarCollapsed: boolean;
   syncStrategy: string;
   workspaces: Workspace[];
 }) {
@@ -68,26 +46,6 @@ export function AppTitleBar({
 
   return (
     <GlobalToolbar
-      center={
-        <button
-          className="flex h-7 w-[min(440px,100%)] min-w-[160px] items-center gap-2 rounded-[var(--u-radius-md)] border border-[var(--u-color-border)] bg-[var(--u-color-surface)] px-2.5 text-left text-[12px] text-[var(--u-color-text-soft)] transition-colors duration-150 hover:border-[var(--u-color-border-strong)] hover:bg-[var(--u-color-surface-hover)] hover:text-[var(--u-color-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_srgb,var(--u-color-focus)_32%,transparent)]"
-          onClick={onOpenCommandPalette}
-          type="button"
-        >
-          <Search size={14} />
-          <span className="min-w-0 flex-1 truncate">
-            {t("app.commandPalette.placeholder")}
-          </span>
-          <span className="flex shrink-0 items-center gap-1">
-            <kbd className="rounded border border-[var(--u-color-border)] bg-[var(--u-color-surface-muted)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--u-color-text-muted)]">
-              Ctrl
-            </kbd>
-            <kbd className="rounded border border-[var(--u-color-border)] bg-[var(--u-color-surface-muted)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--u-color-text-muted)]">
-              K
-            </kbd>
-          </span>
-        </button>
-      }
       left={
         <WorkspaceMenu
           activeWorkspace={activeWorkspace}
@@ -99,47 +57,6 @@ export function AppTitleBar({
       right={
         <>
           <ThemeToggle />
-          <div className="mx-1 h-5 w-px bg-[var(--u-color-border)]" />
-          <IconButton
-            aria-pressed={!sidebarCollapsed}
-            className={
-              !sidebarCollapsed
-                ? "bg-[var(--u-color-primary-soft)] text-[var(--u-color-primary)]"
-                : undefined
-            }
-            label={
-              sidebarCollapsed
-                ? t("app.sidebar.expand")
-                : t("app.sidebar.collapse")
-            }
-            onClick={onToggleSidebar}
-          >
-            <PanelLeft size={15} />
-          </IconButton>
-          <IconButton
-            aria-pressed={!bottomPanelCollapsed}
-            className={
-              !bottomPanelCollapsed
-                ? "bg-[var(--u-color-primary-soft)] text-[var(--u-color-primary)]"
-                : undefined
-            }
-            label={t("app.titlebar.toggleBottomPanel")}
-            onClick={onToggleBottomPanel}
-          >
-            <PanelBottom size={15} />
-          </IconButton>
-          <IconButton
-            aria-pressed={!rightInspectorCollapsed}
-            className={
-              !rightInspectorCollapsed
-                ? "bg-[var(--u-color-primary-soft)] text-[var(--u-color-primary)]"
-                : undefined
-            }
-            label={t("app.titlebar.toggleInspector")}
-            onClick={onToggleInspector}
-          >
-            <PanelRight size={15} />
-          </IconButton>
           <div className="mx-1 h-5 w-px bg-[var(--u-color-border)]" />
           <span
             className="flex h-7 items-center gap-1.5 px-1 text-[12px] text-[var(--u-color-text-muted)]"

@@ -4,7 +4,7 @@ import {
 import AppShell from "./AppShell";
 import { DatabasePage } from "@unfour/database";
 import { TerminalLogPanel, TerminalPage, TerminalStatusBar } from "@unfour/ssh-terminal";
-import { useCallback, useState, type ReactNode } from "react";
+import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CommandPalette, MainWorkspace, useI18n } from "@unfour/ui";
 import {
@@ -17,6 +17,7 @@ import {
 import { useWorkspaceStore } from "@unfour/workspace-core";
 import { AppTitleBar } from "./components/AppTitleBar";
 import { BottomPanelPlaceholder } from "./components/BottomPanelPlaceholder";
+import { LayoutControls } from "./components/LayoutControls";
 import { ModuleActivityBar } from "./components/ModuleActivityBar";
 import { ModuleSidebar } from "./components/ModuleSidebar";
 import { RightInspectorPlaceholder } from "./components/RightInspectorPlaceholder";
@@ -82,6 +83,24 @@ export function DesktopApp() {
     setDatabaseSidebarContent(content);
   }, []);
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? tabs[0];
+  const layoutControls = useMemo(
+    () => (
+      <LayoutControls
+        bottomPanelCollapsed={bottomPanelCollapsed}
+        onToggleBottomPanel={() => setBottomPanelCollapsed((collapsed) => !collapsed)}
+        onToggleInspector={() => setRightInspectorCollapsed((collapsed) => !collapsed)}
+        onToggleSidebar={toggleSidebar}
+        rightInspectorCollapsed={rightInspectorCollapsed}
+        sidebarCollapsed={sidebarCollapsed}
+      />
+    ),
+    [
+      bottomPanelCollapsed,
+      rightInspectorCollapsed,
+      sidebarCollapsed,
+      toggleSidebar,
+    ],
+  );
   return (
     <>
       <AppShell
@@ -115,15 +134,8 @@ export function DesktopApp() {
         globalToolbar={
           <AppTitleBar
             activeWorkspace={activeWorkspace}
-            bottomPanelCollapsed={bottomPanelCollapsed}
             healthReady={healthQuery.data?.storageReady === true}
             onActivateWorkspace={(id) => activateWorkspaceMutation.mutate(id)}
-            onOpenCommandPalette={() => setCommandPaletteOpen(true)}
-            onToggleBottomPanel={() => setBottomPanelCollapsed((c) => !c)}
-            onToggleInspector={() => setRightInspectorCollapsed((c) => !c)}
-            onToggleSidebar={toggleSidebar}
-            rightInspectorCollapsed={rightInspectorCollapsed}
-            sidebarCollapsed={sidebarCollapsed}
             syncStrategy={healthQuery.data?.syncStrategy ?? "local-first"}
             workspaces={workspaceQuery.data?.workspaces ?? []}
           />
@@ -151,6 +163,7 @@ export function DesktopApp() {
         statusBar={
           activeTab.kind === "ssh" && activeWorkspace ? (
             <TerminalStatusBar
+              rightAccessory={layoutControls}
               workspaceId={activeWorkspace.id}
               workspaceName={activeWorkspace.name}
             />
@@ -159,6 +172,7 @@ export function DesktopApp() {
               activeTab={activeTab}
               activeWorkspace={activeWorkspace}
               healthReady={healthQuery.data?.storageReady === true}
+              rightAccessory={layoutControls}
               syncStrategy={healthQuery.data?.syncStrategy ?? "local-first"}
             />
           )
