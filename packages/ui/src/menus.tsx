@@ -163,6 +163,16 @@ export function ContextMenuContent({
   );
 }
 
+export function ContextMenuSeparator({ className }: { className?: string }) {
+  return (
+    <div
+      aria-hidden
+      className={cn("my-1 h-px bg-[var(--u-color-border)]", className)}
+      role="separator"
+    />
+  );
+}
+
 export function ContextMenuItem({
   children,
   className,

@@ -34,6 +34,7 @@ export {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
+  ContextMenuSeparator,
   ContextMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,

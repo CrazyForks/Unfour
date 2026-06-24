@@ -2,7 +2,6 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, type Reac
 import { listen } from "@tauri-apps/api/event";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  cancelSshReconnect,
   closeSshSession,
   connectSshSession,
   deleteSshConnection,
@@ -25,10 +24,7 @@ import { HostKeyTrustDialog } from "./components/HostKeyTrustDialog";
 import { useSshConnections } from "./hooks/useSshConnections";
 import { useTerminalSessions } from "./hooks/useTerminalSessions";
 import { useTerminalSplit } from "./hooks/useTerminalSplit";
-import {
-  redactTerminalLog,
-  useTerminalStore,
-} from "./model/terminal-state";
+import { useTerminalStore } from "./model/terminal-state";
 import {
   defaultSshConnectionInput,
   sshConnectionToInput,
@@ -320,18 +316,6 @@ export function TerminalPage({
     },
   });
 
-  const cancelReconnectMutation = useMutation({
-    mutationFn: (sessionId: string) =>
-      cancelSshReconnect({ workspaceId, sessionId }),
-    onSuccess: (session) => {
-      queryClient.setQueryData<SshSessionSummary[]>(
-        ["ssh-sessions", workspaceId],
-        (current = []) =>
-          current.map((item) => (item.sessionId === session.sessionId ? session : item)),
-      );
-    },
-  });
-
   const exportMutation = useMutation({
     mutationFn: (sessionId: string) => exportSshLog({ workspaceId, sessionId }),
     onSuccess: (log) => setExportedLog(log.content),
@@ -496,17 +480,49 @@ export function TerminalPage({
     ? sessions.find((item) => item.sessionId === closeConfirmSessionId)
     : null;
 
-  function copySessionLog(sessionId: string) {
-    const content = terminalEvents
-      .filter((event) => event.sessionId === sessionId)
-      .map(
-        (event) =>
-          `[${event.createdAt}] ${event.kind} ${redactTerminalLog(event.data).trim()}`,
-      )
-      .join("\n");
-    if (content) {
-      void navigator.clipboard?.writeText(content);
+  // Close a session without the confirmation prompt — used by the batch tab
+  // actions (close others/all/left/right) where a dialog per tab would be noise.
+  function closeSessionNow(sessionId: string) {
+    const session = sessions.find((item) => item.sessionId === sessionId);
+    if (session) {
+      closeMutation.mutate(sessionId);
     }
+    dismissSession(sessionId);
+  }
+
+  function reconnectSession(sessionId: string) {
+    const session = sessions.find((item) => item.sessionId === sessionId);
+    if (!session) {
+      return;
+    }
+    closeSessionNow(sessionId);
+    retryConnection(session.connectionId);
+  }
+
+  function closeOtherSessions(sessionId: string) {
+    sessionTabs
+      .filter((item) => item.session.sessionId !== sessionId)
+      .forEach((item) => closeSessionNow(item.session.sessionId));
+  }
+
+  function closeAllSessions() {
+    sessionTabs.forEach((item) => closeSessionNow(item.session.sessionId));
+  }
+
+  function closeSessionsToLeft(sessionId: string) {
+    const index = sessionTabs.findIndex((item) => item.session.sessionId === sessionId);
+    if (index <= 0) {
+      return;
+    }
+    sessionTabs.slice(0, index).forEach((item) => closeSessionNow(item.session.sessionId));
+  }
+
+  function closeSessionsToRight(sessionId: string) {
+    const index = sessionTabs.findIndex((item) => item.session.sessionId === sessionId);
+    if (index < 0) {
+      return;
+    }
+    sessionTabs.slice(index + 1).forEach((item) => closeSessionNow(item.session.sessionId));
   }
 
   // Detect host-key mismatch errors from connect failures.
@@ -545,10 +561,7 @@ export function TerminalPage({
 
   const blockingError = connectionsQuery.error ?? sessionsQuery.error;
   const actionError =
-    connectMutation.error ??
-    closeMutation.error ??
-    cancelReconnectMutation.error ??
-    exportMutation.error;
+    connectMutation.error ?? closeMutation.error ?? exportMutation.error;
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col bg-[var(--u-color-surface)]">
@@ -561,9 +574,6 @@ export function TerminalPage({
           activeSession={activeSession}
           activeSessionId={activeSessionId}
           actionError={actionError}
-          canSplit={
-            visibleSessions.filter((session) => session.status === "connected").length > 1
-          }
           error={blockingError}
           events={terminalEvents}
           emptyMessage={
@@ -571,17 +581,20 @@ export function TerminalPage({
               ? t("ssh.empty.selectConnection")
               : t("ssh.empty.noConnections")
           }
-          onCancelReconnect={(sessionId) => cancelReconnectMutation.mutate(sessionId)}
           onClear={(sessionId) => clearTerminalSessionEvents(sessionId)}
+          onCloseAll={closeAllSessions}
+          onCloseLeft={closeSessionsToLeft}
+          onCloseOthers={closeOtherSessions}
+          onCloseRight={closeSessionsToRight}
           onCloseSession={requestCloseSession}
-          onCopyLog={copySessionLog}
+          onDuplicate={retryConnection}
           onExportLog={(sessionId) => exportMutation.mutate(sessionId)}
           onNewConnection={newConnection}
           onNewSession={connectSelectedConnection}
           onOpenPreferences={openConnectionSettings}
+          onReconnect={reconnectSession}
           onRetry={retryConnection}
           onSelectSession={setActiveSessionId}
-          onSplit={split.setMode}
           selectedConnection={selectedConnection}
           sessions={sessionTabs}
           splitMode={split.mode}
