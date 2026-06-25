@@ -1,5 +1,4 @@
-export const defaultSql =
-  "select name, type\nfrom sqlite_master\nwhere type in ('table', 'view')\nlimit 100;";
+export const defaultSql = "";
 
 export const databaseKnownGaps = [
   "Monaco Editor theme is not fully tokenized yet.",

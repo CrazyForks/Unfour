@@ -9,7 +9,7 @@ function resetStore() {
     searchQuery: "",
     splitMode: "single",
     terminalEvents: [],
-    terminalInput: "whoami\n",
+    terminalInput: "",
     terminalSearchAddon: null,
     workspaceId: null,
   });

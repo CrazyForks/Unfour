@@ -40,7 +40,7 @@ type TerminalStore = {
 };
 
 export function defaultTerminalInput() {
-  return "whoami\n";
+  return "";
 }
 
 export const useTerminalStore = create<TerminalStore>((set) => ({

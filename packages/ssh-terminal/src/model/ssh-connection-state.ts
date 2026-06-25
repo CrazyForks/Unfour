@@ -3,10 +3,10 @@ import type { SshConnection, SshConnectionInput } from "@unfour/command-client";
 export function defaultSshConnectionInput(workspaceId: string): SshConnectionInput {
   return {
     workspaceId,
-    name: "Deploy host",
-    host: "example.internal",
+    name: "",
+    host: "",
     port: 22,
-    username: "deploy",
+    username: "",
     authKind: "password",
     credentialRef: null,
     secret: null,

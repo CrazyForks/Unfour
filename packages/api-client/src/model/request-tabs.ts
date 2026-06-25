@@ -545,7 +545,7 @@ function emptyDraft(): RequestDraft {
     formBody: [],
     headers: [],
     method: "GET",
-    name: "Untitled Request",
+    name: "",
     query: [],
     rawBodyType: "json",
     url: "",

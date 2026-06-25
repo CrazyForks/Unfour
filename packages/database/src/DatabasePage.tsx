@@ -104,7 +104,7 @@ export function DatabasePage({
   const [password, setPassword] = useState("");
   const [form, setForm] = useState<DatabaseConnectionInput>({
     workspaceId,
-    name: "Local SQLite",
+    name: "",
     driver: "sqlite",
     sqlitePath: "",
   });
@@ -658,7 +658,7 @@ export function DatabasePage({
   function newConnection() {
     selectConnection(null);
     setPassword("");
-    setForm({ workspaceId, name: "Local SQLite", driver: "sqlite", sqlitePath: "" });
+    setForm({ workspaceId, name: "", driver: "sqlite", sqlitePath: "" });
   }
 
   function refreshConnectionsAndSchema() {
