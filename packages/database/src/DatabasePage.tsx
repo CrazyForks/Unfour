@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   createCredential,
   deleteDatabaseConnection,
+  getDatabaseSchema,
   mutateDatabaseRow,
   rotateCredential,
   saveDatabaseConnection,
@@ -14,6 +15,7 @@ import type {
   DatabaseConnection,
   DatabaseConnectionInput,
   DatabaseQueryResult,
+  DatabaseSchema,
   DatabaseTable,
   DatabaseTestResult,
 } from "@unfour/command-client";
@@ -41,13 +43,14 @@ import { DatabaseStatusBar } from "./components/DatabaseStatusBar";
 import { DatabaseWorkspace } from "./components/DatabaseWorkspace";
 import { useDatabaseConnections } from "./hooks/useDatabaseConnections";
 import { useDatabaseLayout } from "./hooks/useDatabaseLayout";
+import { useDatabaseCatalogs } from "./hooks/useDatabaseCatalogs";
 import { useQueryHistory } from "./hooks/useQueryHistory";
 import { useSchemaTree } from "./hooks/useSchemaTree";
 import { useSqlExecution } from "./hooks/useSqlExecution";
 import { useTableData } from "./hooks/useTableData";
 import { useTableStructure } from "./hooks/useTableStructure";
 import { defaultSql } from "./model/database-state";
-import { databaseTableTreeId } from "./model/database-tree";
+import { buildDatabaseTree, databaseTableTreeId } from "./model/database-tree";
 import type {
   DatabaseConnectionSessionState,
   DatabaseConnectionStatus,
@@ -84,6 +87,14 @@ export function DatabasePage({
   const [sql, setSql] = useState(defaultSql);
   const [tableView, setTableView] = useState<DatabaseTableViewState | null>(null);
   const [selectedTable, setSelectedTable] = useState<DatabaseTable | null>(null);
+  const [queryContext, setQueryContext] = useState<{ catalog: string | null; schema: string | null }>({
+    catalog: null,
+    schema: null,
+  });
+  // PostgreSQL cannot cross-database query, so each non-connected database's
+  // schema is fetched lazily when its tree node is expanded and cached here.
+  const [schemasByCatalog, setSchemasByCatalog] = useState<Record<string, DatabaseSchema>>({});
+  const [loadingCatalogs, setLoadingCatalogs] = useState<string[]>([]);
   const [password, setPassword] = useState("");
   const [form, setForm] = useState<DatabaseConnectionInput>({
     workspaceId,
@@ -109,13 +120,68 @@ export function DatabasePage({
     selectedConnection &&
       (selectedConnectionStatus === "connecting" || selectedConnectionStatus === "connected"),
   );
+  // The initial schema load fetches the connected database (PostgreSQL) or every
+  // database (MySQL, which can list them in one call). Other PostgreSQL databases
+  // are fetched lazily on expand and cached in schemasByCatalog.
   const schemaQuery = useSchemaTree({
     connection: selectedConnection,
     connectionId: selectedConnectionId,
     enabled: schemaEnabled,
     workspaceId,
   });
+  const catalogsQuery = useDatabaseCatalogs({
+    connection: selectedConnection,
+    connectionId: selectedConnectionId,
+    enabled: schemaEnabled,
+    workspaceId,
+  });
   const visibleSchema = schemaEnabled ? schemaQuery.data : undefined;
+  // Catalogs already present in the initial schema load (the connected database
+  // for PostgreSQL, every database for MySQL) never need a lazy fetch.
+  const eagerCatalogs = useMemo(() => {
+    const names = new Set<string>();
+    for (const table of schemaQuery.data?.tables ?? []) {
+      if (table.catalog) {
+        names.add(table.catalog);
+      }
+    }
+    return names;
+  }, [schemaQuery.data]);
+  const treeModel = useMemo(
+    () => (visibleSchema ? buildDatabaseTree(visibleSchema.tables) : null),
+    [visibleSchema],
+  );
+  // Catalog (database) choices for the query context: the server's database
+  // list (so PostgreSQL can browse beyond the loaded one) merged with any
+  // catalogs present in the loaded schema. Empty for SQLite.
+  const catalogOptions = useMemo(() => {
+    const merged = new Set<string>();
+    for (const name of catalogsQuery.data ?? []) {
+      if (name) {
+        merged.add(name);
+      }
+    }
+    for (const catalog of treeModel?.catalogs ?? []) {
+      if (catalog.key) {
+        merged.add(catalog.key);
+      }
+    }
+    return [...merged];
+  }, [catalogsQuery.data, treeModel]);
+  // Schema choices for the active catalog. Empty unless the catalog nests
+  // schemas (PostgreSQL).
+  const schemaOptions = useMemo(() => {
+    if (!treeModel) {
+      return [];
+    }
+    const activeCatalog =
+      treeModel.catalogs.find((catalog) => catalog.key === queryContext.catalog) ??
+      treeModel.catalogs[0];
+    if (!activeCatalog?.hasSchemaLevel) {
+      return [];
+    }
+    return activeCatalog.schemas.map((schema) => schema.key).filter((key) => key !== "");
+  }, [treeModel, queryContext.catalog]);
   const structureEnabled = Boolean(
     selectedConnection &&
       selectedTable &&
@@ -201,6 +267,37 @@ export function DatabasePage({
       status: "failed",
     });
   }, [schemaEnabled, schemaQuery.error, selectedConnectionId]);
+
+  // Keep the query context pointed at a valid catalog/schema as the schema
+  // loads or changes. Preserves a still-valid user selection; otherwise falls
+  // back to the first catalog and (for PostgreSQL) its first schema.
+  useEffect(() => {
+    if (!treeModel) {
+      return;
+    }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- re-deriving context defaults when the loaded schema changes
+    setQueryContext((current) => {
+      const activeCatalog =
+        treeModel.catalogs.find((catalog) => catalog.key === current.catalog) ??
+        treeModel.catalogs.find((catalog) => catalog.key !== "") ??
+        treeModel.catalogs[0] ??
+        null;
+      const catalog = activeCatalog && activeCatalog.key !== "" ? activeCatalog.key : null;
+
+      let schema: string | null = null;
+      if (activeCatalog?.hasSchemaLevel) {
+        const keep = activeCatalog.schemas.some((node) => node.key === current.schema);
+        schema = keep
+          ? current.schema
+          : (activeCatalog.schemas.find((node) => node.key !== "")?.key ?? null);
+      }
+
+      if (catalog === current.catalog && schema === current.schema) {
+        return current;
+      }
+      return { catalog, schema };
+    });
+  }, [treeModel]);
 
   const saveMutation = useMutation({
     mutationFn: async ({ input, secret }: { input: DatabaseConnectionInput; secret: string }) => {
@@ -427,6 +524,42 @@ export function DatabasePage({
     setSelectedTable(null);
     setTableView(null);
     setQueryResult(null);
+    // Drop the previous datasource's context; the schema-load effect repopulates
+    // a valid default for the newly selected connection.
+    setQueryContext({ catalog: null, schema: null });
+    setSchemasByCatalog({});
+    setLoadingCatalogs([]);
+  }
+
+  // Lazily fetch a database (catalog) schema when its tree node is expanded.
+  // PostgreSQL needs a separate connection per database; the connected database
+  // and all MySQL databases already arrive in the initial schema load, so they
+  // are skipped here.
+  function loadCatalog(catalog: string) {
+    if (!selectedConnectionId || !selectedConnection) {
+      return;
+    }
+    if (catalog === (selectedConnection.database ?? null) || eagerCatalogs.has(catalog)) {
+      return;
+    }
+    if (schemasByCatalog[catalog] || loadingCatalogs.includes(catalog)) {
+      return;
+    }
+    setLoadingCatalogs((current) => [...current, catalog]);
+    queryClient
+      .fetchQuery({
+        queryKey: ["database-schema", workspaceId, selectedConnectionId, catalog],
+        queryFn: () => getDatabaseSchema(workspaceId, selectedConnectionId, catalog),
+      })
+      .then((data) => {
+        setSchemasByCatalog((prev) => ({ ...prev, [catalog]: data }));
+      })
+      .catch((error) => {
+        setClientError(error);
+      })
+      .finally(() => {
+        setLoadingCatalogs((current) => current.filter((name) => name !== catalog));
+      });
   }
 
   function connectConnection(connection: DatabaseConnection) {
@@ -484,6 +617,9 @@ export function DatabasePage({
       return;
     }
 
+    // Drop cached lazily-loaded catalog schemas so they re-fetch on next expand.
+    setSchemasByCatalog({});
+    setLoadingCatalogs([]);
     queryClient.invalidateQueries({ queryKey: ["database-schema", workspaceId, connection.id] });
   }
 
@@ -497,8 +633,26 @@ export function DatabasePage({
   function selectTable(table: DatabaseTable) {
     setSelectedTable(table);
     setClientError(null);
+    applyContextFromTable(table);
     layout.setActiveTabId("table");
     layout.setTableSegment("structure");
+  }
+
+  // Point the query context at the catalog/schema of a selected object so a
+  // query opened from that node runs in the expected place.
+  function applyContextFromTable(table: DatabaseTable) {
+    setQueryContext({ catalog: table.catalog ?? null, schema: table.schema ?? null });
+  }
+
+  function changeQueryContext(patch: { catalog?: string | null; schema?: string | null }) {
+    setQueryContext((current) => {
+      const next = { ...current, ...patch };
+      // Switching catalog invalidates a schema from the previous catalog.
+      if (patch.catalog !== undefined && patch.catalog !== current.catalog) {
+        next.schema = null;
+      }
+      return { catalog: next.catalog, schema: next.schema };
+    });
   }
 
   function browseTablePage(table: DatabaseTable, pageIndex: number, pageSize: number) {
@@ -513,9 +667,11 @@ export function DatabasePage({
 
     setSelectedTable(table);
     setClientError(null);
+    applyContextFromTable(table);
     executeMutation.reset();
     browseMutation.reset();
     browseMutation.mutate({
+      catalog: table.catalog,
       pageIndex: Math.max(0, pageIndex),
       pageSize,
       schema: table.schema,
@@ -548,6 +704,7 @@ export function DatabasePage({
     rowMutation.mutate({
       workspaceId,
       connectionId: selectedConnectionId,
+      catalog: selectedTable.catalog,
       schema: selectedTable.schema,
       tableName: selectedTable.name,
       operation,
@@ -585,7 +742,12 @@ export function DatabasePage({
     }
 
     executedSqlRef.current = effectiveSql;
-    executeMutation.mutate({ confirmMutation: pendingSqlConfirmation, sql: effectiveSql });
+    executeMutation.mutate({
+      confirmMutation: pendingSqlConfirmation,
+      sql: effectiveSql,
+      catalog: queryContext.catalog,
+      schema: queryContext.schema,
+    });
   }
 
   function clearSql() {
@@ -689,6 +851,7 @@ export function DatabasePage({
     refreshSchema: (connection: DatabaseConnection) => void;
     selectConnection: (connection: DatabaseConnection) => void;
     selectTable: (table: DatabaseTable) => void;
+    toggleCatalog: (catalog: string) => void;
     useSql: (sql: string) => void;
   } | null>(null);
   sidebarActionsRef.current = {
@@ -703,6 +866,7 @@ export function DatabasePage({
     refreshSchema: refreshConnectionSchema,
     selectConnection: (connection) => selectConnection(connection.id),
     selectTable,
+    toggleCatalog: loadCatalog,
     useSql: loadSqlIntoEditor,
   };
 
@@ -719,28 +883,36 @@ export function DatabasePage({
       onRefreshSchema: (connection: DatabaseConnection) => sidebarActionsRef.current?.refreshSchema(connection),
       onSelectConnection: (connection: DatabaseConnection) => sidebarActionsRef.current?.selectConnection(connection),
       onSelectTable: (table: DatabaseTable) => sidebarActionsRef.current?.selectTable(table),
+      onToggleCatalog: (catalog: string) => sidebarActionsRef.current?.toggleCatalog(catalog),
       onUseSql: (sql: string) => sidebarActionsRef.current?.useSql(sql),
     }),
     [],
   );
 
   const schemaLoadingFlag = schemaEnabled && schemaQuery.isFetching;
+  const catalogList = schemaEnabled ? catalogsQuery.data : undefined;
   const shellSidebar = useMemo(
     () => (
       <DatabaseSidebar
+        catalogs={catalogList}
         connectionStates={connectionStates}
         connections={connections}
+        loadingCatalogs={loadingCatalogs}
         schema={visibleSchema}
         schemaLoading={schemaLoadingFlag}
+        schemasByCatalog={schemasByCatalog}
         selectedConnectionId={selectedConnectionId}
         selectedTableId={selectedTableId}
         {...sidebarHandlers}
       />
     ),
     [
+      catalogList,
       connectionStates,
       connections,
+      loadingCatalogs,
       schemaLoadingFlag,
+      schemasByCatalog,
       selectedConnectionId,
       selectedTableId,
       sidebarHandlers,
@@ -804,12 +976,17 @@ export function DatabasePage({
           error={activeError}
           executePending={executePending}
           history={queryHistory}
+          catalogOptions={catalogOptions}
+          onChangeQueryContext={changeQueryContext}
           onClearSql={clearSql}
           onClearHistory={clearQueryHistory}
           onPreviewSelectedTable={previewSelectedTable}
           onRefreshSchema={refreshSelectedSchema}
           onRun={runSql}
           onSelectConnection={(connectionId) => selectConnection(connectionId || null)}
+          queryCatalog={queryContext.catalog}
+          querySchema={queryContext.schema}
+          schemaOptions={schemaOptions}
           onSelectHistory={loadHistoryEntry}
           onSelectResultTab={layout.setResultTab}
           onSelectStructureTab={layout.setInspectorTab}

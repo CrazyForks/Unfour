@@ -25,16 +25,21 @@ export function DatabaseWorkspace({
   activeResultTab,
   activeStructureTab,
   activeTabId,
+  catalogOptions,
   connections,
   error,
   executePending,
   history,
+  onChangeQueryContext,
   onClearHistory,
   onClearSql,
   onPreviewSelectedTable,
   onRefreshSchema,
   onRun,
   onSelectConnection,
+  queryCatalog,
+  querySchema,
+  schemaOptions,
   onSelectHistory,
   onSelectStructureTab,
   onSelectResultTab,
@@ -61,16 +66,21 @@ export function DatabaseWorkspace({
   activeResultTab: DatabaseResultTab;
   activeStructureTab: StructureTab;
   activeTabId: DatabaseWorkspaceTabId;
+  catalogOptions: string[];
   connections: DatabaseConnection[];
   error: unknown;
   executePending: boolean;
   history: SqlHistoryEntry[];
+  onChangeQueryContext: (patch: { catalog?: string | null; schema?: string | null }) => void;
   onClearHistory: () => void;
   onClearSql: () => void;
   onPreviewSelectedTable: () => void;
   onRefreshSchema: () => void;
   onRun: (selectedSql?: string) => void;
   onSelectConnection: (connectionId: string) => void;
+  queryCatalog: string | null;
+  querySchema: string | null;
+  schemaOptions: string[];
   onSelectHistory: (entry: SqlHistoryEntry) => void;
   onSelectStructureTab: (tab: StructureTab) => void;
   onSelectResultTab: (tab: DatabaseResultTab) => void;
@@ -159,8 +169,10 @@ export function DatabaseWorkspace({
         ) : (
           <SplitPane className="min-h-0 flex-1" defaultRatio={48} minPaneSize={140} orientation="vertical" resizable>
             <SqlEditorTab
+              catalogOptions={catalogOptions}
               connections={connections}
               executePending={executePending}
+              onChangeQueryContext={onChangeQueryContext}
               onClearSql={onClearSql}
               onRun={onRun}
               onSelectConnection={onSelectConnection}
@@ -168,7 +180,10 @@ export function DatabaseWorkspace({
               onSqlChange={onSqlChange}
               onStop={onStop}
               pendingConfirmation={pendingConfirmation}
+              queryCatalog={queryCatalog}
+              querySchema={querySchema}
               schema={schema}
+              schemaOptions={schemaOptions}
               selectedConnectionId={selectedConnectionId}
               sql={sql}
             />

@@ -498,6 +498,11 @@ pub struct DatabaseSchema {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DatabaseTable {
+    /// Top-level container the object lives in: PostgreSQL/MySQL database, or
+    /// `None` for SQLite (single-file). Distinct from `schema`, which only
+    /// PostgreSQL nests below the catalog.
+    #[serde(default)]
+    pub catalog: Option<String>,
     pub schema: Option<String>,
     pub name: String,
     pub kind: String,
@@ -538,6 +543,8 @@ pub struct DatabaseForeignKey {
 pub struct DatabaseTableStructureInput {
     pub workspace_id: String,
     pub connection_id: String,
+    #[serde(default)]
+    pub catalog: Option<String>,
     pub schema: Option<String>,
     pub table_name: String,
 }
@@ -554,6 +561,8 @@ pub struct DatabaseCellValue {
 pub struct DatabaseRowMutationInput {
     pub workspace_id: String,
     pub connection_id: String,
+    #[serde(default)]
+    pub catalog: Option<String>,
     pub schema: Option<String>,
     pub table_name: String,
     /// One of: "insert", "update", "delete".
@@ -576,6 +585,8 @@ pub struct DatabaseRowMutationResult {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DatabaseTableStructure {
+    #[serde(default)]
+    pub catalog: Option<String>,
     pub schema: Option<String>,
     pub name: String,
     pub kind: String,
@@ -593,6 +604,14 @@ pub struct DatabaseQueryInput {
     pub sql: String,
     pub limit: Option<u32>,
     pub confirm_mutation: Option<bool>,
+    /// Optional query context: the catalog (PostgreSQL/MySQL database) the
+    /// statement should run against. Applied before execution.
+    #[serde(default)]
+    pub catalog: Option<String>,
+    /// Optional query context: the schema (PostgreSQL) the statement should
+    /// resolve unqualified names against. Applied before execution.
+    #[serde(default)]
+    pub schema: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
@@ -634,6 +653,8 @@ pub struct DbQueryHistoryRecordInput {
 pub struct DatabaseBrowseInput {
     pub workspace_id: String,
     pub connection_id: String,
+    #[serde(default)]
+    pub catalog: Option<String>,
     pub schema: Option<String>,
     pub table_name: String,
     pub limit: Option<u32>,

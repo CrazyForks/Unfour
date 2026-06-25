@@ -1159,8 +1159,21 @@ impl CommandBus {
         &self,
         workspace_id: String,
         connection_id: String,
+        catalog: Option<String>,
     ) -> AppResult<DatabaseSchema> {
-        self.database.schema(workspace_id, connection_id).await
+        self.database
+            .schema(workspace_id, connection_id, catalog)
+            .await
+    }
+
+    pub async fn database_catalogs(
+        &self,
+        workspace_id: String,
+        connection_id: String,
+    ) -> AppResult<Vec<String>> {
+        self.database
+            .list_catalogs(workspace_id, connection_id)
+            .await
     }
 
     pub async fn execute_database_query(

@@ -45,6 +45,15 @@ export type SqlHistoryEntry = {
   status: "success" | "failed";
 };
 
+// Explicit execution context for a query window. `connectionId` identifies the
+// datasource; `catalog`/`schema` scope where unqualified names resolve and which
+// database the statement runs against (applied server-side before execution).
+export type QueryContext = {
+  connectionId: string | null;
+  catalog: string | null;
+  schema: string | null;
+};
+
 export type DatabaseResultTab = "results" | "messages" | "logs" | "history";
 
 // Object-level workspace tabs: the Table object tab (with an inner Data /

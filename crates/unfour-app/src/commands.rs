@@ -372,11 +372,24 @@ pub async fn database_connection_test(
 pub async fn database_schema_get(
     workspace_id: String,
     connection_id: String,
+    catalog: Option<String>,
     state: State<'_, AppState>,
 ) -> AppResult<DatabaseSchema> {
     state
         .command_bus
-        .database_schema(workspace_id, connection_id)
+        .database_schema(workspace_id, connection_id, catalog)
+        .await
+}
+
+#[tauri::command]
+pub async fn database_catalogs_list(
+    workspace_id: String,
+    connection_id: String,
+    state: State<'_, AppState>,
+) -> AppResult<Vec<String>> {
+    state
+        .command_bus
+        .database_catalogs(workspace_id, connection_id)
         .await
 }
 

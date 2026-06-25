@@ -683,8 +683,23 @@ async function mockInvoke<T>(
     } satisfies DatabaseTestResult) as T;
   }
 
+  if (command === "database_catalogs_list") {
+    const connectionId = String(args?.connectionId ?? "");
+    const connection = mockDatabaseConnections.find((item) => item.id === connectionId);
+    if (connection?.driver === "mysql") {
+      return ["app", "analytics"] as T;
+    }
+    if (connection?.driver === "postgres") {
+      // Server-level database list; the connection's default plus a second db
+      // demonstrate browsing beyond the connected database.
+      return [connection.database ?? "postgres", "reporting"] as T;
+    }
+    return [] as T;
+  }
+
   if (command === "database_schema_get") {
     const connectionId = String(args?.connectionId ?? "");
+    const catalogArg = args?.catalog ? String(args.catalog) : null;
     const connection = mockDatabaseConnections.find((item) => item.id === connectionId);
     const isPostgres = connection?.driver === "postgres";
     const isMySql = connection?.driver === "mysql";
@@ -693,7 +708,7 @@ async function mockInvoke<T>(
         connectionId,
         tables: [
           {
-            schema: connection.database ?? "app",
+            catalog: connection.database ?? "app",
             name: "users",
             kind: "table",
             columns: [
@@ -703,7 +718,7 @@ async function mockInvoke<T>(
             ],
           },
           {
-            schema: "analytics",
+            catalog: "analytics",
             name: "events",
             kind: "table",
             columns: [
@@ -715,10 +730,31 @@ async function mockInvoke<T>(
       } satisfies DatabaseSchema) as T;
     }
     if (isPostgres) {
+      const pgCatalog = catalogArg ?? connection.database ?? "postgres";
+      // A second database (reporting) shows distinct objects, demonstrating
+      // catalog-scoped schema browsing on a single connection.
+      if (pgCatalog === "reporting") {
+        return ({
+          connectionId,
+          tables: [
+            {
+              catalog: pgCatalog,
+              schema: "metrics",
+              name: "daily_revenue",
+              kind: "view",
+              columns: [
+                { name: "day", dataType: "date", nullable: false, primaryKey: false },
+                { name: "amount", dataType: "numeric", nullable: true, primaryKey: false },
+              ],
+            },
+          ],
+        } satisfies DatabaseSchema) as T;
+      }
       return ({
         connectionId,
         tables: [
           {
+            catalog: pgCatalog,
             schema: "public",
             name: "users",
             kind: "table",
@@ -729,6 +765,7 @@ async function mockInvoke<T>(
             ],
           },
           {
+            catalog: pgCatalog,
             schema: "public",
             name: "orders",
             kind: "table",
@@ -835,7 +872,7 @@ async function mockInvoke<T>(
     const connection = mockDatabaseConnections.find((item) => item.id === input.connectionId);
     const qualifiedTable =
       connection?.driver === "mysql"
-        ? `${quoteMySqlIdentifier(input.schema ?? connection.database ?? "app")}.${quoteMySqlIdentifier(input.tableName)}`
+        ? `${quoteMySqlIdentifier(input.catalog ?? input.schema ?? connection.database ?? "app")}.${quoteMySqlIdentifier(input.tableName)}`
         : `"${input.tableName.split('"').join('""')}"`;
     return ({
       tableName: input.tableName,
@@ -866,6 +903,7 @@ async function mockInvoke<T>(
   if (command === "database_table_structure") {
     const input = args?.input as DatabaseTableStructureInput;
     return ({
+      catalog: input.catalog ?? null,
       schema: input.schema ?? null,
       name: input.tableName,
       kind: "table",
@@ -1378,8 +1416,20 @@ export function testDatabaseConnection(workspaceId: string, connectionId: string
   });
 }
 
-export function getDatabaseSchema(workspaceId: string, connectionId: string) {
+export function getDatabaseSchema(
+  workspaceId: string,
+  connectionId: string,
+  catalog?: string | null,
+) {
   return call<DatabaseSchema>("database_schema_get", {
+    workspaceId,
+    connectionId,
+    catalog: catalog ?? null,
+  });
+}
+
+export function listDatabaseCatalogs(workspaceId: string, connectionId: string) {
+  return call<string[]>("database_catalogs_list", {
     workspaceId,
     connectionId,
   });

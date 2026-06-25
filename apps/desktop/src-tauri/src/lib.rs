@@ -49,6 +49,7 @@ pub fn run() {
             unfour_app::commands::credential_rotate,
             unfour_app::commands::database_connection_delete,
             unfour_app::commands::database_connection_save,
+            unfour_app::commands::database_catalogs_list,
             unfour_app::commands::database_connection_test,
             unfour_app::commands::database_connections_list,
             unfour_app::commands::database_query_execute,

@@ -292,11 +292,13 @@
       "stopSql": "停止 SQL 执行"
     },
     "editor": {
+      "catalogAria": "查询数据库",
       "connectionAria": "SQL 编辑器连接",
       "dataView": "数据",
       "empty": "创建或选择数据库连接后开始编写 SQL。",
       "noConnectionSelected": "未选择连接",
       "queryConsole": "查询控制台",
+      "schemaAria": "查询模式",
       "sqlEditor": "SQL 编辑器",
       "structureView": "结构",
       "tableData": "表数据",
@@ -435,8 +437,10 @@
       "deleteConnection": "删除连接",
       "deleteTitle": "删除连接？",
       "editConnection": "编辑连接",
+      "expandToLoad": "展开以加载",
       "generateInsert": "生成 INSERT 语句",
       "generateSelect": "生成 SELECT 语句",
+      "loadingSchema": "加载中…",
       "previewData": "预览数据",
       "tablesGroup": "表",
       "viewsGroup": "视图"

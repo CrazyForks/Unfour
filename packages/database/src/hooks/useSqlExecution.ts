@@ -5,6 +5,8 @@ import { isConfirmationRequired } from "../result-utils";
 export type RunSqlParams = {
   confirmMutation: boolean;
   sql: string;
+  catalog?: string | null;
+  schema?: string | null;
 };
 
 export function useSqlExecution({
@@ -26,13 +28,15 @@ export function useSqlExecution({
 }) {
   return useMutation({
     onMutate: onExecuteStart,
-    mutationFn: ({ confirmMutation, sql }: RunSqlParams) =>
+    mutationFn: ({ catalog, confirmMutation, schema, sql }: RunSqlParams) =>
       executeDatabaseQuery({
         workspaceId,
         connectionId: connectionId ?? "",
         sql,
         limit: 100,
         confirmMutation,
+        catalog,
+        schema,
       }),
     onError: (error, variables) => {
       onConfirmationRequired(isConfirmationRequired(error));

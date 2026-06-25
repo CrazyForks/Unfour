@@ -59,6 +59,7 @@ export function TreeView({
   items,
   onActivate,
   onSelect,
+  onToggle,
   selectedId,
 }: {
   className?: string;
@@ -67,6 +68,8 @@ export function TreeView({
   /** Fired on double-click of a row label (e.g. "double-click to connect"). */
   onActivate?: (item: TreeViewItem) => void;
   onSelect?: (item: TreeViewItem) => void;
+  /** Fired when a node is expanded or collapsed (e.g. to lazy-load children). */
+  onToggle?: (id: string, expanded: boolean) => void;
   selectedId?: string | null;
 }) {
   const [expandedIds, setExpandedIds] = React.useState(() => new Set(defaultExpandedIds));
@@ -77,15 +80,18 @@ export function TreeView({
   const flat = React.useMemo(() => flatten(items, expandedIds), [items, expandedIds]);
 
   function toggle(id: string) {
+    let nowExpanded = false;
     setExpandedIds((current) => {
       const next = new Set(current);
       if (next.has(id)) {
         next.delete(id);
       } else {
         next.add(id);
+        nowExpanded = true;
       }
       return next;
     });
+    onToggle?.(id, nowExpanded);
   }
 
   // The single tab stop is the focused row, falling back to the selected row,

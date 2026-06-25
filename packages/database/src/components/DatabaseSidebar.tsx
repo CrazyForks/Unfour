@@ -15,8 +15,10 @@ import type { DatabaseConnectionSessionState } from "../model/types";
  * provides the mount surface.
  */
 export function DatabaseSidebar({
+  catalogs,
   connectionStates,
   connections,
+  loadingCatalogs,
   onConnect,
   onDeleteConnection,
   onDisconnect,
@@ -28,14 +30,18 @@ export function DatabaseSidebar({
   onRefreshSchema,
   onSelectConnection,
   onSelectTable,
+  onToggleCatalog,
   onUseSql,
   schema,
   schemaLoading,
+  schemasByCatalog,
   selectedConnectionId,
   selectedTableId,
 }: {
+  catalogs?: string[];
   connectionStates?: Record<string, DatabaseConnectionSessionState>;
   connections: DatabaseConnection[];
+  loadingCatalogs?: string[];
   onConnect: (connection: DatabaseConnection) => void;
   onDeleteConnection: (connection: DatabaseConnection) => void;
   onDisconnect: (connection: DatabaseConnection) => void;
@@ -47,9 +53,11 @@ export function DatabaseSidebar({
   onRefreshSchema: (connection: DatabaseConnection) => void;
   onSelectConnection: (connection: DatabaseConnection) => void;
   onSelectTable: (table: DatabaseTable) => void;
+  onToggleCatalog: (catalog: string) => void;
   onUseSql: (sql: string) => void;
   schema?: DatabaseSchema;
   schemaLoading?: boolean;
+  schemasByCatalog?: Record<string, DatabaseSchema>;
   selectedConnectionId: string | null;
   selectedTableId?: string | null;
 }) {
@@ -74,8 +82,10 @@ export function DatabaseSidebar({
       </div>
       <div className="min-h-0 flex-1 overflow-auto">
         <DatabaseConnectionTree
+          catalogs={catalogs}
           connectionStates={connectionStates}
           connections={connections}
+          loadingCatalogs={loadingCatalogs}
           onConnect={onConnect}
           onDeleteConnection={onDeleteConnection}
           onDisconnect={onDisconnect}
@@ -86,9 +96,11 @@ export function DatabaseSidebar({
           onRefreshSchema={onRefreshSchema}
           onSelectConnection={onSelectConnection}
           onSelectTable={onSelectTable}
+          onToggleCatalog={onToggleCatalog}
           onUseSql={onUseSql}
           schema={schema}
           schemaLoading={schemaLoading}
+          schemasByCatalog={schemasByCatalog}
           selectedConnectionId={selectedConnectionId}
           selectedTableId={selectedTableId}
         />

@@ -16,8 +16,10 @@ type CompletionModel = {
 };
 
 export function SqlEditorTab({
+  catalogOptions,
   connections,
   executePending,
+  onChangeQueryContext,
   onClearSql,
   onRun,
   onSelectConnection,
@@ -25,12 +27,17 @@ export function SqlEditorTab({
   onSqlChange,
   onStop,
   pendingConfirmation,
+  queryCatalog,
+  querySchema,
   schema,
+  schemaOptions,
   selectedConnectionId,
   sql,
 }: {
+  catalogOptions: string[];
   connections: DatabaseConnection[];
   executePending: boolean;
+  onChangeQueryContext: (patch: { catalog?: string | null; schema?: string | null }) => void;
   onClearSql: () => void;
   onRun: (selectedSql?: string) => void;
   onSelectConnection: (connectionId: string) => void;
@@ -38,7 +45,10 @@ export function SqlEditorTab({
   onSqlChange: (sql: string) => void;
   onStop: () => void;
   pendingConfirmation: boolean;
+  queryCatalog: string | null;
+  querySchema: string | null;
   schema?: DatabaseSchema;
+  schemaOptions: string[];
   selectedConnectionId: string | null;
   sql: string;
 }) {
@@ -115,7 +125,7 @@ export function SqlEditorTab({
             label: table.name,
             kind: monaco.languages.CompletionItemKind.Struct,
             insertText: table.name,
-            detail: table.schema ? `${table.schema} · ${table.kind}` : table.kind,
+            detail: [table.catalog, table.schema, table.kind].filter(Boolean).join(" · "),
             range,
           });
           for (const column of table.columns) {
@@ -182,6 +192,24 @@ export function SqlEditorTab({
             {!selectedConnectionId && <option value="">{t("database.connection.select")}</option>}
             {!connections.length && <option value="">{t("database.connection.none")}</option>}
           </Select>
+          {catalogOptions.length > 0 && (
+            <Select
+              aria-label={t("database.editor.catalogAria")}
+              className="max-w-[160px]"
+              onChange={(event) => onChangeQueryContext({ catalog: event.target.value || null })}
+              options={catalogOptions.map((catalog) => ({ label: catalog, value: catalog }))}
+              value={queryCatalog ?? ""}
+            />
+          )}
+          {schemaOptions.length > 0 && (
+            <Select
+              aria-label={t("database.editor.schemaAria")}
+              className="max-w-[160px]"
+              onChange={(event) => onChangeQueryContext({ schema: event.target.value || null })}
+              options={schemaOptions.map((schema) => ({ label: schema, value: schema }))}
+              value={querySchema ?? ""}
+            />
+          )}
           <span className="hidden min-w-0 truncate text-[12px] text-[var(--u-color-text-soft)] lg:inline">
             {selectedConnection ? connectionContext(selectedConnection) : t("database.editor.noConnectionSelected")}
           </span>

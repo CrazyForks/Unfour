@@ -168,10 +168,11 @@ impl CommandBusAdapter for LocalCommandBusAdapter {
         connection_id: &str,
     ) -> Result<DatabaseSchema, CommandBusAdapterError> {
         self.runtime
-            .block_on(
-                self.bus
-                    .database_schema(workspace_id.to_string(), connection_id.to_string()),
-            )
+            .block_on(self.bus.database_schema(
+                workspace_id.to_string(),
+                connection_id.to_string(),
+                None,
+            ))
             .map_err(|e| {
                 CommandBusAdapterError::from_app_error(
                     "The command-bus database schema operation failed.",

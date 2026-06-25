@@ -42,7 +42,7 @@ describe("useSchemaTree", () => {
     );
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(schemaMock).toHaveBeenCalledWith("ws-1", "conn-1");
+    expect(schemaMock).toHaveBeenCalledWith("ws-1", "conn-1", null);
   });
 
   it.each([

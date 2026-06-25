@@ -16,11 +16,13 @@ export function useTableData({
   return useMutation({
     onMutate: onBrowseStart,
     mutationFn: ({
+      catalog,
       pageIndex,
       pageSize,
       schema,
       tableName,
     }: {
+      catalog?: string | null;
       pageIndex: number;
       pageSize: number;
       schema?: string | null;
@@ -29,6 +31,7 @@ export function useTableData({
       browseDatabaseTable({
         workspaceId,
         connectionId: connectionId ?? "",
+        catalog,
         schema,
         tableName,
         limit: pageSize,

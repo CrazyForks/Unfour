@@ -332,6 +332,9 @@ export type DatabaseSchema = {
 };
 
 export type DatabaseTable = {
+  /** Top-level container: PostgreSQL/MySQL database, or null for SQLite. */
+  catalog?: string | null;
+  /** Nested namespace below the catalog. Only PostgreSQL populates this. */
   schema?: string | null;
   name: string;
   kind: string;
@@ -363,11 +366,13 @@ export type DatabaseForeignKey = {
 export type DatabaseTableStructureInput = {
   workspaceId: string;
   connectionId: string;
+  catalog?: string | null;
   schema?: string | null;
   tableName: string;
 };
 
 export type DatabaseTableStructure = {
+  catalog?: string | null;
   schema?: string | null;
   name: string;
   kind: string;
@@ -385,6 +390,7 @@ export type DatabaseCellValue = {
 export type DatabaseRowMutationInput = {
   workspaceId: string;
   connectionId: string;
+  catalog?: string | null;
   schema?: string | null;
   tableName: string;
   operation: "insert" | "update" | "delete";
@@ -403,6 +409,10 @@ export type DatabaseQueryInput = {
   sql: string;
   limit?: number;
   confirmMutation?: boolean;
+  /** Query context: catalog (PostgreSQL/MySQL database) to run against. */
+  catalog?: string | null;
+  /** Query context: schema (PostgreSQL) for unqualified name resolution. */
+  schema?: string | null;
 };
 
 export type DbQueryHistoryEntry = {
@@ -423,6 +433,7 @@ export type DbQueryHistoryEntry = {
 export type DatabaseBrowseInput = {
   workspaceId: string;
   connectionId: string;
+  catalog?: string | null;
   schema?: string | null;
   tableName: string;
   limit?: number;

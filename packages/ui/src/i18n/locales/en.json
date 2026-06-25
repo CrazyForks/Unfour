@@ -293,11 +293,13 @@
       "stopSql": "Stop SQL execution"
     },
     "editor": {
+      "catalogAria": "Query database",
       "connectionAria": "SQL editor connection",
       "dataView": "Data",
       "empty": "Create or select a database connection to start writing SQL.",
       "noConnectionSelected": "No connection selected",
       "queryConsole": "Query Console",
+      "schemaAria": "Query schema",
       "sqlEditor": "SQL Editor",
       "structureView": "Structure",
       "tableData": "Table Data",
@@ -436,8 +438,10 @@
       "deleteConnection": "Delete Connection",
       "deleteTitle": "Delete connection?",
       "editConnection": "Edit Connection",
+      "expandToLoad": "Expand to load",
       "generateInsert": "Generate INSERT Statement",
       "generateSelect": "Generate SELECT Statement",
+      "loadingSchema": "Loading…",
       "previewData": "Preview Data",
       "tablesGroup": "Tables",
       "viewsGroup": "Views"

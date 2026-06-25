@@ -273,7 +273,9 @@ describe("MySQL browser mock compatibility", () => {
     });
 
     const schema = await getDatabaseSchema(workspaceId, connection.id);
-    expect(schema.tables.map((table) => table.schema)).toEqual(["app", "analytics"]);
+    // MySQL exposes each database at the catalog level (no nested schema).
+    expect(schema.tables.map((table) => table.catalog)).toEqual(["app", "analytics"]);
+    expect(schema.tables.every((table) => table.schema == null)).toBe(true);
     expect(schema.tables[0].columns[0]).toMatchObject({
       name: "id",
       primaryKey: true,
@@ -293,7 +295,7 @@ describe("MySQL browser mock compatibility", () => {
     const browse = await browseDatabaseTable({
       workspaceId,
       connectionId: connection.id,
-      schema: "analytics",
+      catalog: "analytics",
       tableName: "events",
       limit: 2,
       offset: 1,

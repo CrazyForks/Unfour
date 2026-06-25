@@ -210,8 +210,10 @@ impl DatabaseService {
         &self,
         workspace_id: String,
         connection_id: String,
+        catalog: Option<String>,
     ) -> AppResult<DatabaseSchema> {
         let connection = self.get_connection(&workspace_id, &connection_id).await?;
+        let catalog = clean_identifier(catalog.as_deref())?.map(str::to_string);
 
         match connection.driver.as_str() {
             "sqlite" => {
@@ -233,6 +235,7 @@ impl DatabaseService {
                     let kind: String = row.try_get("type")?;
                     let columns = sqlite_columns(&pool, &name).await?;
                     tables.push(DatabaseTable {
+                        catalog: None,
                         schema: None,
                         name,
                         kind,
@@ -246,7 +249,19 @@ impl DatabaseService {
                 })
             }
             "postgres" => {
-                let pool = self.postgres_pool(&connection).await?;
+                // PostgreSQL cannot cross-database query, so to browse a catalog
+                // other than the connection default we open a pool bound to that
+                // database. Every object in the listing belongs to this catalog.
+                let effective = match catalog.as_deref() {
+                    Some(name) => {
+                        let mut overridden = connection.clone();
+                        overridden.database = Some(name.to_string());
+                        overridden
+                    }
+                    None => connection.clone(),
+                };
+                let pool = self.postgres_pool(&effective).await?;
+                let catalog = effective.database.clone();
                 let table_rows = sqlx::query(
                     r#"
                     SELECT table_schema, table_name, table_type
@@ -273,7 +288,13 @@ impl DatabaseService {
                     let columns = postgres_columns(&pool, &schema, &name)
                         .await
                         .map_err(sanitize_pg_app_error)?;
-                    tables.push(postgres_table_from_metadata(schema, name, kind, columns));
+                    tables.push(postgres_table_from_metadata(
+                        catalog.clone(),
+                        schema,
+                        name,
+                        kind,
+                        columns,
+                    ));
                 }
 
                 Ok(DatabaseSchema {
@@ -283,17 +304,25 @@ impl DatabaseService {
             }
             "mysql" => {
                 let pool = self.mysql_pool(&connection).await?;
-                let table_rows = sqlx::query(
-                    r#"
-                    SELECT table_schema, table_name, table_type
-                    FROM information_schema.tables
-                    WHERE table_schema NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
-                    ORDER BY table_schema, table_name
-                    "#,
-                )
-                .fetch_all(&pool)
-                .await
-                .map_err(sanitize_mysql_error)?;
+                // Optionally scope the listing to one database (catalog). Bound as
+                // a parameter so an identifier with quotes cannot break the query.
+                let mut sql = String::from(
+                    "SELECT table_schema, table_name, table_type \
+                     FROM information_schema.tables \
+                     WHERE table_schema NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')",
+                );
+                if catalog.is_some() {
+                    sql.push_str(" AND table_schema = ?");
+                }
+                sql.push_str(" ORDER BY table_schema, table_name");
+                let mut query = sqlx::query(&sql);
+                if let Some(cat) = catalog.as_deref() {
+                    query = query.bind(cat);
+                }
+                let table_rows = query
+                    .fetch_all(&pool)
+                    .await
+                    .map_err(sanitize_mysql_error)?;
 
                 let mut tables = Vec::with_capacity(table_rows.len());
                 for row in table_rows {
@@ -305,6 +334,8 @@ impl DatabaseService {
                     let columns = mysql_columns(&pool, &schema, &name)
                         .await
                         .map_err(sanitize_mysql_app_error)?;
+                    // In MySQL `table_schema` is the database itself, so it maps
+                    // to the catalog level; MySQL has no nested schema.
                     tables.push(mysql_table_from_metadata(schema, name, table_type, columns));
                 }
 
@@ -315,6 +346,63 @@ impl DatabaseService {
             }
             driver => Err(AppError::Unsupported(format!(
                 "{} schema browsing is not yet supported",
+                display_driver(driver)
+            ))),
+        }
+    }
+
+    /// List the catalogs (databases) the connection can see. SQLite returns an
+    /// empty list because a connection is a single file. PostgreSQL and MySQL
+    /// enumerate the server's databases so the tree can browse beyond the
+    /// connection's default database, one catalog at a time.
+    pub async fn list_catalogs(
+        &self,
+        workspace_id: String,
+        connection_id: String,
+    ) -> AppResult<Vec<String>> {
+        let connection = self.get_connection(&workspace_id, &connection_id).await?;
+
+        match connection.driver.as_str() {
+            "sqlite" => Ok(Vec::new()),
+            "postgres" => {
+                let pool = self.postgres_pool(&connection).await?;
+                let rows = sqlx::query(
+                    r#"
+                    SELECT datname
+                    FROM pg_database
+                    WHERE datistemplate = false AND datallowconn = true
+                    ORDER BY datname
+                    "#,
+                )
+                .fetch_all(&pool)
+                .await
+                .map_err(sanitize_pg_error)?;
+                rows.into_iter()
+                    .map(|row| row.try_get::<String, _>("datname").map_err(AppError::from))
+                    .collect()
+            }
+            "mysql" => {
+                let pool = self.mysql_pool(&connection).await?;
+                let rows = sqlx::query(
+                    r#"
+                    SELECT schema_name
+                    FROM information_schema.schemata
+                    WHERE schema_name NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
+                    ORDER BY schema_name
+                    "#,
+                )
+                .fetch_all(&pool)
+                .await
+                .map_err(sanitize_mysql_error)?;
+                rows.into_iter()
+                    .map(|row| {
+                        row.try_get::<String, _>("schema_name")
+                            .map_err(AppError::from)
+                    })
+                    .collect()
+            }
+            driver => Err(AppError::Unsupported(format!(
+                "{} catalog listing is not yet supported",
                 display_driver(driver)
             ))),
         }
@@ -388,10 +476,21 @@ impl DatabaseService {
                 let limit = input.limit.unwrap_or(100).clamp(1, 1_000);
                 let started = Instant::now();
 
+                // Apply the query context on a dedicated connection so the
+                // search_path change and the statement share the same session.
+                let mut conn = pool.acquire().await.map_err(sanitize_pg_error)?;
+                if let Some(schema) = clean_identifier(input.schema.as_deref())? {
+                    let stmt = format!("SET search_path TO {}", quote_identifier(schema));
+                    sqlx::query(&stmt)
+                        .execute(conn.as_mut())
+                        .await
+                        .map_err(sanitize_pg_error)?;
+                }
+
                 if returns_rows(sql) {
                     let query_sql = sql_with_limit(sql, limit);
                     let rows = sqlx::query(&query_sql)
-                        .fetch_all(&pool)
+                        .fetch_all(conn.as_mut())
                         .await
                         .map_err(sanitize_pg_error)?;
                     let columns = rows
@@ -414,7 +513,7 @@ impl DatabaseService {
                 }
 
                 let result = sqlx::query(sql)
-                    .execute(&pool)
+                    .execute(conn.as_mut())
                     .await
                     .map_err(sanitize_pg_error)?;
                 Ok(DatabaseQueryResult {
@@ -433,10 +532,21 @@ impl DatabaseService {
                 let limit = input.limit.unwrap_or(100).clamp(1, 1_000);
                 let started = Instant::now();
 
+                // Apply the query context (active database) on a dedicated
+                // connection so the USE statement and the query share a session.
+                let mut conn = pool.acquire().await.map_err(sanitize_mysql_error)?;
+                if let Some(catalog) = clean_identifier(input.catalog.as_deref())? {
+                    let stmt = format!("USE {}", quote_mysql_identifier(catalog));
+                    sqlx::query(&stmt)
+                        .execute(conn.as_mut())
+                        .await
+                        .map_err(sanitize_mysql_error)?;
+                }
+
                 if returns_rows(sql) {
                     let query_sql = sql_with_limit(sql, limit);
                     let rows = sqlx::query(&query_sql)
-                        .fetch_all(&pool)
+                        .fetch_all(conn.as_mut())
                         .await
                         .map_err(sanitize_mysql_error)?;
                     let columns = rows.first().map(mysql_result_columns).unwrap_or_default();
@@ -456,7 +566,7 @@ impl DatabaseService {
                 }
 
                 let result = sqlx::query(sql)
-                    .execute(&pool)
+                    .execute(conn.as_mut())
                     .await
                     .map_err(sanitize_mysql_error)?;
                 Ok(DatabaseQueryResult {
@@ -708,11 +818,21 @@ impl DatabaseService {
             }
             "mysql" => {
                 let pool = self.mysql_pool(&connection).await?;
+                // MySQL addresses tables as `database`.`table`; the catalog is
+                // that database. Prefer the explicit catalog, then the legacy
+                // schema field, then the connection's default database.
                 let schema = input
-                    .schema
+                    .catalog
                     .as_deref()
                     .map(str::trim)
                     .filter(|value| !value.is_empty())
+                    .or_else(|| {
+                        input
+                            .schema
+                            .as_deref()
+                            .map(str::trim)
+                            .filter(|value| !value.is_empty())
+                    })
                     .or(connection.database.as_deref())
                     .ok_or_else(|| {
                         AppError::Validation("MySQL database name is required".to_string())
@@ -802,6 +922,7 @@ impl DatabaseService {
                 let kind = sqlite_table_kind(&pool, table_name).await?;
                 let ddl = sqlite_ddl(&pool, table_name).await?;
                 Ok(DatabaseTableStructure {
+                    catalog: None,
                     schema: None,
                     name: table_name.to_string(),
                     kind,
@@ -832,6 +953,7 @@ impl DatabaseService {
                     .await
                     .map_err(sanitize_pg_app_error)?;
                 Ok(DatabaseTableStructure {
+                    catalog: connection.database.clone(),
                     schema: Some(schema.to_string()),
                     name: table_name.to_string(),
                     kind: "table".to_string(),
@@ -843,11 +965,21 @@ impl DatabaseService {
             }
             "mysql" => {
                 let pool = self.mysql_pool(&connection).await?;
+                // MySQL addresses tables as `database`.`table`; the catalog is
+                // that database. Prefer the explicit catalog, then the legacy
+                // schema field, then the connection's default database.
                 let schema = input
-                    .schema
+                    .catalog
                     .as_deref()
                     .map(str::trim)
                     .filter(|value| !value.is_empty())
+                    .or_else(|| {
+                        input
+                            .schema
+                            .as_deref()
+                            .map(str::trim)
+                            .filter(|value| !value.is_empty())
+                    })
                     .or(connection.database.as_deref())
                     .ok_or_else(|| {
                         AppError::Validation("MySQL database name is required".to_string())
@@ -868,7 +1000,8 @@ impl DatabaseService {
                     .await
                     .map_err(sanitize_mysql_app_error)?;
                 Ok(DatabaseTableStructure {
-                    schema: Some(schema.to_string()),
+                    catalog: Some(schema.to_string()),
+                    schema: None,
                     name: table_name.to_string(),
                     kind: "table".to_string(),
                     columns,
@@ -953,11 +1086,21 @@ impl DatabaseService {
             }
             "mysql" => {
                 let pool = self.mysql_pool(&connection).await?;
+                // MySQL addresses tables as `database`.`table`; the catalog is
+                // that database. Prefer the explicit catalog, then the legacy
+                // schema field, then the connection's default database.
                 let schema = input
-                    .schema
+                    .catalog
                     .as_deref()
                     .map(str::trim)
                     .filter(|value| !value.is_empty())
+                    .or_else(|| {
+                        input
+                            .schema
+                            .as_deref()
+                            .map(str::trim)
+                            .filter(|value| !value.is_empty())
+                    })
                     .or(connection.database.as_deref())
                     .ok_or_else(|| {
                         AppError::Validation("MySQL database name is required".to_string())
@@ -1347,12 +1490,14 @@ fn postgres_result_columns(row: &sqlx::postgres::PgRow) -> Vec<DatabaseResultCol
 }
 
 fn postgres_table_from_metadata(
+    catalog: Option<String>,
     schema: String,
     name: String,
     kind: String,
     columns: Vec<DatabaseTableColumn>,
 ) -> DatabaseTable {
     DatabaseTable {
+        catalog,
         schema: Some(schema),
         name,
         kind,
@@ -1445,12 +1590,13 @@ async fn mysql_connect_options(
         .filter(|value| !value.is_empty())
         .unwrap_or("127.0.0.1");
     let port = connection.port.unwrap_or(3306);
+    // The default database is optional: a server-level connection can browse
+    // every database it can see and pick one as the active query context later.
     let database = connection
         .database
         .as_deref()
         .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| AppError::Validation("MySQL database name is required".to_string()))?;
+        .filter(|value| !value.is_empty());
     let username = connection
         .username
         .as_deref()
@@ -1462,8 +1608,10 @@ async fn mysql_connect_options(
     let mut options = MySqlConnectOptions::new()
         .host(host)
         .port(port)
-        .database(database)
         .username(username);
+    if let Some(database) = database {
+        options = options.database(database);
+    }
     if let Some(password) = password {
         options = options.password(&password);
     }
@@ -1661,13 +1809,14 @@ fn mysql_result_columns(row: &sqlx::mysql::MySqlRow) -> Vec<DatabaseResultColumn
 }
 
 fn mysql_table_from_metadata(
-    schema: String,
+    catalog: String,
     name: String,
     table_type: String,
     columns: Vec<DatabaseTableColumn>,
 ) -> DatabaseTable {
     DatabaseTable {
-        schema: Some(schema),
+        catalog: Some(catalog),
+        schema: None,
         name,
         kind: if table_type == "VIEW" {
             "view".to_string()
@@ -2079,6 +2228,23 @@ fn validate_connection_id(connection_id: &str) -> AppResult<()> {
 
 fn quote_identifier(value: &str) -> String {
     format!("\"{}\"", value.replace('"', "\"\""))
+}
+
+/// Trim and validate an optional SQL identifier used as a session-context
+/// target (PostgreSQL `search_path` schema or MySQL `USE` database). Returns
+/// `None` for empty input. Callers still quote/escape the result before use;
+/// this rejects control characters as defense in depth.
+fn clean_identifier(value: Option<&str>) -> AppResult<Option<&str>> {
+    let trimmed = match value.map(str::trim).filter(|item| !item.is_empty()) {
+        None => return Ok(None),
+        Some(item) => item,
+    };
+    if trimmed.chars().any(|ch| ch == '\0' || ch.is_control()) {
+        return Err(AppError::Validation(
+            "database or schema name contains invalid characters".to_string(),
+        ));
+    }
+    Ok(Some(trimmed))
 }
 
 fn quote_mysql_identifier(value: &str) -> String {
@@ -2642,7 +2808,7 @@ mod tests {
         assert!(test.server_version.is_some());
 
         let schema = service
-            .schema(workspace_id.clone(), connection.id.clone())
+            .schema(workspace_id.clone(), connection.id.clone(), None)
             .await
             .expect("schema");
         let deploys = schema
@@ -2655,6 +2821,13 @@ mod tests {
             .iter()
             .any(|column| column.name == "service" && !column.primary_key));
 
+        // SQLite is a single-file datasource and exposes no catalogs.
+        let catalogs = service
+            .list_catalogs(workspace_id.clone(), connection.id.clone())
+            .await
+            .expect("list catalogs");
+        assert!(catalogs.is_empty());
+
         let query = service
             .execute_query(DatabaseQueryInput {
                 workspace_id: workspace_id.clone(),
@@ -2662,6 +2835,8 @@ mod tests {
                 sql: "select service, version from deploys order by id".to_string(),
                 limit: Some(1),
                 confirm_mutation: None,
+                catalog: None,
+                schema: None,
             })
             .await
             .expect("query");
@@ -2674,6 +2849,7 @@ mod tests {
             .browse_table(DatabaseBrowseInput {
                 workspace_id: workspace_id.clone(),
                 connection_id: connection.id.clone(),
+                catalog: None,
                 schema: None,
                 table_name: "deploys".to_string(),
                 limit: Some(2),
@@ -2694,6 +2870,7 @@ mod tests {
             .browse_table(DatabaseBrowseInput {
                 workspace_id: workspace_id.clone(),
                 connection_id: connection.id.clone(),
+                catalog: None,
                 schema: None,
                 table_name: "deploys".to_string(),
                 limit: Some(2),
@@ -2707,6 +2884,7 @@ mod tests {
             .browse_table(DatabaseBrowseInput {
                 workspace_id: workspace_id.clone(),
                 connection_id: connection.id.clone(),
+                catalog: None,
                 schema: None,
                 table_name: "empty_deploys".to_string(),
                 limit: Some(10),
@@ -2723,6 +2901,7 @@ mod tests {
             .browse_table(DatabaseBrowseInput {
                 workspace_id,
                 connection_id: connection.id,
+                catalog: None,
                 schema: None,
                 table_name: "missing".to_string(),
                 limit: Some(10),
@@ -2746,6 +2925,7 @@ mod tests {
             .table_structure(DatabaseTableStructureInput {
                 workspace_id: workspace_id.clone(),
                 connection_id: connection.id.clone(),
+                catalog: None,
                 schema: None,
                 table_name: "deploys".to_string(),
             })
@@ -2764,6 +2944,7 @@ mod tests {
             .table_structure(DatabaseTableStructureInput {
                 workspace_id,
                 connection_id: connection.id,
+                catalog: None,
                 schema: None,
                 table_name: "missing".to_string(),
             })
@@ -2785,6 +2966,7 @@ mod tests {
             .mutate_table_row(DatabaseRowMutationInput {
                 workspace_id: workspace_id.clone(),
                 connection_id: connection.id.clone(),
+                catalog: None,
                 schema: None,
                 table_name: "deploys".to_string(),
                 operation: "insert".to_string(),
@@ -2813,6 +2995,7 @@ mod tests {
             .mutate_table_row(DatabaseRowMutationInput {
                 workspace_id: workspace_id.clone(),
                 connection_id: connection.id.clone(),
+                catalog: None,
                 schema: None,
                 table_name: "deploys".to_string(),
                 operation: "update".to_string(),
@@ -2834,6 +3017,7 @@ mod tests {
             .mutate_table_row(DatabaseRowMutationInput {
                 workspace_id: workspace_id.clone(),
                 connection_id: connection.id.clone(),
+                catalog: None,
                 schema: None,
                 table_name: "deploys".to_string(),
                 operation: "update".to_string(),
@@ -2850,6 +3034,7 @@ mod tests {
             .mutate_table_row(DatabaseRowMutationInput {
                 workspace_id: workspace_id.clone(),
                 connection_id: connection.id.clone(),
+                catalog: None,
                 schema: None,
                 table_name: "deploys".to_string(),
                 operation: "delete".to_string(),
@@ -2882,6 +3067,8 @@ mod tests {
                 sql: "update deploys set version = '1.0.2' where service = 'api'".to_string(),
                 limit: Some(100),
                 confirm_mutation: None,
+                catalog: None,
+                schema: None,
             })
             .await;
         assert!(matches!(
@@ -2896,6 +3083,8 @@ mod tests {
                 sql: "update deploys set version = '1.0.2' where service = 'api'".to_string(),
                 limit: Some(100),
                 confirm_mutation: Some(true),
+                catalog: None,
+                schema: None,
             })
             .await
             .expect("confirmed update");
@@ -2910,6 +3099,8 @@ mod tests {
                 sql: "select * from deploys; select * from deploys;".to_string(),
                 limit: Some(100),
                 confirm_mutation: Some(true),
+                catalog: None,
+                schema: None,
             })
             .await;
         assert!(matches!(multiple, Err(AppError::Validation(_))));
@@ -2955,6 +3146,7 @@ mod tests {
     #[test]
     fn postgres_schema_metadata_preserves_schema_name() {
         let table = postgres_table_from_metadata(
+            Some("appdb".to_string()),
             "app_data".to_string(),
             "users".to_string(),
             "table".to_string(),
@@ -2967,6 +3159,7 @@ mod tests {
             }],
         );
 
+        assert_eq!(table.catalog.as_deref(), Some("appdb"));
         assert_eq!(table.schema.as_deref(), Some("app_data"));
         assert_eq!(table.name, "users");
         assert!(table.columns[0].primary_key);
@@ -3114,6 +3307,8 @@ mod tests {
                 sql: "UPDATE users SET active = false".to_string(),
                 limit: Some(100),
                 confirm_mutation: None,
+                catalog: None,
+                schema: None,
             })
             .await;
         assert!(
@@ -3151,7 +3346,7 @@ mod tests {
             .await
             .expect("save pg connection");
 
-        let result = service.schema(workspace_id, connection.id).await;
+        let result = service.schema(workspace_id, connection.id, None).await;
         // Should fail because there's no live PostgreSQL server
         assert!(result.is_err());
     }
@@ -3233,10 +3428,25 @@ mod tests {
             }],
         );
 
-        assert_eq!(table.schema.as_deref(), Some("analytics"));
+        assert_eq!(table.catalog.as_deref(), Some("analytics"));
+        assert!(table.schema.is_none());
         assert_eq!(table.name, "events");
         assert_eq!(table.kind, "table");
         assert!(table.columns[0].primary_key);
+    }
+
+    #[test]
+    fn clean_identifier_trims_rejects_control_chars_and_passes_empty_as_none() {
+        assert_eq!(clean_identifier(None).expect("none"), None);
+        assert_eq!(clean_identifier(Some("   ")).expect("blank"), None);
+        assert_eq!(
+            clean_identifier(Some("  app_data  ")).expect("trim"),
+            Some("app_data")
+        );
+        // A quote is allowed here because callers quote/escape the identifier;
+        // control characters are rejected as defense in depth.
+        assert!(clean_identifier(Some("bad\nname")).is_err());
+        assert!(clean_identifier(Some("bad\0name")).is_err());
     }
 
     #[test]
@@ -3293,6 +3503,8 @@ mod tests {
                 sql: "SELECT id FROM users".to_string(),
                 limit: Some(25),
                 confirm_mutation: None,
+                catalog: None,
+                schema: None,
             })
             .await
             .expect_err("closed local port should reject MySQL query");
@@ -3318,6 +3530,8 @@ mod tests {
                 sql: "UPDATE users SET active = false".to_string(),
                 limit: Some(100),
                 confirm_mutation: None,
+                catalog: None,
+                schema: None,
             })
             .await;
         assert!(matches!(result, Err(AppError::ConfirmationRequired { .. })));

@@ -330,6 +330,7 @@ fn db_list_tables(
         .map(|t| {
             json!({
                 "name": t.name,
+                "catalog": t.catalog,
                 "schema": t.schema,
                 "kind": t.kind,
                 "columnCount": t.columns.len()
@@ -373,7 +374,12 @@ fn db_describe_table(
     let table = schema.tables.iter().find(|t| {
         t.name == table_name
             && match &schema_filter {
-                Some(s) => t.schema.as_deref() == Some(s.as_str()),
+                // Match the schema (PostgreSQL) or the catalog (MySQL database),
+                // since MySQL exposes its database at the catalog level.
+                Some(s) => {
+                    t.schema.as_deref() == Some(s.as_str())
+                        || t.catalog.as_deref() == Some(s.as_str())
+                }
                 None => true,
             }
     });
@@ -402,6 +408,7 @@ fn db_describe_table(
         "connectionId": connection_id,
         "table": {
             "name": table.name,
+            "catalog": table.catalog,
             "schema": table.schema,
             "kind": table.kind,
             "columns": columns,
@@ -432,6 +439,8 @@ fn db_query_readonly(
         sql,
         limit: Some(limit),
         confirm_mutation: None,
+        catalog: None,
+        schema: None,
     };
 
     match command_bus.execute_db_query(input) {
@@ -807,6 +816,7 @@ mod tests {
                 connection_id: connection_id.to_string(),
                 tables: vec![
                     DatabaseTable {
+                        catalog: None,
                         schema: Some("public".to_string()),
                         name: "users".to_string(),
                         kind: "table".to_string(),
@@ -835,6 +845,7 @@ mod tests {
                         ],
                     },
                     DatabaseTable {
+                        catalog: None,
                         schema: Some("public".to_string()),
                         name: "orders".to_string(),
                         kind: "table".to_string(),
@@ -847,18 +858,21 @@ mod tests {
                         }],
                     },
                     DatabaseTable {
+                        catalog: None,
                         schema: Some("analytics".to_string()),
                         name: "events".to_string(),
                         kind: "view".to_string(),
                         columns: vec![],
                     },
                     DatabaseTable {
+                        catalog: None,
                         schema: Some("analytics".to_string()),
                         name: "summary".to_string(),
                         kind: "table".to_string(),
                         columns: vec![],
                     },
                     DatabaseTable {
+                        catalog: None,
                         schema: Some("audit".to_string()),
                         name: "logs".to_string(),
                         kind: "table".to_string(),

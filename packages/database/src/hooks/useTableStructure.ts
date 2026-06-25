@@ -19,6 +19,7 @@ export function useTableStructure({
       "database-table-structure",
       workspaceId,
       connectionId,
+      table?.catalog ?? null,
       table?.schema ?? null,
       table?.name ?? null,
     ],
@@ -26,6 +27,7 @@ export function useTableStructure({
       getDatabaseTableStructure({
         workspaceId,
         connectionId: connectionId ?? "",
+        catalog: table?.catalog ?? null,
         schema: table?.schema ?? null,
         tableName: table?.name ?? "",
       }),
