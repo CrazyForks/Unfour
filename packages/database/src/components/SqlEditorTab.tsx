@@ -190,18 +190,24 @@ export function SqlEditorTab({
       {connections.length === 0 ? (
         <EmptyState className="m-2 min-h-0 flex-1">{t("database.editor.empty")}</EmptyState>
       ) : (
-        <Editor
-          defaultLanguage="sql"
-          onChange={(value) => onSqlChange(value ?? "")}
-          onMount={handleMount}
-          options={{
-            fontSize: 13,
-            minimap: { enabled: false },
-            scrollBeyondLastLine: false,
-            wordWrap: "on",
-          }}
-          value={sql}
-        />
+        // Monaco defaults to height:100%, which only resolves against a parent
+        // with a definite height. Give it a flex-sized box so the editor fills
+        // its split pane instead of collapsing to zero height.
+        <div className="min-h-0 flex-1">
+          <Editor
+            defaultLanguage="sql"
+            height="100%"
+            onChange={(value) => onSqlChange(value ?? "")}
+            onMount={handleMount}
+            options={{
+              fontSize: 13,
+              minimap: { enabled: false },
+              scrollBeyondLastLine: false,
+              wordWrap: "on",
+            }}
+            value={sql}
+          />
+        </div>
       )}
     </div>
   );

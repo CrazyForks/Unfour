@@ -438,7 +438,9 @@
       "editConnection": "Edit Connection",
       "generateInsert": "Generate INSERT Statement",
       "generateSelect": "Generate SELECT Statement",
-      "previewData": "Preview Data"
+      "previewData": "Preview Data",
+      "tablesGroup": "Tables",
+      "viewsGroup": "Views"
     },
     "title": "Database"
   },

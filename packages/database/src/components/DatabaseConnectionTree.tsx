@@ -1,4 +1,4 @@
-import { Columns3, Copy, Database, MoreHorizontal, Pencil, Play, RefreshCw, Table2, Trash2 } from "lucide-react";
+import { Columns3, Copy, Database, Eye, MoreHorizontal, Pencil, Play, RefreshCw, Table2, Trash2 } from "lucide-react";
 import type { DatabaseConnection, DatabaseSchema, DatabaseTable } from "@unfour/command-client";
 import {
   Badge,
@@ -233,12 +233,20 @@ function buildSelectedConnectionChildren({
   if (connection.driver === "sqlite") {
     return [
       {
-        children: schema.tables.map((table) =>
-          tableItem({ connection, onPreviewTable, onUseSql, t, table, tableLookup }),
-        ),
+        children: buildTableGroups({
+          connection,
+          defaultExpandedIds,
+          onPreviewTable,
+          onUseSql,
+          parentId: databaseNodeId,
+          t,
+          tableLookup,
+          tables: schema.tables,
+        }),
         icon: <Database size={13} />,
         id: databaseNodeId,
         label: databaseLabel(connection),
+        meta: <Badge tone="neutral">{schema.tables.length}</Badge>,
       },
     ];
   }
@@ -260,12 +268,20 @@ function buildSelectedConnectionChildren({
               <RefreshCw size={12} />
             </IconButton>
           ) : undefined,
-          children: tables.map((table) =>
-            tableItem({ connection, onPreviewTable, onUseSql, t, table, tableLookup }),
-          ),
+          children: buildTableGroups({
+            connection,
+            defaultExpandedIds,
+            onPreviewTable,
+            onUseSql,
+            parentId: schemaNodeId,
+            t,
+            tableLookup,
+            tables,
+          }),
           icon: <Columns3 size={13} />,
           id: schemaNodeId,
           label: schemaName,
+          meta: <Badge tone="neutral">{tables.length}</Badge>,
           title: schemaName,
         };
       }),
@@ -275,6 +291,66 @@ function buildSelectedConnectionChildren({
       title: databaseLabel(connection),
     },
   ];
+}
+
+// Categorize a schema's objects into Tables and Views group nodes (each with a
+// count badge), matching the asset-tree hierarchy in the design mockup. The
+// caller has already guarded against the empty-schema case.
+function buildTableGroups({
+  connection,
+  defaultExpandedIds,
+  onPreviewTable,
+  onUseSql,
+  parentId,
+  t,
+  tableLookup,
+  tables,
+}: {
+  connection: DatabaseConnection;
+  defaultExpandedIds: Set<string>;
+  onPreviewTable?: (table: DatabaseTable) => void;
+  onUseSql?: (sql: string) => void;
+  parentId: string;
+  t: ReturnType<typeof useI18n>["t"];
+  tableLookup: Map<string, DatabaseTable>;
+  tables: DatabaseTable[];
+}): TreeViewItem[] {
+  const baseTables = tables.filter((table) => !isViewKind(table.kind));
+  const views = tables.filter((table) => isViewKind(table.kind));
+  const groups: TreeViewItem[] = [];
+
+  if (baseTables.length) {
+    const groupId = `${parentId}:tables`;
+    defaultExpandedIds.add(groupId);
+    groups.push({
+      children: baseTables.map((table) =>
+        tableItem({ connection, onPreviewTable, onUseSql, t, table, tableLookup }),
+      ),
+      icon: <Table2 size={13} />,
+      id: groupId,
+      label: t("database.tree.tablesGroup"),
+      meta: <Badge tone="teal">{baseTables.length}</Badge>,
+    });
+  }
+
+  if (views.length) {
+    const groupId = `${parentId}:views`;
+    groups.push({
+      children: views.map((table) =>
+        tableItem({ connection, onPreviewTable, onUseSql, t, table, tableLookup }),
+      ),
+      icon: <Eye size={13} />,
+      id: groupId,
+      label: t("database.tree.viewsGroup"),
+      meta: <Badge tone="neutral">{views.length}</Badge>,
+    });
+  }
+
+  return groups;
+}
+
+function isViewKind(kind: string) {
+  return kind.toLowerCase().includes("view");
 }
 
 function tableItem({

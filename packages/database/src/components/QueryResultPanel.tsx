@@ -65,7 +65,7 @@ export function QueryResultPanel({
   }
 
   return (
-    <section className="flex min-h-[190px] flex-[0.45] flex-col border-t border-[var(--u-color-border)] bg-[var(--u-color-surface)]">
+    <section className="flex min-h-0 flex-1 flex-col bg-[var(--u-color-surface)]">
       <Tabs
         activeId={activeTab}
         className="h-[30px]"

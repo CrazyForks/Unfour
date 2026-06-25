@@ -437,7 +437,9 @@
       "editConnection": "编辑连接",
       "generateInsert": "生成 INSERT 语句",
       "generateSelect": "生成 SELECT 语句",
-      "previewData": "预览数据"
+      "previewData": "预览数据",
+      "tablesGroup": "表",
+      "viewsGroup": "视图"
     },
     "title": "数据库"
   },
