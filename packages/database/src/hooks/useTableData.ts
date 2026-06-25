@@ -3,12 +3,10 @@ import { browseDatabaseTable } from "@unfour/command-client";
 import type { DatabaseBrowseResult } from "@unfour/command-client";
 
 export function useTableData({
-  connectionId,
   onBrowseStart,
   onSuccess,
   workspaceId,
 }: {
-  connectionId: string | null;
   onBrowseStart: () => void;
   onSuccess: (result: DatabaseBrowseResult) => void;
   workspaceId: string;
@@ -17,12 +15,14 @@ export function useTableData({
     onMutate: onBrowseStart,
     mutationFn: ({
       catalog,
+      connectionId,
       pageIndex,
       pageSize,
       schema,
       tableName,
     }: {
       catalog?: string | null;
+      connectionId: string;
       pageIndex: number;
       pageSize: number;
       schema?: string | null;
@@ -30,7 +30,7 @@ export function useTableData({
     }) =>
       browseDatabaseTable({
         workspaceId,
-        connectionId: connectionId ?? "",
+        connectionId,
         catalog,
         schema,
         tableName,

@@ -18,10 +18,11 @@ import { buildDatabaseTree, databaseTableTreeId } from "../model/database-tree";
 import type { DatabaseConnectionSessionState, DatabaseConnectionStatus } from "../model/types";
 
 export function DatabaseConnectionTree({
-  catalogs,
+  catalogNamesByConnection,
   connectionStates,
   connections,
-  loadingCatalogs,
+  loadingKeys,
+  loadErrors,
   onConnect,
   onDeleteConnection,
   onDisconnect,
@@ -33,37 +34,37 @@ export function DatabaseConnectionTree({
   onSelectConnection,
   onSelectTable,
   onToggleCatalog,
+  onToggleConnection,
   onUseSql,
-  schema,
-  schemaLoading = false,
-  schemasByCatalog,
+  schemaCache,
   selectedConnectionId,
   selectedTableId,
 }: {
-  /** Server databases (catalogs) for the selected connection. Empty/undefined
-   * for SQLite, which has no catalog level. */
-  catalogs?: string[];
+  /** Server databases per connection (PostgreSQL/MySQL). Loaded on expand. */
+  catalogNamesByConnection?: Record<string, string[]>;
   connectionStates?: Record<string, DatabaseConnectionSessionState>;
   connections: DatabaseConnection[];
-  /** Catalogs whose schema fetch is currently in flight. */
-  loadingCatalogs?: string[];
+  /** Keys (`names::id` / `id::catalog`) whose fetch is in flight. */
+  loadingKeys?: string[];
+  /** Error messages keyed the same way, surfaced inline in the tree. */
+  loadErrors?: Record<string, string>;
   onConnect?: (connection: DatabaseConnection) => void;
   onDeleteConnection?: (connection: DatabaseConnection) => void;
   onDisconnect?: (connection: DatabaseConnection) => void;
   onEditConnection?: (connection: DatabaseConnection) => void;
   onNewQuery?: () => void;
-  onPreviewTable?: (table: DatabaseTable) => void;
+  onPreviewTable?: (connectionId: string, table: DatabaseTable) => void;
   onRefresh?: () => void;
   onRefreshSchema?: (connection: DatabaseConnection) => void;
   onSelectConnection: (connection: DatabaseConnection) => void;
-  onSelectTable?: (table: DatabaseTable) => void;
-  /** Fired when a catalog node is expanded, so its schema can be lazy-loaded. */
-  onToggleCatalog?: (catalog: string) => void;
+  onSelectTable?: (connectionId: string, table: DatabaseTable) => void;
+  /** Fired when a database node is expanded, so its schema can be lazy-loaded. */
+  onToggleCatalog?: (connectionId: string, catalog: string) => void;
+  /** Fired when a connection node is expanded, so its databases can load. */
+  onToggleConnection?: (connection: DatabaseConnection) => void;
   onUseSql?: (sql: string) => void;
-  schema?: DatabaseSchema;
-  schemaLoading?: boolean;
-  /** Per-catalog loaded schemas for the selected connection. */
-  schemasByCatalog?: Record<string, DatabaseSchema>;
+  /** Loaded schemas keyed `${connectionId}::${catalog}` (catalog "" for SQLite). */
+  schemaCache?: Record<string, DatabaseSchema>;
   selectedConnectionId: string | null;
   selectedTableId?: string | null;
 }) {
@@ -73,22 +74,20 @@ export function DatabaseConnectionTree({
     return <EmptyState className="min-h-[72px]">{t("database.errors.noConnections")}</EmptyState>;
   }
 
-  const tableLookup = new Map<string, DatabaseTable>();
-  // Maps a catalog node id to its catalog name so expansion can trigger a
-  // lazy schema load for that database.
-  const catalogLookup = new Map<string, string>();
+  // Maps a table node id to the table and its owning connection; a catalog node
+  // id to {connectionId, catalog}. Used to route selection and lazy loading.
+  const tableLookup = new Map<string, { connectionId: string; table: DatabaseTable }>();
+  const catalogLookup = new Map<string, { connectionId: string; catalog: string }>();
   const defaultExpandedIds = new Set<string>();
   const selectedConnection = connections.find((connection) => connection.id === selectedConnectionId) ?? null;
 
   const items: TreeViewItem[] = connections.map((connection) => {
     const selected = connection.id === selectedConnectionId;
     const session = connectionStates?.[connection.id];
-    const status = resolveConnectionStatus({
-      hasSchema: selected && Boolean(schema),
-      selected,
-      session,
-    });
+    const status = resolveConnectionStatus({ session });
 
+    // Auto-expand the selected connection so it shows its databases without an
+    // extra click; the rest stay collapsed until the user opens them.
     if (selected) {
       defaultExpandedIds.add(connection.id);
     }
@@ -119,24 +118,21 @@ export function DatabaseConnectionTree({
           status={status}
         />
       ),
-      children: selected
-        ? buildSelectedConnectionChildren({
-            catalogLookup,
-            catalogs,
-            connection,
-            defaultExpandedIds,
-            loadingCatalogs,
-            onPreviewTable,
-            onRefreshSchema,
-            onUseSql,
-            schema,
-            schemaLoading,
-            schemasByCatalog,
-            status,
-            t,
-            tableLookup,
-          })
-        : undefined,
+      children: buildConnectionChildren({
+        catalogLookup,
+        catalogNames: catalogNamesByConnection?.[connection.id],
+        connection,
+        defaultExpandedIds,
+        loadErrors,
+        loadingKeys,
+        onPreviewTable,
+        onRefreshSchema,
+        onUseSql,
+        schemaCache,
+        status,
+        t,
+        tableLookup,
+      }),
       icon: <Database size={13} />,
       id: connection.id,
       label: connection.name,
@@ -154,13 +150,15 @@ export function DatabaseConnectionTree({
 
   return (
     <TreeView
-      key={[selectedConnectionId, schema?.tables.length ?? 0, schemaLoading ? "loading" : "idle"].join(":")}
+      // Remount only when the set of connections changes, so expanding one
+      // connection (or database) never collapses the others.
+      key={connections.map((connection) => connection.id).join(",")}
       defaultExpandedIds={[...defaultExpandedIds]}
       items={items}
       onSelect={(item) => {
-        const table = tableLookup.get(item.id);
-        if (table) {
-          onSelectTable?.(table);
+        const entry = tableLookup.get(item.id);
+        if (entry) {
+          onSelectTable?.(entry.connectionId, entry.table);
           return;
         }
 
@@ -170,9 +168,17 @@ export function DatabaseConnectionTree({
         }
       }}
       onToggle={(id, expanded) => {
+        if (!expanded) {
+          return;
+        }
         const catalog = catalogLookup.get(id);
-        if (catalog && expanded) {
-          onToggleCatalog?.(catalog);
+        if (catalog) {
+          onToggleCatalog?.(catalog.connectionId, catalog.catalog);
+          return;
+        }
+        const connection = connections.find((candidate) => candidate.id === id);
+        if (connection) {
+          onToggleConnection?.(connection);
         }
       }}
       selectedId={selectedId}
@@ -180,43 +186,41 @@ export function DatabaseConnectionTree({
   );
 }
 
-function buildSelectedConnectionChildren({
+function buildConnectionChildren({
   catalogLookup,
-  catalogs,
+  catalogNames,
   connection,
   defaultExpandedIds,
-  loadingCatalogs,
+  loadErrors,
+  loadingKeys,
   onPreviewTable,
   onRefreshSchema,
   onUseSql,
-  schema,
-  schemaLoading,
-  schemasByCatalog,
+  schemaCache,
   status,
   t,
   tableLookup,
 }: {
-  catalogLookup: Map<string, string>;
-  catalogs?: string[];
+  catalogLookup: Map<string, { connectionId: string; catalog: string }>;
+  catalogNames?: string[];
   connection: DatabaseConnection;
   defaultExpandedIds: Set<string>;
-  loadingCatalogs?: string[];
-  onPreviewTable?: (table: DatabaseTable) => void;
+  loadErrors?: Record<string, string>;
+  loadingKeys?: string[];
+  onPreviewTable?: (connectionId: string, table: DatabaseTable) => void;
   onRefreshSchema?: (connection: DatabaseConnection) => void;
   onUseSql?: (sql: string) => void;
-  schema?: DatabaseSchema;
-  schemaLoading: boolean;
-  schemasByCatalog?: Record<string, DatabaseSchema>;
+  schemaCache?: Record<string, DatabaseSchema>;
   status: DatabaseConnectionStatus;
   t: ReturnType<typeof useI18n>["t"];
-  tableLookup: Map<string, DatabaseTable>;
-}): TreeViewItem[] {
+  tableLookup: Map<string, { connectionId: string; table: DatabaseTable }>;
+}): TreeViewItem[] | undefined {
   if (status === "disconnected") {
     return [
       {
         disabled: true,
         id: `${connection.id}:disconnected`,
-        label: "Connect to browse schema",
+        label: t("database.tree.connectToBrowse"),
       },
     ];
   }
@@ -226,116 +230,61 @@ function buildSelectedConnectionChildren({
       {
         disabled: true,
         id: `${connection.id}:failed`,
-        label: "Connection failed",
+        label: t("database.tree.connectionFailed"),
       },
     ];
   }
 
-  // Multi-database (catalog) mode for PostgreSQL/MySQL: every server database
-  // is a node. PostgreSQL cannot cross-database query, so each database's schema
-  // is loaded lazily when its node is expanded; the connected database (and all
-  // MySQL databases) arrive in the initial schema load.
-  if (catalogs && catalogs.length > 0) {
-    // Index every catalog's tables: the connected database (and, for MySQL,
-    // every database) comes from the initial schema; lazily-loaded databases
-    // come from schemasByCatalog.
-    const tablesByCatalog = new Map<string, DatabaseTable[]>();
-    for (const table of schema?.tables ?? []) {
-      const key = table.catalog ?? "";
-      tablesByCatalog.set(key, [...(tablesByCatalog.get(key) ?? []), table]);
+  const isLoading = (key: string) => loadingKeys?.includes(key) ?? false;
+  const errorOf = (key: string) => loadErrors?.[key];
+
+  // SQLite: a single file with no catalog level. Its objects load under the
+  // connection node directly (catalog key "").
+  if (connection.driver === "sqlite") {
+    const key = `${connection.id}::`;
+    const schema = schemaCache?.[key];
+    if (schema) {
+      return renderCatalogContents({
+        connection,
+        defaultExpandedIds,
+        onPreviewTable,
+        onRefreshSchema,
+        onUseSql,
+        parentId: connection.id,
+        t,
+        tableLookup,
+        tables: schema.tables,
+      });
     }
-    for (const [name, catalogSchema] of Object.entries(schemasByCatalog ?? {})) {
-      tablesByCatalog.set(name, catalogSchema.tables);
-    }
-
-    const connectedCatalog = connection.database?.trim() || null;
-
-    return catalogs.map((name) => {
-      const catalogNodeId = `${connection.id}:catalog:${name}`;
-      catalogLookup.set(catalogNodeId, name);
-      const tables = tablesByCatalog.get(name);
-      const loading =
-        (loadingCatalogs?.includes(name) ?? false) ||
-        (name === connectedCatalog && schemaLoading && !tables);
-
-      let children: TreeViewItem[];
-      if (tables) {
-        children = renderCatalogContents({
-          connection,
-          defaultExpandedIds,
-          onPreviewTable,
-          onRefreshSchema,
-          onUseSql,
-          parentId: catalogNodeId,
-          t,
-          tableLookup,
-          tables,
-        });
-        // Auto-expand the connected database; others stay collapsed until the
-        // user opens them.
-        if (name === connectedCatalog) {
-          defaultExpandedIds.add(catalogNodeId);
-        }
-      } else {
-        children = [
-          {
-            disabled: true,
-            id: `${catalogNodeId}:${loading ? "loading" : "placeholder"}`,
-            label: loading ? t("database.tree.loadingSchema") : t("database.tree.expandToLoad"),
-          },
-        ];
-      }
-
-      return {
-        children,
-        icon: <Database size={13} />,
-        id: catalogNodeId,
-        label: name,
-        title: name,
-      };
-    });
+    return [statusChild(key, isLoading(key), errorOf(key), t)];
   }
 
-  if (schemaLoading) {
+  // PostgreSQL / MySQL: one node per server database, each loaded on expand.
+  const namesKey = `names::${connection.id}`;
+  if (!catalogNames) {
+    return [statusChild(namesKey, isLoading(namesKey), errorOf(namesKey), t)];
+  }
+  if (!catalogNames.length) {
     return [
       {
         disabled: true,
-        id: `${connection.id}:loading`,
-        label: "Loading schema...",
+        id: `${connection.id}:no-databases`,
+        label: t("database.tree.noDatabases"),
       },
     ];
   }
 
-  if (!schema) {
-    return [
-      {
-        disabled: true,
-        id: `${connection.id}:schema-empty`,
-        label: "Schema not loaded",
-      },
-    ];
-  }
+  const connectedCatalog = connection.database?.trim() || null;
 
-  if (!schema.tables.length) {
-    return [
-      {
-        disabled: true,
-        id: `${connection.id}:no-tables`,
-        label: "No tables or views found",
-      },
-    ];
-  }
+  return catalogNames.map((name) => {
+    const catalogNodeId = `${connection.id}:catalog:${name}`;
+    catalogLookup.set(catalogNodeId, { connectionId: connection.id, catalog: name });
+    const key = `${connection.id}::${name}`;
+    const schema = schemaCache?.[key];
 
-  // Single-datasource mode (SQLite): one file node containing its objects.
-  const model = buildDatabaseTree(schema.tables);
-
-  return model.catalogs.map((catalog) => {
-    const catalogLabel = catalog.key || databaseLabel(connection);
-    const catalogNodeId = `${connection.id}:catalog:${catalog.key || "default"}`;
-    defaultExpandedIds.add(catalogNodeId);
-    const totalTables = catalog.schemas.reduce((sum, node) => sum + node.tables.length, 0);
-    return {
-      children: renderCatalogContents({
+    let children: TreeViewItem[];
+    if (schema) {
+      children = renderCatalogContents({
         connection,
         defaultExpandedIds,
         onPreviewTable,
@@ -344,15 +293,44 @@ function buildSelectedConnectionChildren({
         parentId: catalogNodeId,
         t,
         tableLookup,
-        tables: catalog.schemas.flatMap((node) => node.tables),
-      }),
+        tables: schema.tables,
+      });
+      // Auto-expand the connected database so it shows useful content as soon
+      // as it loads; other databases stay collapsed until opened.
+      if (name === connectedCatalog) {
+        defaultExpandedIds.add(catalogNodeId);
+      }
+    } else {
+      children = [statusChild(key, isLoading(key), errorOf(key), t)];
+    }
+
+    return {
+      children,
       icon: <Database size={13} />,
       id: catalogNodeId,
-      label: catalogLabel,
-      meta: <Badge tone="neutral">{totalTables}</Badge>,
-      title: catalogLabel,
+      label: name,
+      title: name,
     };
   });
+}
+
+// A disabled child reflecting the load state of a lazily-fetched node: an error
+// message when the fetch failed, a spinner label while in flight, otherwise an
+// "expand to load" hint.
+function statusChild(
+  key: string,
+  loading: boolean,
+  error: string | undefined,
+  t: ReturnType<typeof useI18n>["t"],
+): TreeViewItem {
+  if (error) {
+    return { disabled: true, id: `${key}:error`, label: error, title: error };
+  }
+  return {
+    disabled: true,
+    id: `${key}:${loading ? "loading" : "placeholder"}`,
+    label: loading ? t("database.tree.loadingSchema") : t("database.tree.expandToLoad"),
+  };
 }
 
 // Render the contents of a single catalog (database): PostgreSQL nests schemas,
@@ -371,12 +349,12 @@ function renderCatalogContents({
 }: {
   connection: DatabaseConnection;
   defaultExpandedIds: Set<string>;
-  onPreviewTable?: (table: DatabaseTable) => void;
+  onPreviewTable?: (connectionId: string, table: DatabaseTable) => void;
   onRefreshSchema?: (connection: DatabaseConnection) => void;
   onUseSql?: (sql: string) => void;
   parentId: string;
   t: ReturnType<typeof useI18n>["t"];
-  tableLookup: Map<string, DatabaseTable>;
+  tableLookup: Map<string, { connectionId: string; table: DatabaseTable }>;
   tables: DatabaseTable[];
 }): TreeViewItem[] {
   if (!tables.length) {
@@ -446,11 +424,11 @@ function buildTableGroups({
 }: {
   connection: DatabaseConnection;
   defaultExpandedIds: Set<string>;
-  onPreviewTable?: (table: DatabaseTable) => void;
+  onPreviewTable?: (connectionId: string, table: DatabaseTable) => void;
   onUseSql?: (sql: string) => void;
   parentId: string;
   t: ReturnType<typeof useI18n>["t"];
-  tableLookup: Map<string, DatabaseTable>;
+  tableLookup: Map<string, { connectionId: string; table: DatabaseTable }>;
   tables: DatabaseTable[];
 }): TreeViewItem[] {
   const baseTables = tables.filter((table) => !isViewKind(table.kind));
@@ -500,17 +478,17 @@ function tableItem({
   tableLookup,
 }: {
   connection: DatabaseConnection;
-  onPreviewTable?: (table: DatabaseTable) => void;
+  onPreviewTable?: (connectionId: string, table: DatabaseTable) => void;
   onUseSql?: (sql: string) => void;
   t: ReturnType<typeof useI18n>["t"];
   table: DatabaseTable;
-  tableLookup: Map<string, DatabaseTable>;
+  tableLookup: Map<string, { connectionId: string; table: DatabaseTable }>;
 }): TreeViewItem {
   const id = databaseTableTreeId(connection.id, table);
-  tableLookup.set(id, table);
+  tableLookup.set(id, { connectionId: connection.id, table });
   return {
     actions: onPreviewTable ? (
-      <IconButton label={`Open preview for ${table.name}`} onClick={() => onPreviewTable(table)} size="compact">
+      <IconButton label={`Open preview for ${table.name}`} onClick={() => onPreviewTable(connection.id, table)} size="compact">
         <Play size={12} />
       </IconButton>
     ) : undefined,
@@ -546,7 +524,7 @@ function TableContextMenu({
   table,
 }: {
   connection: DatabaseConnection;
-  onPreviewTable?: (table: DatabaseTable) => void;
+  onPreviewTable?: (connectionId: string, table: DatabaseTable) => void;
   onUseSql?: (sql: string) => void;
   t: ReturnType<typeof useI18n>["t"];
   table: DatabaseTable;
@@ -554,7 +532,7 @@ function TableContextMenu({
   return (
     <>
       {onPreviewTable && (
-        <ContextMenuItem onSelect={() => onPreviewTable(table)}>
+        <ContextMenuItem onSelect={() => onPreviewTable(connection.id, table)}>
           {t("database.tree.previewData")}
         </ContextMenuItem>
       )}
@@ -721,28 +699,11 @@ function ConnectionContextMenu({
 }
 
 function resolveConnectionStatus({
-  hasSchema,
-  selected,
   session,
 }: {
-  hasSchema: boolean;
-  selected: boolean;
   session?: DatabaseConnectionSessionState;
 }): DatabaseConnectionStatus {
-  if (session?.status) {
-    return session.status;
-  }
-  if (selected && hasSchema) {
-    return "connected";
-  }
-  return "disconnected";
-}
-
-function databaseLabel(connection: DatabaseConnection) {
-  if (connection.driver === "sqlite") {
-    return connection.sqlitePath?.split(/[\\/]/).pop() || connection.name;
-  }
-  return connection.database || connection.name;
+  return session?.status ?? "disconnected";
 }
 
 function connectionStateTitle(

@@ -15,10 +15,11 @@ import type { DatabaseConnectionSessionState } from "../model/types";
  * provides the mount surface.
  */
 export function DatabaseSidebar({
-  catalogs,
+  catalogNamesByConnection,
   connectionStates,
   connections,
-  loadingCatalogs,
+  loadErrors,
+  loadingKeys,
   onConnect,
   onDeleteConnection,
   onDisconnect,
@@ -31,33 +32,32 @@ export function DatabaseSidebar({
   onSelectConnection,
   onSelectTable,
   onToggleCatalog,
+  onToggleConnection,
   onUseSql,
-  schema,
-  schemaLoading,
-  schemasByCatalog,
+  schemaCache,
   selectedConnectionId,
   selectedTableId,
 }: {
-  catalogs?: string[];
+  catalogNamesByConnection?: Record<string, string[]>;
   connectionStates?: Record<string, DatabaseConnectionSessionState>;
   connections: DatabaseConnection[];
-  loadingCatalogs?: string[];
+  loadErrors?: Record<string, string>;
+  loadingKeys?: string[];
   onConnect: (connection: DatabaseConnection) => void;
   onDeleteConnection: (connection: DatabaseConnection) => void;
   onDisconnect: (connection: DatabaseConnection) => void;
   onEditConnection: (connection: DatabaseConnection) => void;
   onNewConnection: () => void;
   onNewQuery: () => void;
-  onPreviewTable: (table: DatabaseTable) => void;
+  onPreviewTable: (connectionId: string, table: DatabaseTable) => void;
   onRefresh: () => void;
   onRefreshSchema: (connection: DatabaseConnection) => void;
   onSelectConnection: (connection: DatabaseConnection) => void;
-  onSelectTable: (table: DatabaseTable) => void;
-  onToggleCatalog: (catalog: string) => void;
+  onSelectTable: (connectionId: string, table: DatabaseTable) => void;
+  onToggleCatalog: (connectionId: string, catalog: string) => void;
+  onToggleConnection: (connection: DatabaseConnection) => void;
   onUseSql: (sql: string) => void;
-  schema?: DatabaseSchema;
-  schemaLoading?: boolean;
-  schemasByCatalog?: Record<string, DatabaseSchema>;
+  schemaCache?: Record<string, DatabaseSchema>;
   selectedConnectionId: string | null;
   selectedTableId?: string | null;
 }) {
@@ -82,10 +82,11 @@ export function DatabaseSidebar({
       </div>
       <div className="min-h-0 flex-1 overflow-auto">
         <DatabaseConnectionTree
-          catalogs={catalogs}
+          catalogNamesByConnection={catalogNamesByConnection}
           connectionStates={connectionStates}
           connections={connections}
-          loadingCatalogs={loadingCatalogs}
+          loadErrors={loadErrors}
+          loadingKeys={loadingKeys}
           onConnect={onConnect}
           onDeleteConnection={onDeleteConnection}
           onDisconnect={onDisconnect}
@@ -97,10 +98,9 @@ export function DatabaseSidebar({
           onSelectConnection={onSelectConnection}
           onSelectTable={onSelectTable}
           onToggleCatalog={onToggleCatalog}
+          onToggleConnection={onToggleConnection}
           onUseSql={onUseSql}
-          schema={schema}
-          schemaLoading={schemaLoading}
-          schemasByCatalog={schemasByCatalog}
+          schemaCache={schemaCache}
           selectedConnectionId={selectedConnectionId}
           selectedTableId={selectedTableId}
         />

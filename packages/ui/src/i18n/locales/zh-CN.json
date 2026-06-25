@@ -432,6 +432,8 @@
     "tree": {
       "actionsLabel": "{name} 的数据库操作",
       "copyName": "复制连接名称",
+      "connectToBrowse": "连接后浏览数据库",
+      "connectionFailed": "连接失败",
       "copyTableName": "复制表名",
       "deleteBody": "删除连接“{name}”？这会移除其已保存的设置，且无法撤销。",
       "deleteConnection": "删除连接",
@@ -441,6 +443,7 @@
       "generateInsert": "生成 INSERT 语句",
       "generateSelect": "生成 SELECT 语句",
       "loadingSchema": "加载中…",
+      "noDatabases": "未找到数据库",
       "previewData": "预览数据",
       "tablesGroup": "表",
       "viewsGroup": "视图"

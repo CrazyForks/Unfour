@@ -432,6 +432,8 @@
     },
     "tree": {
       "actionsLabel": "Database actions for {name}",
+      "connectToBrowse": "Connect to browse databases",
+      "connectionFailed": "Connection failed",
       "copyName": "Copy Connection Name",
       "copyTableName": "Copy Table Name",
       "deleteBody": "Delete connection \"{name}\"? This removes its saved settings and cannot be undone.",
@@ -442,6 +444,7 @@
       "generateInsert": "Generate INSERT Statement",
       "generateSelect": "Generate SELECT Statement",
       "loadingSchema": "Loading…",
+      "noDatabases": "No databases found",
       "previewData": "Preview Data",
       "tablesGroup": "Tables",
       "viewsGroup": "Views"

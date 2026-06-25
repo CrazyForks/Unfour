@@ -5,6 +5,7 @@ import {
   createCredential,
   deleteDatabaseConnection,
   getDatabaseSchema,
+  listDatabaseCatalogs,
   mutateDatabaseRow,
   rotateCredential,
   saveDatabaseConnection,
@@ -91,10 +92,15 @@ export function DatabasePage({
     catalog: null,
     schema: null,
   });
-  // PostgreSQL cannot cross-database query, so each non-connected database's
-  // schema is fetched lazily when its tree node is expanded and cached here.
-  const [schemasByCatalog, setSchemasByCatalog] = useState<Record<string, DatabaseSchema>>({});
-  const [loadingCatalogs, setLoadingCatalogs] = useState<string[]>([]);
+  // Per-connection tree data so multiple connections can be browsed at once.
+  // catalogNamesByConn: connectionId -> database names (PostgreSQL/MySQL).
+  // treeSchemaCache: `${connectionId}::${catalog}` -> that database's schema
+  // ("" catalog for SQLite). Both are populated lazily as nodes are expanded;
+  // the selected connection's data is fed in from its own queries.
+  const [catalogNamesByConn, setCatalogNamesByConn] = useState<Record<string, string[]>>({});
+  const [treeSchemaCache, setTreeSchemaCache] = useState<Record<string, DatabaseSchema>>({});
+  const [treeLoadingKeys, setTreeLoadingKeys] = useState<string[]>([]);
+  const [treeErrors, setTreeErrors] = useState<Record<string, string>>({});
   const [password, setPassword] = useState("");
   const [form, setForm] = useState<DatabaseConnectionInput>({
     workspaceId,
@@ -136,17 +142,6 @@ export function DatabasePage({
     workspaceId,
   });
   const visibleSchema = schemaEnabled ? schemaQuery.data : undefined;
-  // Catalogs already present in the initial schema load (the connected database
-  // for PostgreSQL, every database for MySQL) never need a lazy fetch.
-  const eagerCatalogs = useMemo(() => {
-    const names = new Set<string>();
-    for (const table of schemaQuery.data?.tables ?? []) {
-      if (table.catalog) {
-        names.add(table.catalog);
-      }
-    }
-    return names;
-  }, [schemaQuery.data]);
   const treeModel = useMemo(
     () => (visibleSchema ? buildDatabaseTree(visibleSchema.tables) : null),
     [visibleSchema],
@@ -267,6 +262,46 @@ export function DatabasePage({
       status: "failed",
     });
   }, [schemaEnabled, schemaQuery.error, selectedConnectionId]);
+
+  // Feed the selected connection's database list into the per-connection cache
+  // so its tree renders without a manual expand.
+  useEffect(() => {
+    if (!selectedConnectionId || !catalogsQuery.data) {
+      return;
+    }
+    const names = catalogsQuery.data;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- mirroring the selected connection's loaded catalogs into the shared cache
+    setCatalogNamesByConn((prev) => ({ ...prev, [selectedConnectionId]: names }));
+  }, [selectedConnectionId, catalogsQuery.data]);
+
+  // Feed the selected connection's loaded schema into the cache, grouped by
+  // catalog (the connected database for PostgreSQL, every database for MySQL,
+  // the file for SQLite under the "" catalog key).
+  const selectedSchemaData = schemaQuery.data;
+  useEffect(() => {
+    if (!selectedConnectionId || !selectedSchemaData) {
+      return;
+    }
+    const grouped = new Map<string, DatabaseTable[]>();
+    for (const table of selectedSchemaData.tables) {
+      const key = table.catalog ?? "";
+      grouped.set(key, [...(grouped.get(key) ?? []), table]);
+    }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- mirroring the selected connection's loaded schema into the shared cache
+    setTreeSchemaCache((prev) => {
+      const next = { ...prev };
+      if (grouped.size === 0) {
+        next[`${selectedConnectionId}::`] = selectedSchemaData;
+      }
+      for (const [catalog, tables] of grouped) {
+        next[`${selectedConnectionId}::${catalog}`] = {
+          connectionId: selectedConnectionId,
+          tables,
+        };
+      }
+      return next;
+    });
+  }, [selectedConnectionId, selectedSchemaData]);
 
   // Keep the query context pointed at a valid catalog/schema as the schema
   // loads or changes. Preserves a still-valid user selection; otherwise falls
@@ -428,7 +463,6 @@ export function DatabasePage({
   });
 
   const browseMutation = useTableData({
-    connectionId: selectedConnectionId,
     onBrowseStart: () => {
       setClientError(null);
       setPendingSqlConfirmation(false);
@@ -525,41 +559,73 @@ export function DatabasePage({
     setTableView(null);
     setQueryResult(null);
     // Drop the previous datasource's context; the schema-load effect repopulates
-    // a valid default for the newly selected connection.
+    // a valid default for the newly selected connection. The per-connection tree
+    // caches are kept so other connections stay expanded.
     setQueryContext({ catalog: null, schema: null });
-    setSchemasByCatalog({});
-    setLoadingCatalogs([]);
+  }
+
+  // Load a connection's databases when its tree node is expanded: SQLite loads
+  // its single file schema directly; PostgreSQL/MySQL load the database list.
+  function loadConnectionRoot(connection: DatabaseConnection) {
+    if (connection.driver === "sqlite") {
+      loadCatalogSchema(connection.id, "");
+      return;
+    }
+    loadCatalogNames(connection.id);
+  }
+
+  function loadCatalogNames(connectionId: string) {
+    const key = `names::${connectionId}`;
+    if (catalogNamesByConn[connectionId] || treeLoadingKeys.includes(key)) {
+      return;
+    }
+    setTreeLoadingKeys((current) => [...current, key]);
+    queryClient
+      .fetchQuery({
+        queryKey: ["database-catalogs", workspaceId, connectionId],
+        queryFn: () => listDatabaseCatalogs(workspaceId, connectionId),
+      })
+      .then((names) => {
+        setCatalogNamesByConn((prev) => ({ ...prev, [connectionId]: names }));
+        clearTreeError(key);
+      })
+      .catch((error) => setTreeError(key, error))
+      .finally(() => setTreeLoadingKeys((current) => current.filter((item) => item !== key)));
   }
 
   // Lazily fetch a database (catalog) schema when its tree node is expanded.
-  // PostgreSQL needs a separate connection per database; the connected database
-  // and all MySQL databases already arrive in the initial schema load, so they
-  // are skipped here.
-  function loadCatalog(catalog: string) {
-    if (!selectedConnectionId || !selectedConnection) {
+  function loadCatalogSchema(connectionId: string, catalog: string) {
+    const key = `${connectionId}::${catalog}`;
+    if (treeSchemaCache[key] || treeLoadingKeys.includes(key)) {
       return;
     }
-    if (catalog === (selectedConnection.database ?? null) || eagerCatalogs.has(catalog)) {
-      return;
-    }
-    if (schemasByCatalog[catalog] || loadingCatalogs.includes(catalog)) {
-      return;
-    }
-    setLoadingCatalogs((current) => [...current, catalog]);
+    setTreeLoadingKeys((current) => [...current, key]);
     queryClient
       .fetchQuery({
-        queryKey: ["database-schema", workspaceId, selectedConnectionId, catalog],
-        queryFn: () => getDatabaseSchema(workspaceId, selectedConnectionId, catalog),
+        queryKey: ["database-schema", workspaceId, connectionId, catalog || null],
+        queryFn: () => getDatabaseSchema(workspaceId, connectionId, catalog || null),
       })
       .then((data) => {
-        setSchemasByCatalog((prev) => ({ ...prev, [catalog]: data }));
+        setTreeSchemaCache((prev) => ({ ...prev, [key]: data }));
+        clearTreeError(key);
       })
-      .catch((error) => {
-        setClientError(error);
-      })
-      .finally(() => {
-        setLoadingCatalogs((current) => current.filter((name) => name !== catalog));
-      });
+      .catch((error) => setTreeError(key, error))
+      .finally(() => setTreeLoadingKeys((current) => current.filter((item) => item !== key)));
+  }
+
+  function setTreeError(key: string, error: unknown) {
+    setTreeErrors((prev) => ({ ...prev, [key]: formatDatabaseError(error) }));
+  }
+
+  function clearTreeError(key: string) {
+    setTreeErrors((prev) => {
+      if (!(key in prev)) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
   }
 
   function connectConnection(connection: DatabaseConnection) {
@@ -617,10 +683,41 @@ export function DatabasePage({
       return;
     }
 
-    // Drop cached lazily-loaded catalog schemas so they re-fetch on next expand.
-    setSchemasByCatalog({});
-    setLoadingCatalogs([]);
+    // Drop this connection's cached tree data so it re-fetches on next expand.
+    clearConnectionTreeCache(connection.id);
     queryClient.invalidateQueries({ queryKey: ["database-schema", workspaceId, connection.id] });
+    queryClient.invalidateQueries({ queryKey: ["database-catalogs", workspaceId, connection.id] });
+  }
+
+  // Remove a single connection's entries from the per-connection tree caches.
+  function clearConnectionTreeCache(connectionId: string) {
+    const prefix = `${connectionId}::`;
+    setCatalogNamesByConn((prev) => {
+      if (!(connectionId in prev)) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next[connectionId];
+      return next;
+    });
+    setTreeSchemaCache((prev) => {
+      const next: Record<string, DatabaseSchema> = {};
+      for (const [key, value] of Object.entries(prev)) {
+        if (!key.startsWith(prefix)) {
+          next[key] = value;
+        }
+      }
+      return next;
+    });
+    setTreeErrors((prev) => {
+      const next: Record<string, string> = {};
+      for (const [key, value] of Object.entries(prev)) {
+        if (!key.startsWith(prefix) && key !== `names::${connectionId}`) {
+          next[key] = value;
+        }
+      }
+      return next;
+    });
   }
 
   function refreshSelectedSchema() {
@@ -630,7 +727,12 @@ export function DatabasePage({
     refreshConnectionSchema(selectedConnection);
   }
 
-  function selectTable(table: DatabaseTable) {
+  function selectTable(connectionId: string, table: DatabaseTable) {
+    // Selecting a table in another connection makes that connection active so
+    // structure, editing, and query context follow the object.
+    if (connectionId !== selectedConnectionId) {
+      selectConnection(connectionId);
+    }
     setSelectedTable(table);
     setClientError(null);
     applyContextFromTable(table);
@@ -655,22 +757,22 @@ export function DatabasePage({
     });
   }
 
-  function browseTablePage(table: DatabaseTable, pageIndex: number, pageSize: number) {
-    if (!selectedConnectionId) {
-      setClientError({
-        code: "VALIDATION_ERROR",
-        message: t("database.errors.selectBeforePreview"),
-      });
-      layout.setResultTab("results");
-      return;
+  function browseTablePage(
+    connectionId: string,
+    table: DatabaseTable,
+    pageIndex: number,
+    pageSize: number,
+  ) {
+    if (connectionId !== selectedConnectionId) {
+      selectConnection(connectionId);
     }
-
     setSelectedTable(table);
     setClientError(null);
     applyContextFromTable(table);
     executeMutation.reset();
     browseMutation.reset();
     browseMutation.mutate({
+      connectionId,
       catalog: table.catalog,
       pageIndex: Math.max(0, pageIndex),
       pageSize,
@@ -680,15 +782,15 @@ export function DatabasePage({
   }
 
   function previewSelectedTable() {
-    if (!selectedTable) {
+    if (!selectedConnectionId || !selectedTable) {
       return;
     }
-    browseTablePage(selectedTable, 0, tableView?.pageSize ?? DEFAULT_PREVIEW_PAGE_SIZE);
+    browseTablePage(selectedConnectionId, selectedTable, 0, tableView?.pageSize ?? DEFAULT_PREVIEW_PAGE_SIZE);
   }
 
   function refreshTablePage() {
-    if (selectedTable && tableView) {
-      browseTablePage(selectedTable, tableView.pageIndex, tableView.pageSize);
+    if (selectedConnectionId && selectedTable && tableView) {
+      browseTablePage(selectedConnectionId, selectedTable, tableView.pageIndex, tableView.pageSize);
     }
   }
 
@@ -846,12 +948,13 @@ export function DatabasePage({
     edit: (connection: DatabaseConnection) => void;
     newConnection: () => void;
     newQuery: () => void;
-    previewTable: (table: DatabaseTable) => void;
+    previewTable: (connectionId: string, table: DatabaseTable) => void;
     refresh: () => void;
     refreshSchema: (connection: DatabaseConnection) => void;
     selectConnection: (connection: DatabaseConnection) => void;
-    selectTable: (table: DatabaseTable) => void;
-    toggleCatalog: (catalog: string) => void;
+    selectTable: (connectionId: string, table: DatabaseTable) => void;
+    toggleCatalog: (connectionId: string, catalog: string) => void;
+    toggleConnection: (connection: DatabaseConnection) => void;
     useSql: (sql: string) => void;
   } | null>(null);
   sidebarActionsRef.current = {
@@ -861,12 +964,14 @@ export function DatabasePage({
     edit: handleEditConnection,
     newConnection: handleNewConnection,
     newQuery: startNewQuery,
-    previewTable: (table) => browseTablePage(table, 0, tableView?.pageSize ?? DEFAULT_PREVIEW_PAGE_SIZE),
+    previewTable: (connectionId, table) =>
+      browseTablePage(connectionId, table, 0, tableView?.pageSize ?? DEFAULT_PREVIEW_PAGE_SIZE),
     refresh: refreshConnectionsAndSchema,
     refreshSchema: refreshConnectionSchema,
     selectConnection: (connection) => selectConnection(connection.id),
     selectTable,
-    toggleCatalog: loadCatalog,
+    toggleCatalog: loadCatalogSchema,
+    toggleConnection: loadConnectionRoot,
     useSql: loadSqlIntoEditor,
   };
 
@@ -878,45 +983,46 @@ export function DatabasePage({
       onEditConnection: (connection: DatabaseConnection) => sidebarActionsRef.current?.edit(connection),
       onNewConnection: () => sidebarActionsRef.current?.newConnection(),
       onNewQuery: () => sidebarActionsRef.current?.newQuery(),
-      onPreviewTable: (table: DatabaseTable) => sidebarActionsRef.current?.previewTable(table),
+      onPreviewTable: (connectionId: string, table: DatabaseTable) =>
+        sidebarActionsRef.current?.previewTable(connectionId, table),
       onRefresh: () => sidebarActionsRef.current?.refresh(),
       onRefreshSchema: (connection: DatabaseConnection) => sidebarActionsRef.current?.refreshSchema(connection),
       onSelectConnection: (connection: DatabaseConnection) => sidebarActionsRef.current?.selectConnection(connection),
-      onSelectTable: (table: DatabaseTable) => sidebarActionsRef.current?.selectTable(table),
-      onToggleCatalog: (catalog: string) => sidebarActionsRef.current?.toggleCatalog(catalog),
+      onSelectTable: (connectionId: string, table: DatabaseTable) =>
+        sidebarActionsRef.current?.selectTable(connectionId, table),
+      onToggleCatalog: (connectionId: string, catalog: string) =>
+        sidebarActionsRef.current?.toggleCatalog(connectionId, catalog),
+      onToggleConnection: (connection: DatabaseConnection) =>
+        sidebarActionsRef.current?.toggleConnection(connection),
       onUseSql: (sql: string) => sidebarActionsRef.current?.useSql(sql),
     }),
     [],
   );
 
-  const schemaLoadingFlag = schemaEnabled && schemaQuery.isFetching;
-  const catalogList = schemaEnabled ? catalogsQuery.data : undefined;
   const shellSidebar = useMemo(
     () => (
       <DatabaseSidebar
-        catalogs={catalogList}
+        catalogNamesByConnection={catalogNamesByConn}
         connectionStates={connectionStates}
         connections={connections}
-        loadingCatalogs={loadingCatalogs}
-        schema={visibleSchema}
-        schemaLoading={schemaLoadingFlag}
-        schemasByCatalog={schemasByCatalog}
+        loadErrors={treeErrors}
+        loadingKeys={treeLoadingKeys}
+        schemaCache={treeSchemaCache}
         selectedConnectionId={selectedConnectionId}
         selectedTableId={selectedTableId}
         {...sidebarHandlers}
       />
     ),
     [
-      catalogList,
+      catalogNamesByConn,
       connectionStates,
       connections,
-      loadingCatalogs,
-      schemaLoadingFlag,
-      schemasByCatalog,
       selectedConnectionId,
       selectedTableId,
       sidebarHandlers,
-      visibleSchema,
+      treeErrors,
+      treeLoadingKeys,
+      treeSchemaCache,
     ],
   );
 
@@ -995,7 +1101,11 @@ export function DatabasePage({
           onShowHistory={showQueryHistory}
           onSqlChange={setSql}
           onStop={() => undefined}
-          onTablePageChange={(pageIndex, pageSize) => selectedTable && browseTablePage(selectedTable, pageIndex, pageSize)}
+          onTablePageChange={(pageIndex, pageSize) =>
+            selectedConnectionId &&
+            selectedTable &&
+            browseTablePage(selectedConnectionId, selectedTable, pageIndex, pageSize)
+          }
           pendingConfirmation={pendingSqlConfirmation}
           queryResult={queryResult}
           schema={visibleSchema}

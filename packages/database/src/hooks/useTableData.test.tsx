@@ -36,7 +36,6 @@ describe("useTableData", () => {
     const { result } = renderHook(
       () =>
         useTableData({
-          connectionId: "conn-1",
           onBrowseStart,
           onSuccess,
           workspaceId: "ws-1",
@@ -45,6 +44,7 @@ describe("useTableData", () => {
     );
 
     result.current.mutate({
+      connectionId: "conn-1",
       pageIndex: 2,
       pageSize: 25,
       schema: "public",
@@ -64,13 +64,12 @@ describe("useTableData", () => {
     });
   });
 
-  it("falls back to an empty connection id when none is provided", async () => {
+  it("browses the connection passed in the mutate call", async () => {
     browseMock.mockResolvedValue({} as DatabaseBrowseResult);
 
     const { result } = renderHook(
       () =>
         useTableData({
-          connectionId: null,
           onBrowseStart: vi.fn(),
           onSuccess: vi.fn(),
           workspaceId: "ws-1",
@@ -78,11 +77,11 @@ describe("useTableData", () => {
       { wrapper: createWrapper() },
     );
 
-    result.current.mutate({ pageIndex: 0, pageSize: 10, tableName: "logs" });
+    result.current.mutate({ connectionId: "conn-2", pageIndex: 0, pageSize: 10, tableName: "logs" });
 
     await waitFor(() => expect(browseMock).toHaveBeenCalled());
     expect(browseMock).toHaveBeenCalledWith(
-      expect.objectContaining({ connectionId: "", offset: 0, limit: 10 }),
+      expect.objectContaining({ connectionId: "conn-2", offset: 0, limit: 10 }),
     );
   });
 });
