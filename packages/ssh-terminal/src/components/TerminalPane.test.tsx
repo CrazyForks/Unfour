@@ -1,13 +1,15 @@
 // @vitest-environment jsdom
 import { render, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { SshSessionSummary } from "@unfour/command-client";
+import type { SshSessionEvent, SshSessionSummary } from "@unfour/command-client";
 import { TerminalPane } from "./TerminalPane";
 
 const terminalState = vi.hoisted(() => ({
   cols: 120,
   rows: 32,
+  dataHandlers: [] as Array<(data: string) => void>,
   resizeHandlers: [] as Array<(size: { cols: number; rows: number }) => void>,
+  writes: [] as string[],
 }));
 
 vi.mock("@tauri-apps/api/event", () => ({
@@ -29,7 +31,10 @@ vi.mock("@xterm/xterm", () => ({
       getSelection: vi.fn(() => ""),
       hasSelection: vi.fn(() => false),
       loadAddon: vi.fn(),
-      onData: vi.fn(() => ({ dispose: vi.fn() })),
+      onData: vi.fn((handler: (data: string) => void) => {
+        terminalState.dataHandlers.push(handler);
+        return { dispose: vi.fn() };
+      }),
       onResize: vi.fn((handler) => {
         terminalState.resizeHandlers.push(handler);
         return { dispose: vi.fn() };
@@ -38,7 +43,7 @@ vi.mock("@xterm/xterm", () => ({
         terminalState.openElement = element;
       }),
       reset: vi.fn(),
-      write: vi.fn(),
+      write: vi.fn((data: string) => terminalState.writes.push(data)),
     };
   }),
 }));
@@ -77,9 +82,10 @@ vi.mock("@unfour/ui", async (importOriginal) => {
   };
 });
 
-import { resizeSshSession } from "@unfour/command-client";
+import { resizeSshSession, sendSshInput } from "@unfour/command-client";
 
 const resizeMock = vi.mocked(resizeSshSession);
+const sendInputMock = vi.mocked(sendSshInput);
 
 const session: SshSessionSummary = {
   authKind: "password",
@@ -101,8 +107,11 @@ describe("TerminalPane", () => {
   beforeEach(() => {
     terminalState.cols = 120;
     terminalState.rows = 32;
+    terminalState.dataHandlers = [];
     terminalState.resizeHandlers = [];
+    terminalState.writes = [];
     resizeMock.mockClear();
+    sendInputMock.mockReset();
   });
 
   it("syncs the fitted terminal size to the SSH session even without an xterm resize event", async () => {
@@ -143,6 +152,98 @@ describe("TerminalPane", () => {
     expect(terminalState.openElement?.parentElement).toHaveClass("p-2");
   });
 
+  it("serializes terminal input chunks for interactive programs", async () => {
+    let resolveFirst: (() => void) | null = null;
+    sendInputMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveFirst = () =>
+            resolve({
+              sessionId: "session-1",
+              kind: "output",
+              data: "first accepted\r\n",
+              createdAt: "2026-06-23T00:00:01.000Z",
+            });
+        }),
+    );
+    sendInputMock.mockResolvedValue({
+      sessionId: "session-1",
+      kind: "output",
+      data: "next accepted\r\n",
+      createdAt: "2026-06-23T00:00:02.000Z",
+    });
+
+    render(
+      <TerminalPane
+        active
+        events={[]}
+        inputDisabled={false}
+        readOnly={false}
+        session={session}
+      />,
+    );
+
+    terminalState.dataHandlers[0]?.("i");
+    terminalState.dataHandlers[0]?.("hello");
+
+    await waitFor(() => expect(sendInputMock).toHaveBeenCalledTimes(1));
+    expect(sendInputMock).toHaveBeenLastCalledWith({
+      workspaceId: "ws-1",
+      sessionId: "session-1",
+      data: "i",
+    });
+
+    resolveFirst?.();
+
+    await waitFor(() => expect(sendInputMock).toHaveBeenCalledTimes(2));
+    expect(sendInputMock).toHaveBeenLastCalledWith({
+      workspaceId: "ws-1",
+      sessionId: "session-1",
+      data: "hello",
+    });
+  });
+  it("writes appended output when a coalesced event grows", async () => {
+    const firstEvent: SshSessionEvent = {
+      sessionId: "session-1",
+      kind: "output",
+      data: "line 1\r\n",
+      createdAt: "2026-06-23T00:00:01.000Z",
+    };
+    const { rerender } = render(
+      <TerminalPane
+        active
+        events={[firstEvent]}
+        inputDisabled={false}
+        readOnly={false}
+        session={session}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(terminalState.writes.some((data) => data.includes("line 1"))).toBe(true),
+    );
+    terminalState.writes = [];
+
+    rerender(
+      <TerminalPane
+        active
+        events={[
+          {
+            ...firstEvent,
+            data: "line 1\r\nline 2\r\n",
+            createdAt: "2026-06-23T00:00:02.000Z",
+          },
+        ]}
+        inputDisabled={false}
+        readOnly={false}
+        session={session}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(terminalState.writes.some((data) => data.includes("line 2"))).toBe(true),
+    );
+  });
   it("resyncs the current terminal size when switching to a different SSH session", async () => {
     const { rerender } = render(
       <TerminalPane

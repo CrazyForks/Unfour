@@ -32,7 +32,9 @@ export function TerminalPane({
   const fitAddonRef = useRef<FitAddon | null>(null);
   const searchAddonRef = useRef<SearchAddon | null>(null);
   const lastSizeRef = useRef<{ cols: number; rows: number } | null>(null);
+  const inputQueueRef = useRef(Promise.resolve());
   const renderedEventsRef = useRef(0);
+  const renderedEventDataLengthsRef = useRef<number[]>([]);
   const renderedSessionIdRef = useRef<string | null>(null);
 
   const appendTerminalEvents = useTerminalStore((s) => s.appendTerminalEvents);
@@ -55,19 +57,23 @@ export function TerminalPane({
     onSendInputRef.current =
       sessionId && workspaceId && !readOnly && !inputDisabled
         ? (data: string) => {
-            sendSshInput({
-              workspaceId,
-              sessionId,
-              data,
-            })
-              .then((event) => {
-                if (!isTauriRuntime()) {
-                  appendTerminalEvents([event]);
-                }
-              })
-              .catch(() => {
-                /* swallow – output stream still works */
-              });
+            inputQueueRef.current = inputQueueRef.current
+              .catch(() => undefined)
+              .then(() =>
+                sendSshInput({
+                  workspaceId,
+                  sessionId,
+                  data,
+                })
+                  .then((event) => {
+                    if (!isTauriRuntime()) {
+                      appendTerminalEvents([event]);
+                    }
+                  })
+                  .catch(() => {
+                    /* swallow – output stream still works */
+                  }),
+              );
           }
         : null;
 
@@ -207,6 +213,7 @@ export function TerminalPane({
       searchAddonRef.current = null;
       lastSizeRef.current = null;
       renderedEventsRef.current = 0;
+      renderedEventDataLengthsRef.current = [];
     };
   }, []);
 
@@ -256,11 +263,13 @@ export function TerminalPane({
     if (sessionChanged) {
       terminal.reset();
       renderedEventsRef.current = 0;
+      renderedEventDataLengthsRef.current = [];
       renderedSessionIdRef.current = sessionId;
     } else if (events.length < renderedEventsRef.current) {
       // The session's events were cleared/truncated; redraw from scratch.
       terminal.reset();
       renderedEventsRef.current = 0;
+      renderedEventDataLengthsRef.current = [];
     }
 
     if (events.length === 0 && renderedEventsRef.current === 0) {
@@ -284,14 +293,25 @@ export function TerminalPane({
     // a tab switch forced a full replay. Painting solely from the store removes
     // that race without adding re-renders (the global listener drives them
     // either way).
-    events.slice(renderedEventsRef.current).forEach((event) => {
+    events.slice(0, renderedEventsRef.current).forEach((event, index) => {
+      const renderedLength = renderedEventDataLengthsRef.current[index] ?? 0;
+      if (event.kind === "output" && event.data.length > renderedLength) {
+        terminal.write(redactTerminalLog(event.data.slice(renderedLength)));
+        renderedEventDataLengthsRef.current[index] = event.data.length;
+      }
+    });
+
+    events.slice(renderedEventsRef.current).forEach((event, index) => {
+      const eventIndex = renderedEventsRef.current + index;
       const data =
         event.kind === "input"
           ? `$ ${redactTerminalLog(event.data)}`
           : redactTerminalLog(event.data);
       terminal.write(event.kind === "output" ? data : ensureNewline(data));
+      renderedEventDataLengthsRef.current[eventIndex] = event.data.length;
     });
     renderedEventsRef.current = events.length;
+    renderedEventDataLengthsRef.current.length = events.length;
   }, [events, session]);
 
   return (

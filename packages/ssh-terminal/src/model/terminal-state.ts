@@ -71,7 +71,7 @@ export const useTerminalStore = create<TerminalStore>((set) => ({
     ),
   appendTerminalEvents: (events) =>
     set((state) => ({
-      terminalEvents: [...state.terminalEvents, ...events],
+      terminalEvents: appendCoalescedTerminalEvents(state.terminalEvents, events),
     })),
   clearTerminalSessionEvents: (sessionId) =>
     set((state) => ({
@@ -128,6 +128,30 @@ export const useTerminalStore = create<TerminalStore>((set) => ({
   setTerminalInput: (terminalInput) => set({ terminalInput }),
 }));
 
+function appendCoalescedTerminalEvents(
+  currentEvents: SshSessionEvent[],
+  nextEvents: SshSessionEvent[],
+) {
+  const terminalEvents = [...currentEvents];
+  for (const event of nextEvents) {
+    const previous = terminalEvents[terminalEvents.length - 1];
+    if (
+      previous?.sessionId === event.sessionId &&
+      previous.kind === "output" &&
+      event.kind === "output"
+    ) {
+      terminalEvents[terminalEvents.length - 1] = {
+        ...previous,
+        data: `${previous.data}${event.data}`,
+        createdAt: event.createdAt,
+      };
+      continue;
+    }
+
+    terminalEvents.push(event);
+  }
+  return terminalEvents;
+}
 export function redactTerminalLog(value: string) {
   return value
     .split(/\r?\n/)

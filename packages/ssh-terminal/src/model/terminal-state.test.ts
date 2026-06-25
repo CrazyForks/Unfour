@@ -52,7 +52,7 @@ describe("terminal-state store", () => {
     expect(useTerminalStore.getState().workspaceId).toBe("ws-1");
   });
 
-  it("appends terminal events from streaming", () => {
+  it("coalesces adjacent streaming output chunks for the same session", () => {
     resetStore();
     const store = useTerminalStore.getState();
 
@@ -74,9 +74,39 @@ describe("terminal-state store", () => {
     ]);
 
     const events = useTerminalStore.getState().terminalEvents;
-    expect(events).toHaveLength(2);
-    expect(events[0].data).toBe("line 1\r\n");
-    expect(events[1].data).toBe("line 2\r\n");
+    expect(events).toHaveLength(1);
+    expect(events[0].data).toBe("line 1\r\nline 2\r\n");
+    expect(events[0].createdAt).toBe("2026-01-01T00:00:01Z");
+  });
+
+  it("keeps input and different sessions as separate terminal events", () => {
+    resetStore();
+    const store = useTerminalStore.getState();
+
+    store.appendTerminalEvents([
+      {
+        sessionId: "s1",
+        kind: "output",
+        data: "line 1\r\n",
+        createdAt: "2026-01-01T00:00:00Z",
+      },
+      {
+        sessionId: "s1",
+        kind: "input",
+        data: "vim file.txt",
+        createdAt: "2026-01-01T00:00:01Z",
+      },
+      {
+        sessionId: "s2",
+        kind: "output",
+        data: "line 2\r\n",
+        createdAt: "2026-01-01T00:00:02Z",
+      },
+    ]);
+
+    const events = useTerminalStore.getState().terminalEvents;
+    expect(events).toHaveLength(3);
+    expect(events.map((event) => event.kind)).toEqual(["output", "input", "output"]);
   });
 
   it("clears events for a specific session", () => {

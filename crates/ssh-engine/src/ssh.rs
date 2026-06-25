@@ -1427,17 +1427,20 @@ impl SshService {
                         } => message,
                     };
                     match message {
-                        Some(russh::ChannelMsg::Data { data }) => {
-                            let text = String::from_utf8_lossy(&data).to_string();
-                            service.emit_terminal_payload(&session_id, &text, None, 0);
-                            if service.buffer_session_output(&session_id, &text) {
-                                let _ = service.flush_session_history(&session_id).await;
+                        Some(message) => {
+                            if let Some(text) = terminal_output_from_channel_message(&message) {
+                                service.emit_terminal_payload(&session_id, &text, None, 0);
+                                if service.buffer_session_output(&session_id, &text) {
+                                    let _ = service.flush_session_history(&session_id).await;
+                                }
+                            } else if matches!(
+                                message,
+                                russh::ChannelMsg::Close | russh::ChannelMsg::Eof
+                            ) {
+                                break true;
                             }
                         }
-                        Some(russh::ChannelMsg::Close) | Some(russh::ChannelMsg::Eof) | None => {
-                            break true;
-                        }
-                        _ => {}
+                        None => break true,
                     }
                 };
 
@@ -1636,6 +1639,15 @@ impl SshService {
 // Free functions
 // ---------------------------------------------------------------------------
 
+#[cfg(feature = "ssh-native")]
+fn terminal_output_from_channel_message(message: &russh::ChannelMsg) -> Option<String> {
+    match message {
+        russh::ChannelMsg::Data { data } | russh::ChannelMsg::ExtendedData { data, .. } => {
+            Some(String::from_utf8_lossy(data).to_string())
+        }
+        _ => None,
+    }
+}
 fn stored_to_ssh_connection(row: StoredConnection) -> AppResult<SshConnection> {
     let config = serde_json::from_str::<SshConnectionConfig>(&row.config_json)?;
     Ok(SshConnection {
@@ -2036,6 +2048,22 @@ mod tests {
     use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
     use unfour_secret_store::SecretStore;
 
+    #[cfg(feature = "ssh-native")]
+    #[test]
+    fn terminal_channel_output_handles_regular_and_extended_data() {
+        let regular = terminal_output_from_channel_message(&russh::ChannelMsg::Data {
+            data: Vec::from("stdout").into(),
+        });
+        let extended = terminal_output_from_channel_message(&russh::ChannelMsg::ExtendedData {
+            data: Vec::from("stderr").into(),
+            ext: 1,
+        });
+        let close = terminal_output_from_channel_message(&russh::ChannelMsg::Close);
+
+        assert_eq!(regular.as_deref(), Some("stdout"));
+        assert_eq!(extended.as_deref(), Some("stderr"));
+        assert!(close.is_none());
+    }
     #[test]
     fn diagnostic_command_allows_read_only_utilities() {
         for cmd in [
