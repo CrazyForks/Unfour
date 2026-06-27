@@ -310,12 +310,15 @@
     },
     "editing": {
       "addRow": "Add Row",
+      "confirmUpdate": "Update",
       "deleteRow": "Delete Row",
       "deleteRowBody": "Delete this row? This cannot be undone.",
       "deleteRowTitle": "Delete row?",
       "editHint": "Double-click to edit",
       "insert": "Insert",
-      "nullPlaceholder": "Leave blank for NULL"
+      "nullPlaceholder": "Leave blank for NULL",
+      "updateCellBody": "Update column {column} to: {value}",
+      "updateCellTitle": "Update cell?"
     },
     "connection": {
       "connectBeforeRefresh": "Connect to the database before refreshing schema.",

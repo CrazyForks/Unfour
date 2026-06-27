@@ -25,6 +25,11 @@ type SortState = { columnIndex: number; direction: "asc" | "desc" };
 type CellViewer = { columnName: string; value: string | null };
 type EditTarget = { row: Array<string | null>; columnIndex: number };
 type DataRow = Array<string | null>;
+type PendingUpdate = {
+  columnName: string;
+  value: string;
+  primaryKey: DatabaseCellValue[];
+};
 
 export function TableDataGrid({
   editing,
@@ -41,6 +46,7 @@ export function TableDataGrid({
   const [edit, setEdit] = useState<EditTarget | null>(null);
   const [editValue, setEditValue] = useState("");
   const [deleteRow, setDeleteRow] = useState<DataRow | null>(null);
+  const [pendingUpdate, setPendingUpdate] = useState<PendingUpdate | null>(null);
 
   function buildPrimaryKey(row: DataRow): DatabaseCellValue[] {
     return (editing?.primaryKeyColumns ?? []).map((name) => {
@@ -57,7 +63,13 @@ export function TableDataGrid({
     const columnName = result.columns[edit.columnIndex]?.name;
     const original = edit.row[edit.columnIndex] ?? "";
     if (columnName && editValue !== original) {
-      editing.onUpdateCell(columnName, editValue, buildPrimaryKey(edit.row));
+      // Stage the change behind a confirmation step rather than writing to the
+      // database the moment the input blurs.
+      setPendingUpdate({
+        columnName,
+        value: editValue,
+        primaryKey: buildPrimaryKey(edit.row),
+      });
     }
     setEdit(null);
   }
@@ -276,8 +288,32 @@ export function TableDataGrid({
           title={t("database.editing.deleteRowTitle")}
         />
       ) : null}
+      {editing ? (
+        <ConfirmDialog
+          confirmLabel={t("database.editing.confirmUpdate")}
+          description={t("database.editing.updateCellBody", {
+            column: pendingUpdate?.columnName ?? "",
+            value: pendingUpdate ? truncatePreview(pendingUpdate.value) : "",
+          })}
+          onConfirm={() => {
+            if (pendingUpdate) {
+              editing.onUpdateCell(pendingUpdate.columnName, pendingUpdate.value, pendingUpdate.primaryKey);
+            }
+            setPendingUpdate(null);
+          }}
+          onOpenChange={(open) => !open && setPendingUpdate(null)}
+          open={pendingUpdate !== null}
+          pending={editing.pending}
+          title={t("database.editing.updateCellTitle")}
+        />
+      ) : null}
     </div>
   );
+}
+
+function truncatePreview(value: string) {
+  const text = value.length === 0 ? "''" : value;
+  return text.length > 120 ? `${text.slice(0, 120)}…` : text;
 }
 
 function compareCells(a: string | null, b: string | null) {
