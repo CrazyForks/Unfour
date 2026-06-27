@@ -30,13 +30,24 @@ type PendingUpdate = {
   value: string;
   primaryKey: DatabaseCellValue[];
 };
+type ServerControls = {
+  sort: { column: string; descending: boolean } | null;
+  filter: string;
+  onSort: (column: string) => void;
+  onFilter: (filter: string) => void;
+};
 
 export function TableDataGrid({
   editing,
   result,
+  server,
 }: {
   editing?: TableEditing | null;
   result: DatabaseQueryResult;
+  // When present (table browse), sort and filter are applied server-side across
+  // the whole table; the grid reflects state and delegates instead of doing its
+  // own page-local sort/filter. Absent for ad-hoc query results.
+  server?: ServerControls | null;
 }) {
   const { t } = useI18n();
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied-cell" | "copied-row" | "failed">("idle");
@@ -75,6 +86,12 @@ export function TableDataGrid({
   }
 
   const processedRows = useMemo(() => {
+    // In server mode the rows arrive already sorted and filtered for the whole
+    // table, so the grid renders them as-is.
+    if (server) {
+      return result.rows;
+    }
+
     const needle = filter.trim().toLowerCase();
     const filtered = needle
       ? result.rows.filter((row) => row.some((value) => (value ?? "").toLowerCase().includes(needle)))
@@ -92,7 +109,7 @@ export function TableDataGrid({
       return sort.direction === "asc" ? compared : -compared;
     });
     return sorted;
-  }, [filter, result.rows, sort]);
+  }, [filter, result.rows, sort, server]);
 
   const visibleRows = processedRows.slice(0, MAX_RENDERED_ROWS);
 
@@ -192,12 +209,12 @@ export function TableDataGrid({
       header: (
         <button
           className="flex w-full min-w-0 cursor-pointer items-center gap-1 text-left hover:text-[var(--u-color-text)] focus-visible:outline-none"
-          onClick={() => toggleSort(columnIndex)}
+          onClick={() => (server ? server.onSort(column.name) : toggleSort(columnIndex))}
           title={t("database.grid.sortBy", { column: column.name })}
           type="button"
         >
           <span className="truncate">{column.name}</span>
-          {renderSortIcon(sort, columnIndex)}
+          {server ? renderServerSortIcon(server.sort, column.name) : renderSortIcon(sort, columnIndex)}
         </button>
       ),
       id: column.name || `column-${columnIndex}`,
@@ -215,11 +232,11 @@ export function TableDataGrid({
         <Input
           aria-label={t("database.grid.filterPlaceholder")}
           className="h-6 max-w-[260px]"
-          onChange={(event) => setFilter(event.target.value)}
+          onChange={(event) => (server ? server.onFilter(event.target.value) : setFilter(event.target.value))}
           placeholder={t("database.grid.filterPlaceholder")}
-          value={filter}
+          value={server ? server.filter : filter}
         />
-        {sort ? (
+        {!server && sort ? (
           <button
             className="text-[11px] text-[var(--u-color-text-soft)] hover:text-[var(--u-color-text)]"
             onClick={() => setSort(null)}
@@ -232,7 +249,7 @@ export function TableDataGrid({
       <DataTable
         className="flex-1"
         columns={columns}
-        empty={filter ? t("database.grid.noMatches") : t("database.grid.empty")}
+        empty={(server ? server.filter : filter) ? t("database.grid.noMatches") : t("database.grid.empty")}
         getRowKey={(_, index) => index}
         rows={visibleRows}
       />
@@ -337,6 +354,20 @@ function renderSortIcon(sort: SortState | null, columnIndex: number) {
     <ArrowUp className="shrink-0 text-[var(--u-color-primary)]" size={12} />
   ) : (
     <ArrowDown className="shrink-0 text-[var(--u-color-primary)]" size={12} />
+  );
+}
+
+function renderServerSortIcon(
+  sort: { column: string; descending: boolean } | null,
+  columnName: string,
+) {
+  if (!sort || sort.column !== columnName) {
+    return <ChevronsUpDown className="shrink-0 text-[var(--u-color-text-soft)]" size={12} />;
+  }
+  return sort.descending ? (
+    <ArrowDown className="shrink-0 text-[var(--u-color-primary)]" size={12} />
+  ) : (
+    <ArrowUp className="shrink-0 text-[var(--u-color-primary)]" size={12} />
   );
 }
 

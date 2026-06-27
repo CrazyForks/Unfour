@@ -670,6 +670,16 @@ pub struct DatabaseBrowseInput {
     pub table_name: String,
     pub limit: Option<u32>,
     pub offset: Option<u32>,
+    /// Optional column to sort by, pushed into the browse query so it orders the
+    /// whole table rather than only the loaded page.
+    #[serde(default)]
+    pub order_by: Option<String>,
+    #[serde(default)]
+    pub order_descending: bool,
+    /// Optional case-insensitive text matched across every column, pushed into
+    /// the browse query (and the total-row count) so it filters the whole table.
+    #[serde(default)]
+    pub filter: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

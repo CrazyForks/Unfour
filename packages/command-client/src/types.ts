@@ -440,6 +440,9 @@ export type DatabaseBrowseInput = {
   tableName: string;
   limit?: number;
   offset?: number;
+  orderBy?: string | null;
+  orderDescending?: boolean;
+  filter?: string | null;
 };
 
 export type DatabaseBrowseResult = {

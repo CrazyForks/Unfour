@@ -92,6 +92,15 @@ export function DatabasePage({
     catalog: null,
     schema: null,
   });
+  // Server-side sort/filter for the table data view, pushed into browse_table so
+  // it applies to the whole table rather than only the loaded page.
+  const [tableQuery, setTableQuery] = useState<{
+    orderBy: string | null;
+    orderDescending: boolean;
+    filter: string;
+  }>({ orderBy: null, orderDescending: false, filter: "" });
+  const filterDebounceRef = useRef<number | null>(null);
+  const emptyTableQuery = { orderBy: null, orderDescending: false, filter: "" } as const;
   // Per-connection tree data so multiple connections can be browsed at once.
   // catalogNamesByConn: connectionId -> database names (PostgreSQL/MySQL).
   // treeSchemaCache: `${connectionId}::${catalog}` -> that database's schema
@@ -575,6 +584,7 @@ export function DatabasePage({
     setSelectedTable(null);
     setTableView(null);
     setQueryResult(null);
+    setTableQuery(emptyTableQuery);
     // Drop the previous datasource's context; the schema-load effect repopulates
     // a valid default for the newly selected connection. The per-connection tree
     // caches are kept so other connections stay expanded.
@@ -779,9 +789,18 @@ export function DatabasePage({
     table: DatabaseTable,
     pageIndex: number,
     pageSize: number,
+    query?: { orderBy: string | null; orderDescending: boolean; filter: string },
   ) {
     if (connectionId !== selectedConnectionId) {
       selectConnection(connectionId);
+    }
+    // Switching to a different table drops any prior sort/filter so it does not
+    // leak onto an unrelated table; an explicit query (sort/filter action or
+    // pagination) takes precedence over that reset.
+    const isNewTable = table.name !== selectedTable?.name || connectionId !== selectedConnectionId;
+    const effectiveQuery = query ?? (isNewTable ? emptyTableQuery : tableQuery);
+    if (!query && isNewTable) {
+      setTableQuery(emptyTableQuery);
     }
     setSelectedTable(table);
     setClientError(null);
@@ -795,7 +814,53 @@ export function DatabasePage({
       pageSize,
       schema: table.schema,
       tableName: table.name,
+      orderBy: effectiveQuery.orderBy,
+      orderDescending: effectiveQuery.orderDescending,
+      filter: effectiveQuery.filter || null,
     });
+  }
+
+  // Cycle a column through ascending -> descending -> unsorted, re-querying the
+  // first page server-side each time.
+  function applyTableSort(column: string) {
+    if (!selectedConnectionId || !selectedTable) {
+      return;
+    }
+    const current = tableQuery;
+    let next: { orderBy: string | null; orderDescending: boolean; filter: string };
+    if (current.orderBy !== column) {
+      next = { ...current, orderBy: column, orderDescending: false };
+    } else if (!current.orderDescending) {
+      next = { ...current, orderDescending: true };
+    } else {
+      next = { ...current, orderBy: null, orderDescending: false };
+    }
+    setTableQuery(next);
+    browseTablePage(
+      selectedConnectionId,
+      selectedTable,
+      0,
+      tableView?.pageSize ?? DEFAULT_PREVIEW_PAGE_SIZE,
+      next,
+    );
+  }
+
+  // Debounce the cross-column filter so typing does not fire a query per key.
+  function applyTableFilter(text: string) {
+    if (!selectedConnectionId || !selectedTable) {
+      return;
+    }
+    const next = { ...tableQuery, filter: text };
+    setTableQuery(next);
+    if (filterDebounceRef.current) {
+      window.clearTimeout(filterDebounceRef.current);
+    }
+    const connectionId = selectedConnectionId;
+    const table = selectedTable;
+    const pageSize = tableView?.pageSize ?? DEFAULT_PREVIEW_PAGE_SIZE;
+    filterDebounceRef.current = window.setTimeout(() => {
+      browseTablePage(connectionId, table, 0, pageSize, next);
+    }, 350);
   }
 
   function previewSelectedTable() {
@@ -1122,11 +1187,13 @@ export function DatabasePage({
           onShowHistory={showQueryHistory}
           onSqlChange={setSql}
           onStop={() => undefined}
+          onTableFilter={applyTableFilter}
           onTablePageChange={(pageIndex, pageSize) =>
             selectedConnectionId &&
             selectedTable &&
             browseTablePage(selectedConnectionId, selectedTable, pageIndex, pageSize)
           }
+          onTableSort={applyTableSort}
           pendingConfirmation={pendingSqlConfirmation}
           queryResult={queryResult}
           schema={visibleSchema}
@@ -1138,7 +1205,13 @@ export function DatabasePage({
           structureError={structureQuery.error}
           structureLoading={structureEnabled && structureQuery.isFetching}
           tableEditing={tableEditing}
+          tableFilter={tableQuery.filter}
           tableSegment={layout.tableSegment}
+          tableSort={
+            tableQuery.orderBy
+              ? { column: tableQuery.orderBy, descending: tableQuery.orderDescending }
+              : null
+          }
           tableView={tableView}
         />
       </div>

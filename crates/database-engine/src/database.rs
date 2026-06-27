@@ -728,6 +728,15 @@ impl DatabaseService {
             ));
         }
 
+        let filter = normalize_filter(input.filter.as_deref());
+        let order_by = input
+            .order_by
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+        let descending = input.order_descending;
+        let needs_columns = filter.is_some() || order_by.is_some();
+
         let connection = self
             .get_connection(&input.workspace_id, &input.connection_id)
             .await?;
@@ -739,15 +748,49 @@ impl DatabaseService {
 
                 let limit = input.limit.unwrap_or(100).clamp(1, 1_000);
                 let offset = input.offset.unwrap_or(0);
-                let total_rows = sqlite_table_row_count(&pool, table_name).await?;
+
+                let column_names = if needs_columns {
+                    sqlite_columns(&pool, table_name)
+                        .await?
+                        .into_iter()
+                        .map(|column| column.name)
+                        .collect::<Vec<_>>()
+                } else {
+                    Vec::new()
+                };
+                let order_sql =
+                    order_by_clause(order_by, descending, &column_names, quote_identifier)?;
+                let active_filter = filter.as_ref().filter(|_| !column_names.is_empty());
+                let where_sql = active_filter
+                    .map(|_| format!(" WHERE {}", sqlite_filter_where(&column_names)))
+                    .unwrap_or_default();
+                let quoted = quote_identifier(table_name);
+
+                let total_rows = if let Some(needle) = active_filter {
+                    let count_sql =
+                        format!("SELECT COUNT(*) AS total_rows FROM {}{}", quoted, where_sql);
+                    let mut count = sqlx::query(&count_sql);
+                    for _ in &column_names {
+                        count = count.bind(format!("%{}%", needle));
+                    }
+                    let row = count.fetch_one(&pool).await?;
+                    row.try_get::<i64, _>("total_rows")?.max(0) as u64
+                } else {
+                    sqlite_table_row_count(&pool, table_name).await?
+                };
+
                 let sql = format!(
-                    "SELECT * FROM {} LIMIT {} OFFSET {}",
-                    quote_identifier(table_name),
-                    limit,
-                    offset
+                    "SELECT * FROM {}{}{} LIMIT {} OFFSET {}",
+                    quoted, where_sql, order_sql, limit, offset
                 );
                 let started = Instant::now();
-                let rows = sqlx::query(&sql).fetch_all(&pool).await?;
+                let mut query = sqlx::query(&sql);
+                if let Some(needle) = active_filter {
+                    for _ in &column_names {
+                        query = query.bind(format!("%{}%", needle));
+                    }
+                }
+                let rows = query.fetch_all(&pool).await?;
                 let columns = if let Some(row) = rows.first() {
                     sqlite_result_columns(row)
                 } else {
@@ -758,26 +801,9 @@ impl DatabaseService {
                     .map(sqlite_row_values)
                     .collect::<AppResult<Vec<_>>>()?;
 
-                Ok(DatabaseBrowseResult {
-                    table_name: table_name.to_string(),
-                    sql,
-                    limit,
-                    offset,
-                    total_rows,
-                    read_only: true,
-                    result: DatabaseQueryResult {
-                        columns,
-                        rows: values,
-                        affected_rows: 0,
-                        duration_ms: started.elapsed().as_millis(),
-                        safety: DatabaseQuerySafety {
-                            classification: "read".to_string(),
-                            requires_confirmation: false,
-                            confirmed: true,
-                            message: None,
-                        },
-                    },
-                })
+                Ok(browse_result(
+                    table_name, sql, limit, offset, total_rows, columns, values, started,
+                ))
             }
             "postgres" => {
                 let pool = self.postgres_pool(&connection).await?;
@@ -793,15 +819,53 @@ impl DatabaseService {
 
                 let limit = input.limit.unwrap_or(100).clamp(1, 1_000);
                 let offset = input.offset.unwrap_or(0);
-                let total_rows = postgres_table_row_count(&pool, schema, table_name)
-                    .await
-                    .map_err(sanitize_pg_app_error)?;
-                let sql = postgres_browse_sql(schema, table_name, limit, offset);
+
+                let column_names = if needs_columns {
+                    postgres_columns(&pool, schema, table_name)
+                        .await
+                        .map_err(sanitize_pg_app_error)?
+                        .into_iter()
+                        .map(|column| column.name)
+                        .collect::<Vec<_>>()
+                } else {
+                    Vec::new()
+                };
+                let order_sql =
+                    order_by_clause(order_by, descending, &column_names, quote_identifier)?;
+                let active_filter = filter.as_ref().filter(|_| !column_names.is_empty());
+                let where_sql = active_filter
+                    .map(|_| format!(" WHERE {}", postgres_filter_where(&column_names)))
+                    .unwrap_or_default();
+
+                let total_rows = if let Some(needle) = active_filter {
+                    // The same $1 bind is reused by every column predicate.
+                    let count_sql = format!(
+                        "SELECT COUNT(*) AS total_rows FROM {}{}",
+                        quote_qualified_identifier(schema, table_name),
+                        where_sql
+                    );
+                    let row = sqlx::query(&count_sql)
+                        .bind(format!("%{}%", needle))
+                        .fetch_one(&pool)
+                        .await
+                        .map_err(sanitize_pg_error)?;
+                    row.try_get::<i64, _>("total_rows")
+                        .map_err(sanitize_pg_error)?
+                        .max(0) as u64
+                } else {
+                    postgres_table_row_count(&pool, schema, table_name)
+                        .await
+                        .map_err(sanitize_pg_app_error)?
+                };
+
+                let sql =
+                    postgres_browse_sql(schema, table_name, &where_sql, &order_sql, limit, offset);
                 let started = Instant::now();
-                let rows = sqlx::query(&sql)
-                    .fetch_all(&pool)
-                    .await
-                    .map_err(sanitize_pg_error)?;
+                let mut query = sqlx::query(&sql);
+                if let Some(needle) = active_filter {
+                    query = query.bind(format!("%{}%", needle));
+                }
+                let rows = query.fetch_all(&pool).await.map_err(sanitize_pg_error)?;
                 let columns = if let Some(row) = rows.first() {
                     postgres_result_columns(row)
                 } else {
@@ -814,26 +878,9 @@ impl DatabaseService {
                     .map(postgres_row_values)
                     .collect::<AppResult<Vec<_>>>()?;
 
-                Ok(DatabaseBrowseResult {
-                    table_name: table_name.to_string(),
-                    sql,
-                    limit,
-                    offset,
-                    total_rows,
-                    read_only: true,
-                    result: DatabaseQueryResult {
-                        columns,
-                        rows: values,
-                        affected_rows: 0,
-                        duration_ms: started.elapsed().as_millis(),
-                        safety: DatabaseQuerySafety {
-                            classification: "read".to_string(),
-                            requires_confirmation: false,
-                            confirmed: true,
-                            message: None,
-                        },
-                    },
-                })
+                Ok(browse_result(
+                    table_name, sql, limit, offset, total_rows, columns, values, started,
+                ))
             }
             "mysql" => {
                 let pool = self.mysql_pool(&connection).await?;
@@ -862,12 +909,54 @@ impl DatabaseService {
 
                 let limit = input.limit.unwrap_or(100).clamp(1, 1_000);
                 let offset = input.offset.unwrap_or(0);
-                let total_rows = mysql_table_row_count(&pool, schema, table_name)
-                    .await
-                    .map_err(sanitize_mysql_app_error)?;
-                let sql = mysql_browse_sql(schema, table_name, limit, offset);
+
+                let column_names = if needs_columns {
+                    mysql_columns(&pool, schema, table_name)
+                        .await
+                        .map_err(sanitize_mysql_app_error)?
+                        .into_iter()
+                        .map(|column| column.name)
+                        .collect::<Vec<_>>()
+                } else {
+                    Vec::new()
+                };
+                let order_sql =
+                    order_by_clause(order_by, descending, &column_names, quote_mysql_identifier)?;
+                let active_filter = filter.as_ref().filter(|_| !column_names.is_empty());
+                let where_sql = active_filter
+                    .map(|_| format!(" WHERE {}", mysql_filter_where(&column_names)))
+                    .unwrap_or_default();
+
+                let total_rows = if let Some(needle) = active_filter {
+                    let count_sql = format!(
+                        "SELECT COUNT(*) AS total_rows FROM {}{}",
+                        quote_mysql_qualified_identifier(schema, table_name),
+                        where_sql
+                    );
+                    let mut count = sqlx::query(&count_sql);
+                    for _ in &column_names {
+                        count = count.bind(format!("%{}%", needle));
+                    }
+                    let row = count.fetch_one(&pool).await.map_err(sanitize_mysql_error)?;
+                    row.try_get::<i64, _>("total_rows")
+                        .map_err(sanitize_mysql_error)?
+                        .max(0) as u64
+                } else {
+                    mysql_table_row_count(&pool, schema, table_name)
+                        .await
+                        .map_err(sanitize_mysql_app_error)?
+                };
+
+                let sql =
+                    mysql_browse_sql(schema, table_name, &where_sql, &order_sql, limit, offset);
                 let started = Instant::now();
-                let rows = sqlx::query(&sql)
+                let mut query = sqlx::query(&sql);
+                if let Some(needle) = active_filter {
+                    for _ in &column_names {
+                        query = query.bind(format!("%{}%", needle));
+                    }
+                }
+                let rows = query
                     .fetch_all(&pool)
                     .await
                     .map_err(sanitize_mysql_error)?;
@@ -883,26 +972,9 @@ impl DatabaseService {
                     .map(mysql_row_values)
                     .collect::<AppResult<Vec<_>>>()?;
 
-                Ok(DatabaseBrowseResult {
-                    table_name: table_name.to_string(),
-                    sql,
-                    limit,
-                    offset,
-                    total_rows,
-                    read_only: true,
-                    result: DatabaseQueryResult {
-                        columns,
-                        rows: values,
-                        affected_rows: 0,
-                        duration_ms: started.elapsed().as_millis(),
-                        safety: DatabaseQuerySafety {
-                            classification: "read".to_string(),
-                            requires_confirmation: false,
-                            confirmed: true,
-                            message: None,
-                        },
-                    },
-                })
+                Ok(browse_result(
+                    table_name, sql, limit, offset, total_rows, columns, values, started,
+                ))
             }
             driver => Err(AppError::Unsupported(format!(
                 "{} table browsing is not yet supported",
@@ -2330,10 +2402,19 @@ fn quote_qualified_identifier(schema: &str, table_name: &str) -> String {
     )
 }
 
-fn postgres_browse_sql(schema: &str, table_name: &str, limit: u32, offset: u32) -> String {
+fn postgres_browse_sql(
+    schema: &str,
+    table_name: &str,
+    where_sql: &str,
+    order_sql: &str,
+    limit: u32,
+    offset: u32,
+) -> String {
     format!(
-        "SELECT * FROM {} LIMIT {} OFFSET {}",
+        "SELECT * FROM {}{}{} LIMIT {} OFFSET {}",
         quote_qualified_identifier(schema, table_name),
+        where_sql,
+        order_sql,
         limit,
         offset
     )
@@ -2347,13 +2428,115 @@ fn quote_mysql_qualified_identifier(schema: &str, table_name: &str) -> String {
     )
 }
 
-fn mysql_browse_sql(schema: &str, table_name: &str, limit: u32, offset: u32) -> String {
+fn mysql_browse_sql(
+    schema: &str,
+    table_name: &str,
+    where_sql: &str,
+    order_sql: &str,
+    limit: u32,
+    offset: u32,
+) -> String {
     format!(
-        "SELECT * FROM {} LIMIT {} OFFSET {}",
+        "SELECT * FROM {}{}{} LIMIT {} OFFSET {}",
         quote_mysql_qualified_identifier(schema, table_name),
+        where_sql,
+        order_sql,
         limit,
         offset
     )
+}
+
+/// Trim a browse filter to a non-empty needle, or `None` when blank.
+fn normalize_filter(filter: Option<&str>) -> Option<String> {
+    filter
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+/// Build a validated, quoted `ORDER BY` fragment. The column must be one of the
+/// table's real columns (defense in depth on top of identifier quoting); an
+/// empty/absent column yields no clause.
+fn order_by_clause(
+    order_by: Option<&str>,
+    descending: bool,
+    columns: &[String],
+    quote: fn(&str) -> String,
+) -> AppResult<String> {
+    let Some(column) = order_by.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(String::new());
+    };
+    if !columns.iter().any(|name| name == column) {
+        return Err(AppError::Validation(format!(
+            "unknown sort column: {}",
+            column
+        )));
+    }
+    Ok(format!(
+        " ORDER BY {} {}",
+        quote(column),
+        if descending { "DESC" } else { "ASC" }
+    ))
+}
+
+/// `(CAST(col AS TEXT) LIKE ? OR ...)` for SQLite. One placeholder per column.
+fn sqlite_filter_where(columns: &[String]) -> String {
+    let parts = columns
+        .iter()
+        .map(|name| format!("CAST({} AS TEXT) LIKE ?", quote_identifier(name)))
+        .collect::<Vec<_>>();
+    format!("({})", parts.join(" OR "))
+}
+
+/// `(CAST(col AS TEXT) ILIKE $1 OR ...)` for PostgreSQL. Reuses a single bind.
+fn postgres_filter_where(columns: &[String]) -> String {
+    let parts = columns
+        .iter()
+        .map(|name| format!("CAST({} AS TEXT) ILIKE $1", quote_identifier(name)))
+        .collect::<Vec<_>>();
+    format!("({})", parts.join(" OR "))
+}
+
+/// `(CAST(col AS CHAR) LIKE ? OR ...)` for MySQL. One placeholder per column.
+fn mysql_filter_where(columns: &[String]) -> String {
+    let parts = columns
+        .iter()
+        .map(|name| format!("CAST({} AS CHAR) LIKE ?", quote_mysql_identifier(name)))
+        .collect::<Vec<_>>();
+    format!("({})", parts.join(" OR "))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn browse_result(
+    table_name: &str,
+    sql: String,
+    limit: u32,
+    offset: u32,
+    total_rows: u64,
+    columns: Vec<DatabaseResultColumn>,
+    rows: Vec<Vec<Option<String>>>,
+    started: Instant,
+) -> DatabaseBrowseResult {
+    DatabaseBrowseResult {
+        table_name: table_name.to_string(),
+        sql,
+        limit,
+        offset,
+        total_rows,
+        read_only: true,
+        result: DatabaseQueryResult {
+            columns,
+            rows,
+            affected_rows: 0,
+            duration_ms: started.elapsed().as_millis(),
+            safety: DatabaseQuerySafety {
+                classification: "read".to_string(),
+                requires_confirmation: false,
+                confirmed: true,
+                message: None,
+            },
+        },
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -2983,6 +3166,9 @@ mod tests {
                 table_name: "deploys".to_string(),
                 limit: Some(2),
                 offset: Some(1),
+                order_by: None,
+                order_descending: false,
+                filter: None,
             })
             .await
             .expect("browse table");
@@ -3004,6 +3190,9 @@ mod tests {
                 table_name: "deploys".to_string(),
                 limit: Some(2),
                 offset: None,
+                order_by: None,
+                order_descending: false,
+                filter: None,
             })
             .await
             .expect("browse first page");
@@ -3018,6 +3207,9 @@ mod tests {
                 table_name: "empty_deploys".to_string(),
                 limit: Some(10),
                 offset: None,
+                order_by: None,
+                order_descending: false,
+                filter: None,
             })
             .await
             .expect("browse empty table");
@@ -3035,6 +3227,9 @@ mod tests {
                 table_name: "missing".to_string(),
                 limit: Some(10),
                 offset: None,
+                order_by: None,
+                order_descending: false,
+                filter: None,
             })
             .await;
         assert!(matches!(missing, Err(AppError::NotFound(_))));
@@ -3268,7 +3463,7 @@ mod tests {
     #[test]
     fn postgres_table_browse_sql_is_schema_qualified_and_escaped() {
         assert_eq!(
-            postgres_browse_sql("app\"data", "user\"events", 50, 100),
+            postgres_browse_sql("app\"data", "user\"events", "", "", 50, 100),
             "SELECT * FROM \"app\"\"data\".\"user\"\"events\" LIMIT 50 OFFSET 100"
         );
     }
@@ -3585,7 +3780,7 @@ mod tests {
     #[test]
     fn mysql_table_browse_sql_is_qualified_paginated_and_escaped() {
         assert_eq!(
-            mysql_browse_sql("app`data", "user`events", 50, 100),
+            mysql_browse_sql("app`data", "user`events", "", "", 50, 100),
             "SELECT * FROM `app``data`.`user``events` LIMIT 50 OFFSET 100"
         );
     }
@@ -3723,6 +3918,77 @@ mod tests {
             unconfirmed,
             Err(AppError::ConfirmationRequired { .. })
         ));
+        let _ = fs::remove_file(path);
+    }
+
+    #[tokio::test]
+    async fn browse_table_pushes_sort_and_filter_into_the_query() {
+        let (service, workspace_id) = service_with_workspace().await;
+        let path = sqlite_fixture().await;
+        let connection = service
+            .save_connection(sqlite_input(&workspace_id, &path))
+            .await
+            .expect("save connection");
+
+        // Sort descending by service: 'worker' comes before 'api', and the SQL
+        // carries the ORDER BY so it orders the whole table, not just the page.
+        let sorted = service
+            .browse_table(DatabaseBrowseInput {
+                workspace_id: workspace_id.clone(),
+                connection_id: connection.id.clone(),
+                catalog: None,
+                schema: None,
+                table_name: "deploys".to_string(),
+                limit: Some(100),
+                offset: None,
+                order_by: Some("service".to_string()),
+                order_descending: true,
+                filter: None,
+            })
+            .await
+            .expect("sorted browse");
+        assert!(sorted.sql.contains("ORDER BY \"service\" DESC"));
+        assert_eq!(sorted.result.rows[0][1].as_deref(), Some("worker"));
+        assert_eq!(sorted.result.rows[1][1].as_deref(), Some("api"));
+
+        // Filter narrows both the rows and the total count.
+        let filtered = service
+            .browse_table(DatabaseBrowseInput {
+                workspace_id: workspace_id.clone(),
+                connection_id: connection.id.clone(),
+                catalog: None,
+                schema: None,
+                table_name: "deploys".to_string(),
+                limit: Some(100),
+                offset: None,
+                order_by: None,
+                order_descending: false,
+                filter: Some("worker".to_string()),
+            })
+            .await
+            .expect("filtered browse");
+        assert!(filtered.sql.contains("WHERE"));
+        assert_eq!(filtered.total_rows, 1);
+        assert_eq!(filtered.result.rows.len(), 1);
+        assert_eq!(filtered.result.rows[0][1].as_deref(), Some("worker"));
+
+        // An unknown sort column is rejected rather than silently ignored.
+        let bad_sort = service
+            .browse_table(DatabaseBrowseInput {
+                workspace_id: workspace_id.clone(),
+                connection_id: connection.id.clone(),
+                catalog: None,
+                schema: None,
+                table_name: "deploys".to_string(),
+                limit: Some(100),
+                offset: None,
+                order_by: Some("not_a_column".to_string()),
+                order_descending: false,
+                filter: None,
+            })
+            .await;
+        assert!(matches!(bad_sort, Err(AppError::Validation(_))));
+
         let _ = fs::remove_file(path);
     }
 

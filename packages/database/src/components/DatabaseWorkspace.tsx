@@ -48,7 +48,9 @@ export function DatabaseWorkspace({
   onShowHistory,
   onSqlChange,
   onStop,
+  onTableFilter,
   onTablePageChange,
+  onTableSort,
   pendingConfirmation,
   queryResult,
   schema,
@@ -60,7 +62,9 @@ export function DatabaseWorkspace({
   structureError,
   structureLoading,
   tableEditing,
+  tableFilter,
   tableSegment,
+  tableSort,
   tableView,
 }: {
   activeResultTab: DatabaseResultTab;
@@ -89,7 +93,9 @@ export function DatabaseWorkspace({
   onShowHistory: () => void;
   onSqlChange: (sql: string) => void;
   onStop: () => void;
+  onTableFilter: (filter: string) => void;
   onTablePageChange: (pageIndex: number, pageSize: number) => void;
+  onTableSort: (column: string) => void;
   pendingConfirmation: boolean;
   queryResult: DatabaseQueryResult | null;
   schema?: DatabaseSchema;
@@ -101,7 +107,9 @@ export function DatabaseWorkspace({
   structureError?: unknown;
   structureLoading?: boolean;
   tableEditing?: TableEditing | null;
+  tableFilter: string;
   tableSegment: TableSegment;
+  tableSort: { column: string; descending: boolean } | null;
   tableView: DatabaseTableViewState | null;
 }) {
   const { t } = useI18n();
@@ -149,7 +157,11 @@ export function DatabaseWorkspace({
                 executePending={executePending}
                 onPageChange={onTablePageChange}
                 onRefresh={() => tableView && onTablePageChange(tableView.pageIndex, tableView.pageSize)}
+                onTableFilter={onTableFilter}
+                onTableSort={onTableSort}
                 result={queryResult}
+                tableFilter={tableFilter}
+                tableSort={tableSort}
                 tableView={tableView}
               />
             ) : (
