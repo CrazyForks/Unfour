@@ -72,6 +72,7 @@ pub fn run() {
             unfour_app::commands::ssh_session_connect,
             unfour_app::commands::ssh_session_history,
             unfour_app::commands::ssh_session_input,
+            unfour_app::commands::ssh_register_terminal_channel,
             unfour_app::commands::ssh_session_log_export,
             unfour_app::commands::ssh_session_reconnect_cancel,
             unfour_app::commands::ssh_session_resize,

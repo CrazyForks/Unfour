@@ -2,7 +2,7 @@
 import { render, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SshSessionEvent, SshSessionSummary } from "@unfour/command-client";
-import { TerminalPane } from "./TerminalPane";
+import { sanitizeTerminalWriteChunk, TerminalPane } from "./TerminalPane";
 
 const terminalState = vi.hoisted(() => ({
   cols: 120,
@@ -243,6 +243,14 @@ describe("TerminalPane", () => {
     await waitFor(() =>
       expect(terminalState.writes.some((data) => data.includes("line 2"))).toBe(true),
     );
+  });
+  it("filters xterm request-mode sequences while preserving ordinary vi control output", () => {
+    const sanitized = sanitizeTerminalWriteChunk(
+      "\x1b[?25lA\x1b[?2026$pB\x1b[4$pC\x1b[46;1H",
+    );
+
+    expect(sanitized.value).toBe("\x1b[?25lABC\x1b[46;1H");
+    expect(sanitized.removedSequences).toEqual(["\\x1b[?2026$p", "\\x1b[4$p"]);
   });
   it("resyncs the current terminal size when switching to a different SSH session", async () => {
     const { rerender } = render(

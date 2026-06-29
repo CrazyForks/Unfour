@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 import type {
   ApiHistoryDetail,
   ApiHistoryItem,
@@ -1528,6 +1528,38 @@ export function importSshKnownHosts(input: SshKnownHostsImportInput) {
 
 export function exportSshKnownHosts() {
   return call<SshKnownHostsExportResult>("ssh_known_hosts_export");
+}
+
+export type SshTerminalDataPayload = {
+  sessionId: string;
+  data: string;
+  status?: SshSessionSummary["status"] | null;
+  reconnectAttempt?: number;
+};
+
+/**
+ * Subscribe to live SSH terminal output over a Tauri IPC `Channel` (the same
+ * reliable transport used by commands) rather than the event system. High-rate
+ * Tauri events stall WebView2 event delivery on Windows under a full-screen
+ * redraw burst (vim/less/top), which silently freezes the terminal; channels do
+ * not have that failure mode. Returns a disposer that detaches the handler. A
+ * no-op outside the Tauri runtime (browser mock mode polls history instead).
+ */
+export function registerSshTerminalChannel(
+  onMessage: (payload: SshTerminalDataPayload) => void,
+): Promise<() => void> {
+  if (!isTauriRuntime()) {
+    return Promise.resolve(() => {});
+  }
+  const channel = new Channel<SshTerminalDataPayload>();
+  channel.onmessage = onMessage;
+  return invoke<void>("ssh_register_terminal_channel", { channel })
+    .then(() => () => {
+      channel.onmessage = () => {};
+    })
+    .catch(() => () => {
+      channel.onmessage = () => {};
+    });
 }
 
 function resolveInput(input: ApiRequestInput, variables: KeyValue[]) {

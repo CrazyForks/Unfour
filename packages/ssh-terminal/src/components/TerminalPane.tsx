@@ -10,8 +10,21 @@ import {
   type SshSessionSummary,
 } from "@unfour/command-client";
 import { cn } from "@unfour/ui";
-import { redactTerminalLog, useTerminalStore } from "../model/terminal-state";
+import { useTerminalStore } from "../model/terminal-state";
 
+export type SanitizedTerminalWriteChunk = {
+  value: string;
+  removedSequences: string[];
+};
+
+export function sanitizeTerminalWriteChunk(chunk: string): SanitizedTerminalWriteChunk {
+  const removedSequences: string[] = [];
+  const value = chunk.replace(/\x1b\[[0-?]*\$p/g, (sequence) => {
+    removedSequences.push(escapeTerminalText(sequence));
+    return "";
+  });
+  return { value, removedSequences };
+}
 export function TerminalPane({
   active,
   className,
@@ -114,7 +127,10 @@ export function TerminalPane({
     const styles = getComputedStyle(document.documentElement);
     const token = (name: string) => styles.getPropertyValue(name).trim();
     const terminal = new XTerm({
-      convertEol: true,
+      // The PTY stream already carries correct CR/LF and cursor-positioning
+      // control sequences. `convertEol` would rewrite bare `\n` into `\r\n`,
+      // which corrupts the rendering of full-screen apps (vi, less, top) that
+      // move the cursor explicitly. Write the bytes through verbatim instead.
       cursorBlink: true,
       fontFamily: "JetBrains Mono, Consolas, ui-monospace, monospace",
       fontSize: 13,
@@ -132,6 +148,11 @@ export function TerminalPane({
     terminalRef.current = terminal;
     fitAddonRef.current = fitAddon;
     searchAddonRef.current = searchAddon;
+
+    // The render-pause observer is registered asynchronously after open(); clear
+    // it on the next frame so live output is never silently dropped (see
+    // resumeTerminalRendering). The per-write call covers any later re-pause.
+    window.requestAnimationFrame(() => resumeTerminalRendering(terminal));
 
     const syncFittedSize = () => {
       fitAndSyncTerminalSize(terminal, fitAddon, lastSizeRef, (cols, rows) => {
@@ -293,21 +314,45 @@ export function TerminalPane({
     // a tab switch forced a full replay. Painting solely from the store removes
     // that race without adding re-renders (the global listener drives them
     // either way).
+    // Write PTY output bytes to xterm verbatim. Redaction of persisted history
+    // happens in the backend (terminal_history) and the exported log view
+    // (TerminalLogPanel); applying line-based redaction to the live stream here
+    // would mangle the cursor-addressing escape sequences that full-screen apps
+    // emit, breaking their rendering.
+    // After the written bytes are parsed into the buffer, force a
+    // viewport repaint. The production WebView2 build does not repaint on
+    // incremental writes on its own (the initial render works, later writes do
+    // not). The callback fires post-parse, so this both confirms parsing and
+    // forces the frame.
+    const writeToTerminal = (chunk: string) => {
+      const sanitized = sanitizeTerminalWriteChunk(chunk);
+      if (sanitized.removedSequences.length) {
+        console.warn("[ssh-terminal] filtered xterm request-mode sequence", {
+          sessionId: sessionIdRef.current,
+          removedSequences: sanitized.removedSequences,
+        });
+      }
+      if (sanitized.value.length === 0) {
+        return;
+      }
+      terminal.write(sanitized.value, () => {
+        resumeTerminalRendering(terminal);
+        terminal.refresh(0, terminal.rows - 1);
+      });
+    };
+
     events.slice(0, renderedEventsRef.current).forEach((event, index) => {
       const renderedLength = renderedEventDataLengthsRef.current[index] ?? 0;
       if (event.kind === "output" && event.data.length > renderedLength) {
-        terminal.write(redactTerminalLog(event.data.slice(renderedLength)));
+        writeToTerminal(event.data.slice(renderedLength));
         renderedEventDataLengthsRef.current[index] = event.data.length;
       }
     });
 
     events.slice(renderedEventsRef.current).forEach((event, index) => {
       const eventIndex = renderedEventsRef.current + index;
-      const data =
-        event.kind === "input"
-          ? `$ ${redactTerminalLog(event.data)}`
-          : redactTerminalLog(event.data);
-      terminal.write(event.kind === "output" ? data : ensureNewline(data));
+      const data = event.kind === "input" ? `$ ${event.data}` : event.data;
+      writeToTerminal(event.kind === "output" ? data : ensureNewline(data));
       renderedEventDataLengthsRef.current[eventIndex] = event.data.length;
     });
     renderedEventsRef.current = events.length;
@@ -327,6 +372,57 @@ export function TerminalPane({
   );
 }
 
+// xterm v6 gates ALL rendering on a private `RenderService._isPaused` flag that
+// is driven by an IntersectionObserver (it pauses rendering when the terminal is
+// off-screen to save CPU). In the production WebView2 build that observer
+// reports the visible terminal as not intersecting and never corrects itself, so
+// `_isPaused` stays `true` and every write/refresh is silently dropped (the
+// terminal renders once, then freezes). xterm exposes no public override, so we
+// reach into the internal service to clear the stuck flag and disconnect the
+// misfiring observer (disabling the off-screen optimization for this terminal,
+// which is exactly the broken behaviour). Guarded so an xterm internals change
+// degrades gracefully instead of crashing the pane.
+function resumeTerminalRendering(terminal: XTerm) {
+  try {
+    const renderService = (
+      terminal as unknown as {
+        _core?: {
+          _renderService?: {
+            _isPaused?: boolean;
+            _observerDisposable?: { clear?: () => void };
+          };
+        };
+      }
+    )._core?._renderService;
+    if (!renderService) {
+      return;
+    }
+    // Stop the observer so it cannot re-pause us between writes.
+    renderService._observerDisposable?.clear?.();
+    renderService._isPaused = false;
+  } catch {
+    // Best-effort renderer kick; ignore if xterm internals changed.
+  }
+}
+
+function escapeTerminalText(value: string) {
+  return value.replace(/[\x00-\x1f\x7f-\x9f\\]/g, (char) => {
+    switch (char) {
+      case "\x1b":
+        return "\\x1b";
+      case "\r":
+        return "\\r";
+      case "\n":
+        return "\\n";
+      case "\t":
+        return "\\t";
+      case "\\":
+        return "\\\\";
+      default:
+        return `\\x${char.charCodeAt(0).toString(16).padStart(2, "0")}`;
+    }
+  });
+}
 function safeFit(fitAddon: FitAddon) {
   try {
     fitAddon.fit();

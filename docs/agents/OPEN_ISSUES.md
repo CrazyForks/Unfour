@@ -1,6 +1,6 @@
 # Open Issues
 
-> Last scanned: 2026-06-14 (release readiness smoke verification pass).
+> Last scanned: 2026-06-29 (SSH vi/xterm request-mode verification pass).
 
 ## P0 — Blocks core usage
 
@@ -17,6 +17,7 @@ None.
 
 - **Host-key UI enhancement** (Observed): View/reset fingerprint implemented. Trust confirmation dialog (first trust + mismatch) implemented. known_hosts import/export implemented. Fingerprint change confirmation without full reset is a future enhancement.
 - **Lint warning cleanup** (Observed): 53 warnings across `packages/api-client`, `packages/database`, `packages/ssh-terminal`, `packages/ui`, and `apps/desktop`. Predominantly `react-hooks/refs` false positives from TanStack Query destructuring. Reduced from 64 in commit `3649a2d` via pure-function extraction and `useEffect` sync-pattern refactoring. No errors; none block builds.
+- **xterm 6 request-mode workaround** (Observed): `@xterm/xterm@6.0.0` throws `ReferenceError: i is not defined` in its `requestMode` parser when vi emits `CSI ... $p` / `CSI ? ... $p` mode-query sequences during full-screen startup. The SSH transport and vi process remain live, but xterm rendering can stop. `packages/ssh-terminal` filters those request-mode sequences before `terminal.write`; live vi verification on 2026-06-29 confirmed `filtered xterm request-mode sequence` is observed, the xterm error is not reproduced, and vi insert/edit/exit interaction works. Version evaluation on 2026-06-29 via `npm view` found `@xterm/xterm` current stable remains `6.0.0`; `6.1.0` is beta-only, while `@xterm/addon-fit@0.11.0` and `@xterm/addon-search@0.16.0` are current stable. Do not upgrade/downgrade in this batch; revisit when xterm 6.1 has a stable release or in a dedicated beta/downgrade compatibility test.
 
 ## P3 — Low priority / Future
 
@@ -32,6 +33,6 @@ None.
 
 - P0: 0
 - P1: 2 (encrypted key format limitation, real SSH release gate)
-- P2: 2 (host-key UI enhancement, lint warning cleanup)
+- P2: 3 (host-key UI enhancement, lint warning cleanup, xterm 6 request-mode workaround)
 - P3: 2 (terminal multiplexing, SCP/SFTP)
 - Environment: 2 (macOS/Linux startup and keychain, native Windows visual capture)

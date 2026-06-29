@@ -516,6 +516,21 @@ pub async fn ssh_session_input(
     state.command_bus.send_ssh_input(input).await
 }
 
+/// Register the frontend's IPC channel as the live terminal-output sink. Live
+/// SSH output then streams over this channel instead of the Tauri event system,
+/// which stalls under the high-rate emit burst of a full-screen redraw on
+/// WebView2/Windows. The most recently registered channel wins.
+#[tauri::command]
+pub async fn ssh_register_terminal_channel(
+    channel: tauri::ipc::Channel<serde_json::Value>,
+    state: State<'_, AppState>,
+) -> AppResult<()> {
+    if let Ok(mut guard) = state.terminal_channel.lock() {
+        *guard = Some(channel);
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn ssh_session_resize(
     input: SshResizeInput,

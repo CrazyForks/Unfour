@@ -1,5 +1,4 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { listen } from "@tauri-apps/api/event";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   closeSshSession,
@@ -7,12 +6,14 @@ import {
   exportSshLog,
   getSshHostFingerprint,
   getSshSessionHistory,
+  registerSshTerminalChannel,
   saveSshConnection,
   type SshConnection,
   type SshConnectionInput,
   type SshHostFingerprintInfo,
   type SshSessionEvent,
   type SshSessionSummary,
+  type SshTerminalDataPayload,
 } from "@unfour/command-client";
 import { useWorkspaceStore } from "@unfour/workspace-core";
 import { ConfirmDialog, LoadingState, useI18n } from "@unfour/ui";
@@ -146,12 +147,11 @@ export function TerminalPage({
 
   useEffect(() => {
     let disposed = false;
-    let unlisten: (() => void) | null = null;
-    // Live output is coalesced into the store roughly once per frame. The
-    // visible terminal is painted directly by each TerminalPane's own listener,
-    // so this copy only backs copy-log, search, and tab-switch scrollback and
-    // does not need per-chunk granularity (which previously caused a full
-    // re-render per keystroke echo).
+    let dispose: (() => void) | null = null;
+    // Live output is coalesced into the store roughly once per frame. It arrives
+    // over a Tauri IPC channel (not the event system, which stalls under a
+    // full-screen-redraw emit burst on WebView2/Windows) and is batched here so
+    // a keystroke echo does not force a full re-render per chunk.
     let pending: SshSessionEvent[] = [];
     let flushTimer: ReturnType<typeof setTimeout> | null = null;
     const flushPending = () => {
@@ -163,13 +163,7 @@ export function TerminalPage({
       pending = [];
       appendTerminalEvents(batch);
     };
-    listen<{
-      sessionId: string;
-      data: string;
-      status?: SshSessionSummary["status"] | null;
-      reconnectAttempt?: number;
-    }>("ssh://terminal-data", (event) => {
-      const payload = event.payload;
+    const handlePayload = (payload: SshTerminalDataPayload) => {
       if (!payload?.sessionId) {
         return;
       }
@@ -203,16 +197,17 @@ export function TerminalPage({
             ),
         );
       }
-    })
-      .then((dispose) => {
+    };
+    registerSshTerminalChannel(handlePayload)
+      .then((d) => {
         if (disposed) {
-          dispose();
+          d();
         } else {
-          unlisten = dispose;
+          dispose = d;
         }
       })
       .catch(() => {
-        // Browser mock mode has no Tauri event transport; query polling remains active.
+        // Browser mock mode has no Tauri IPC; query polling remains active.
       });
     return () => {
       disposed = true;
@@ -220,7 +215,7 @@ export function TerminalPage({
         clearTimeout(flushTimer);
       }
       flushPending();
-      unlisten?.();
+      dispose?.();
     };
   }, [appendTerminalEvents, queryClient, workspaceId]);
 

@@ -54,6 +54,16 @@ const RECONNECT_BACKOFF_SECS: [u64; 3] = [1, 2, 4];
 const PERSIST_FLUSH_BYTES: usize = 16 * 1024;
 #[cfg(feature = "ssh-native")]
 const PERSIST_FLUSH_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
+// Terminal output is coalesced and emitted on this cadence (or when the buffer
+// reaches EMIT_FLUSH_BYTES) instead of once per SSH packet. A full-screen redraw
+// (vim/less/top) arrives as a burst of many small packets; emitting a Tauri
+// event for each one floods the WebView2 event IPC on Windows and stalls event
+// delivery to the frontend, even though the command IPC keeps working. Batching
+// collapses the burst into a few events and keeps the channel responsive.
+#[cfg(feature = "ssh-native")]
+const EMIT_FLUSH_INTERVAL: std::time::Duration = std::time::Duration::from_millis(16);
+#[cfg(feature = "ssh-native")]
+const EMIT_FLUSH_BYTES: usize = 16 * 1024;
 
 #[cfg(feature = "ssh-native")]
 struct NativeSshHandle {
@@ -378,6 +388,23 @@ impl SshService {
         };
         state.pending_output.push_str(output);
         state.pending_output.len() >= PERSIST_FLUSH_BYTES
+    }
+
+    /// Flush a session's buffered output to the database on a detached task.
+    ///
+    /// Persistence must never run inline on the SSH read loop: awaiting the
+    /// database write there stalls draining of russh's bounded channel buffer,
+    /// which back-pressures the session task and blocks outgoing keystroke
+    /// writes. Concurrent flushes each take a disjoint slice of the pending
+    /// buffer under the lock, so the worst case is out-of-order history rows
+    /// (cosmetic) rather than lost or duplicated output.
+    #[cfg(feature = "ssh-native")]
+    fn spawn_flush_session_history(&self, session_id: &str) {
+        let service = self.clone();
+        let session_id = session_id.to_string();
+        tokio::spawn(async move {
+            let _ = service.flush_session_history(&session_id).await;
+        });
     }
 
     async fn flush_session_history(&self, session_id: &str) -> AppResult<()> {
@@ -1405,17 +1432,34 @@ impl SshService {
             let mut native = initial_handle;
             let mut persist_interval = tokio::time::interval(PERSIST_FLUSH_INTERVAL);
             persist_interval.tick().await;
+            let mut emit_interval = tokio::time::interval(EMIT_FLUSH_INTERVAL);
+            emit_interval.tick().await;
+            // Pending terminal output coalesced between emits (see EMIT_* docs).
+            let mut emit_buffer = String::new();
             loop {
                 let channel_closed = loop {
                     let message = tokio::select! {
                         changed = cancel_rx.changed() => {
                             if changed.is_err() || *cancel_rx.borrow() {
+                                service.flush_emit_buffer(&session_id, &mut emit_buffer);
                                 return;
                             }
                             continue;
                         }
                         _ = persist_interval.tick() => {
-                            let _ = service.flush_session_history(&session_id).await;
+                            // Persist on a detached task. Awaiting the database
+                            // write here would stall the read loop, letting
+                            // russh's bounded channel buffer fill under heavy
+                            // output (e.g. a vim full-screen redraw). A full read
+                            // buffer back-pressures the single SSH session task so
+                            // it can no longer service outgoing keystroke writes,
+                            // which makes interactive input appear frozen.
+                            service.spawn_flush_session_history(&session_id);
+                            continue;
+                        }
+                        _ = emit_interval.tick() => {
+                            // Throttled flush of coalesced output to the frontend.
+                            service.flush_emit_buffer(&session_id, &mut emit_buffer);
                             continue;
                         }
                         message = async {
@@ -1429,18 +1473,30 @@ impl SshService {
                     match message {
                         Some(message) => {
                             if let Some(text) = terminal_output_from_channel_message(&message) {
-                                service.emit_terminal_payload(&session_id, &text, None, 0);
+                                // Coalesce for the frontend; emit on the throttle
+                                // tick above or when the buffer grows large.
+                                emit_buffer.push_str(&text);
+                                if emit_buffer.len() >= EMIT_FLUSH_BYTES {
+                                    service.flush_emit_buffer(&session_id, &mut emit_buffer);
+                                }
+                                // Buffer in memory (fast); flush to the database
+                                // off the read path so persistence latency can
+                                // never starve keystroke delivery (see above).
                                 if service.buffer_session_output(&session_id, &text) {
-                                    let _ = service.flush_session_history(&session_id).await;
+                                    service.spawn_flush_session_history(&session_id);
                                 }
                             } else if matches!(
                                 message,
                                 russh::ChannelMsg::Close | russh::ChannelMsg::Eof
                             ) {
+                                service.flush_emit_buffer(&session_id, &mut emit_buffer);
                                 break true;
                             }
                         }
-                        None => break true,
+                        None => {
+                            service.flush_emit_buffer(&session_id, &mut emit_buffer);
+                            break true;
+                        }
                     }
                 };
 
@@ -1606,6 +1662,17 @@ impl SshService {
             state.pending_output.push_str(message);
         }
         self.emit_terminal_payload(session_id, message, Some(status), attempt);
+    }
+
+    /// Emit any coalesced output accumulated since the last flush, then clear
+    /// the buffer. A no-op when the buffer is empty.
+    #[cfg(feature = "ssh-native")]
+    fn flush_emit_buffer(&self, session_id: &str, emit_buffer: &mut String) {
+        if emit_buffer.is_empty() {
+            return;
+        }
+        self.emit_terminal_payload(session_id, emit_buffer, None, 0);
+        emit_buffer.clear();
     }
 
     #[cfg(feature = "ssh-native")]
