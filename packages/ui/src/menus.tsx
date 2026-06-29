@@ -1,3 +1,4 @@
+import * as ContextMenuPrimitive from "@radix-ui/react-context-menu";
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
 import * as React from "react";
 import { cn } from "./utils";
@@ -13,6 +14,7 @@ export function DropdownMenuContent({
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Content>) {
   return <DropdownMenuPrimitive.Content className={cn(menuContent, className)} sideOffset={4} {...props} />;
 }
+
 export function DropdownMenuItem({
   className,
   ...props
@@ -20,157 +22,34 @@ export function DropdownMenuItem({
   return <DropdownMenuPrimitive.Item className={cn(menuItem, className)} {...props} />;
 }
 
-type ContextMenuState = {
-  close: () => void;
-  open: boolean;
-  openAt: (position: { x: number; y: number }) => void;
-  position: { x: number; y: number };
-};
-
-const ContextMenuContext = React.createContext<ContextMenuState | null>(null);
-
-export function ContextMenu({ children }: { children: React.ReactNode }) {
-  const [open, setOpen] = React.useState(false);
-  const [position, setPosition] = React.useState({ x: 0, y: 0 });
-
-  React.useEffect(() => {
-    if (!open) {
-      return;
-    }
-
-    function close() {
-      setOpen(false);
-    }
-
-    function closeOnEscape(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        close();
-      }
-    }
-
-    window.addEventListener("click", close);
-    window.addEventListener("contextmenu", close);
-    window.addEventListener("keydown", closeOnEscape);
-
-    return () => {
-      window.removeEventListener("click", close);
-      window.removeEventListener("contextmenu", close);
-      window.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [open]);
-
-  const value = React.useMemo<ContextMenuState>(
-    () => ({
-      close: () => setOpen(false),
-      open,
-      openAt: (nextPosition) => {
-        setPosition(nextPosition);
-        setOpen(true);
-      },
-      position,
-    }),
-    [open, position],
-  );
-
-  return (
-    <ContextMenuContext.Provider value={value}>
-      {children}
-    </ContextMenuContext.Provider>
-  );
-}
+export const ContextMenu = ContextMenuPrimitive.Root;
 
 export function ContextMenuTrigger({
   asChild,
   children,
 }: {
   asChild?: boolean;
-  children: React.ReactElement<{ onContextMenu?: React.MouseEventHandler }>;
+  children: React.ReactNode;
 }) {
-  const context = React.useContext(ContextMenuContext);
-
-  if (!context) {
-    return children;
-  }
-
-  const handleContextMenu: React.MouseEventHandler = (event) => {
-    children.props.onContextMenu?.(event);
-    if (event.defaultPrevented) {
-      return;
-    }
-
-    event.preventDefault();
-    event.stopPropagation();
-    context.openAt({ x: event.clientX, y: event.clientY });
-  };
-
-  if (asChild) {
-    return React.cloneElement(children, { onContextMenu: handleContextMenu });
-  }
-
-  return (
-    <span className="contents" onContextMenu={handleContextMenu}>
-      {children}
-    </span>
-  );
+  return <ContextMenuPrimitive.Trigger asChild={asChild}>{children}</ContextMenuPrimitive.Trigger>;
 }
 
 export function ContextMenuContent({
-  children,
   className,
-}: {
-  children?: React.ReactNode;
-  className?: string;
-}) {
-  const context = React.useContext(ContextMenuContext);
-  const ref = React.useRef<HTMLDivElement>(null);
-  const [offset, setOffset] = React.useState({ x: 0, y: 0 });
-
-  // Keep the menu inside the viewport instead of overflowing past the right
-  // edge or below the status bar when opened near a window boundary.
-  React.useLayoutEffect(() => {
-    if (!context?.open || !ref.current) {
-      return;
-    }
-    const rect = ref.current.getBoundingClientRect();
-    const margin = 8;
-    // Measure against the raw click position and the menu size so the result is
-    // independent of any offset already applied this open.
-    const overflowX = Math.max(0, context.position.x + rect.width + margin - window.innerWidth);
-    const overflowY = Math.max(0, context.position.y + rect.height + margin - window.innerHeight);
-    if (overflowX !== offset.x || overflowY !== offset.y) {
-      setOffset({ x: overflowX, y: overflowY });
-    }
-  }, [context?.open, context?.position, offset.x, offset.y]);
-
-  if (!context?.open) {
-    return null;
-  }
-
+  ...props
+}: React.ComponentProps<typeof ContextMenuPrimitive.Content>) {
   return (
-    <div
-      className={cn(menuContent, className)}
-      onClick={(event) => event.stopPropagation()}
-      ref={ref}
-      role="menu"
-      style={{
-        left: Math.max(8, context.position.x - offset.x),
-        position: "fixed",
-        top: Math.max(8, context.position.y - offset.y),
-      }}
-    >
-      {children}
-    </div>
+    <ContextMenuPrimitive.Portal>
+      <ContextMenuPrimitive.Content className={cn(menuContent, className)} collisionPadding={8} {...props} />
+    </ContextMenuPrimitive.Portal>
   );
 }
 
-export function ContextMenuSeparator({ className }: { className?: string }) {
-  return (
-    <div
-      aria-hidden
-      className={cn("my-1 h-px bg-[var(--u-color-border)]", className)}
-      role="separator"
-    />
-  );
+export function ContextMenuSeparator({
+  className,
+  ...props
+}: React.ComponentProps<typeof ContextMenuPrimitive.Separator>) {
+  return <ContextMenuPrimitive.Separator className={cn("my-1 h-px bg-[var(--u-color-border)]", className)} {...props} />;
 }
 
 export function ContextMenuItem({
@@ -179,33 +58,23 @@ export function ContextMenuItem({
   disabled,
   onSelect,
   tone = "default",
-}: {
-  children?: React.ReactNode;
-  className?: string;
-  disabled?: boolean;
-  onSelect?: () => void;
+  ...props
+}: Omit<React.ComponentProps<typeof ContextMenuPrimitive.Item>, "onSelect"> & {
+  onSelect?: (event: Event) => void;
   tone?: "default" | "danger";
 }) {
-  const context = React.useContext(ContextMenuContext);
-
   return (
-    <button
+    <ContextMenuPrimitive.Item
       className={cn(
-        "w-full text-left",
         menuItem,
-        tone === "danger" &&
-          "text-[var(--u-color-danger)] data-[highlighted]:bg-[var(--u-color-danger-soft)] hover:bg-[var(--u-color-danger-soft)]",
+        tone === "danger" && "text-[var(--u-color-danger)] data-[highlighted]:bg-[var(--u-color-danger-soft)]",
         className,
       )}
       disabled={disabled}
-      onClick={() => {
-        onSelect?.();
-        context?.close();
-      }}
-      role="menuitem"
-      type="button"
+      onSelect={onSelect}
+      {...props}
     >
       {children}
-    </button>
+    </ContextMenuPrimitive.Item>
   );
 }

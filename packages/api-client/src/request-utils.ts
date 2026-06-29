@@ -12,6 +12,7 @@ import type {
   RequestDraft,
   RequestRawBodyType,
 } from "./model/types";
+import { parseAuthConfigWithSchema, parseKeyValuesWithSchema } from "./adapters/request-schema";
 
 export function normalizeEnvironmentName(name: string) {
   return name.trim().toLowerCase();
@@ -56,63 +57,11 @@ export function defaultAuthConfig(): ApiAuthConfig {
 }
 
 export function parseAuthConfig(value: unknown): ApiAuthConfig {
-  if (typeof value === "string") {
-    try {
-      return parseAuthConfig(JSON.parse(value));
-    } catch {
-      return defaultAuthConfig();
-    }
-  }
-  if (!value || typeof value !== "object") {
-    return defaultAuthConfig();
-  }
-
-  const candidate = value as Record<string, unknown>;
-  if (candidate.type === "bearer") {
-    return {
-      type: "bearer",
-      token: typeof candidate.token === "string" ? candidate.token : "",
-    };
-  }
-  if (candidate.type === "basic") {
-    return {
-      type: "basic",
-      username: typeof candidate.username === "string" ? candidate.username : "",
-      password: typeof candidate.password === "string" ? candidate.password : "",
-    };
-  }
-  if (candidate.type === "api-key") {
-    return {
-      type: "api-key",
-      addTo: candidate.addTo === "query" ? "query" : "header",
-      key: typeof candidate.key === "string" ? candidate.key : "",
-      value: typeof candidate.value === "string" ? candidate.value : "",
-    };
-  }
-  return defaultAuthConfig();
+  return parseAuthConfigWithSchema(value);
 }
 
 export function parseKeyValues(value: unknown): KeyValue[] {
-  if (Array.isArray(value)) {
-    return sanitizeKeyValues(value);
-  }
-  if (typeof value === "object" && value !== null) {
-    return Object.entries(value).map(([key, itemValue]) => ({
-      key,
-      value: itemValue == null ? "" : String(itemValue),
-      enabled: true,
-    }));
-  }
-  if (typeof value !== "string") {
-    return [];
-  }
-
-  try {
-    const parsed = JSON.parse(value);
-    return parseKeyValues(parsed);
-  } catch {
-    return [];
-  }
+  return parseKeyValuesWithSchema(value);
 }
 
 export function savedRequestToInput(
@@ -195,27 +144,6 @@ function normalizeImportedRequest(
     body: typeof candidate.body === "string" ? candidate.body : undefined,
     bodyKind: typeof candidate.bodyKind === "string" ? candidate.bodyKind : "json",
     timeoutMs: typeof candidate.timeoutMs === "number" ? candidate.timeoutMs : 60_000,
-  };
-}
-
-function sanitizeKeyValues(items: unknown[]): KeyValue[] {
-  return items
-    .map(normalizeKeyValue)
-    .filter((item): item is KeyValue => item !== null);
-}
-
-function normalizeKeyValue(item: unknown): KeyValue | null {
-  if (typeof item !== "object" || item === null) {
-    return null;
-  }
-  const candidate = item as Record<string, unknown>;
-  if (typeof candidate.key !== "string") {
-    return null;
-  }
-  return {
-    key: candidate.key,
-    value: candidate.value == null ? "" : String(candidate.value),
-    enabled: typeof candidate.enabled === "boolean" ? candidate.enabled : true,
   };
 }
 
@@ -607,3 +535,4 @@ function splitUrlParts(rawUrl: string): {
     query: beforeHash.slice(queryIndex + 1),
   };
 }
+

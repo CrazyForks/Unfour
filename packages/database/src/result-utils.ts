@@ -1,4 +1,5 @@
 import type { DatabaseQueryResult } from "@unfour/command-client";
+import { formatSqlWithLibrary } from "./adapters/sql-format";
 
 export type DatabaseErrorCategory =
   | "confirmation"
@@ -52,94 +53,8 @@ export function serializeDatabaseCell(value: string | null | undefined, delimite
   return `"${cell.replace(/"/g, "\"\"")}"`;
 }
 
-// Major clauses that start a new line when formatting. Sorted longest-first by
-// the alternation below so multi-word variants ("LEFT JOIN") match before their
-// single-word suffix ("JOIN") and are not split apart.
-const SQL_MAJOR_CLAUSES = [
-  "SELECT",
-  "FROM",
-  "WHERE",
-  "GROUP BY",
-  "ORDER BY",
-  "HAVING",
-  "LIMIT",
-  "OFFSET",
-  "LEFT JOIN",
-  "RIGHT JOIN",
-  "INNER JOIN",
-  "FULL JOIN",
-  "CROSS JOIN",
-  "JOIN",
-  "UNION ALL",
-  "UNION",
-  "INSERT",
-  "VALUES",
-  "UPDATE",
-  "SET",
-  "DELETE",
-  "RETURNING",
-];
-
-// Keywords that are only re-cased in place, never given their own line.
-const SQL_INLINE_KEYWORDS = [
-  "AND",
-  "OR",
-  "ON",
-  "AS",
-  "IN",
-  "IS",
-  "NOT",
-  "NULL",
-  "LIKE",
-  "BETWEEN",
-  "EXISTS",
-  "DISTINCT",
-  "INTO",
-  "ASC",
-  "DESC",
-];
-
-// Distinctive sentinel for masked literals/comments; cannot appear in SQL, so
-// the restore pass never collides with real numeric literals like LIMIT 100.
-const SQL_MASK_PREFIX = "@@UF_SQL_";
-const SQL_MASK_SUFFIX = "@@";
-
-/**
- * Conservative SQL pretty-printer for the query console. It only normalizes
- * whitespace, upper-cases a fixed keyword set, and puts each major clause on its
- * own line. String literals and comments are masked first so their contents are
- * never rewritten, keeping the transform safe for arbitrary statements.
- */
 export function formatSql(sql: string): string {
-  if (!sql.trim()) {
-    return sql;
-  }
-
-  const protectedParts: string[] = [];
-  const masked = sql.replace(
-    /'(?:[^']|'')*'|"(?:[^"]|"")*"|`(?:[^`])*`|--[^\n]*|\/\*[\s\S]*?\*\//g,
-    (match) => {
-      protectedParts.push(match);
-      return `${SQL_MASK_PREFIX}${protectedParts.length - 1}${SQL_MASK_SUFFIX}`;
-    },
-  );
-
-  let out = masked.replace(/\s+/g, " ").trim();
-
-  const keywords = [...SQL_MAJOR_CLAUSES, ...SQL_INLINE_KEYWORDS].sort((a, b) => b.length - a.length);
-  for (const keyword of keywords) {
-    const pattern = new RegExp(`\\b${keyword.replace(/ /g, "\\s+")}\\b`, "gi");
-    out = out.replace(pattern, keyword);
-  }
-
-  const clausePattern = SQL_MAJOR_CLAUSES.slice()
-    .sort((a, b) => b.length - a.length)
-    .map((clause) => clause.replace(/ /g, "\\s+"))
-    .join("|");
-  out = out.replace(new RegExp(`\\s+(${clausePattern})\\b`, "g"), "\n$1");
-
-  out = out.replace(/@@UF_SQL_(\d+)@@/g, (_, index) => protectedParts[Number(index)] ?? "");
-  return out;
+  return formatSqlWithLibrary(sql);
 }
 
 /**
@@ -289,3 +204,4 @@ function databaseErrorTitle(category: DatabaseErrorCategory) {
       return "Database error";
   }
 }
+

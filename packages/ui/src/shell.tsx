@@ -1,6 +1,7 @@
 import * as React from "react";
 import { cn } from "./utils";
 import { clampResizablePaneSize } from "./shell-utils";
+import { ResizableSplitPane } from "./adapters/resizable-panels";
 
 export type ShellTab = {
   id: string;
@@ -498,78 +499,21 @@ export function SplitPane({
   orientation?: "horizontal" | "vertical";
   resizable?: boolean;
 }) {
-  const hostRef = React.useRef<HTMLDivElement | null>(null);
-  const [ratio, setRatio] = React.useState(defaultRatio);
   const panes = React.Children.toArray(children);
 
   if (!resizable || panes.length !== 2) {
     return <div className={cn("flex min-h-0 min-w-0 flex-1", className)}>{children}</div>;
   }
 
-  function resize(clientX: number, clientY: number) {
-    const bounds = hostRef.current?.getBoundingClientRect();
-    if (!bounds) {
-      return;
-    }
-
-    const total = orientation === "horizontal" ? bounds.width : bounds.height;
-    const offset =
-      orientation === "horizontal" ? clientX - bounds.left : clientY - bounds.top;
-    const minimumRatio = (minPaneSize / Math.max(total, 1)) * 100;
-    const nextRatio = Math.min(
-      Math.max((offset / Math.max(total, 1)) * 100, minimumRatio),
-      100 - minimumRatio,
-    );
-    setRatio(nextRatio);
-  }
-
-  function startResize(event: React.PointerEvent<HTMLDivElement>) {
-    event.preventDefault();
-
-    function move(moveEvent: PointerEvent) {
-      resize(moveEvent.clientX, moveEvent.clientY);
-    }
-
-    function stop() {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", stop);
-    }
-
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", stop, { once: true });
-  }
-
   return (
-    <div
-      className={cn(
-        "flex min-h-0 min-w-0 flex-1",
-        orientation === "vertical" && "flex-col",
-        className,
-      )}
-      ref={hostRef}
+    <ResizableSplitPane
+      className={className}
+      defaultRatio={defaultRatio}
+      minPaneSize={minPaneSize}
+      orientation={orientation}
     >
-      <div
-        className="flex min-h-0 min-w-0 shrink-0"
-        style={{
-          flexBasis: `${ratio}%`,
-        }}
-      >
-        {panes[0]}
-      </div>
-      <div
-        aria-label={`Resize ${orientation === "horizontal" ? "horizontal" : "vertical"} split`}
-        aria-orientation={orientation}
-        className={cn(
-          "shrink-0 bg-[var(--u-color-border)] hover:bg-[var(--u-color-focus)]",
-          orientation === "horizontal"
-            ? "w-px cursor-col-resize"
-            : "h-px cursor-row-resize",
-        )}
-        onPointerDown={startResize}
-        role="separator"
-      />
-      <div className="flex min-h-0 min-w-0 flex-1">{panes[1]}</div>
-    </div>
+      {[panes[0], panes[1]]}
+    </ResizableSplitPane>
   );
 }
 
@@ -607,3 +551,4 @@ export function CommandPalette({
     </div>
   );
 }
+

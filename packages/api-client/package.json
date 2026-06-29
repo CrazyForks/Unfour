@@ -15,6 +15,7 @@
     "@unfour/command-client": "workspace:*",
     "@unfour/ui": "workspace:*",
     "lucide-react": "^1.17.0",
-    "react": "^19.1.0"
+    "react": "^19.1.0",
+    "zod": "^4.4.3"
   }
 }

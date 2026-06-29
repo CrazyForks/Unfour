@@ -14,6 +14,7 @@
     "@unfour/ui": "workspace:*",
     "@unfour/workspace-core": "workspace:*",
     "lucide-react": "^1.17.0",
-    "react": "^19.1.0"
+    "react": "^19.1.0",
+    "sql-formatter": "^15.8.2"
   }
 }

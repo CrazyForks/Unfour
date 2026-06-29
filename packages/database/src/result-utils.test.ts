@@ -81,22 +81,22 @@ describe("serializeDatabaseResult", () => {
 describe("formatSql", () => {
   it("upper-cases keywords and breaks major clauses onto their own lines", () => {
     const formatted = formatSql("select id, name from users where id = 1 order by name");
-    expect(formatted).toBe("SELECT id, name\nFROM users\nWHERE id = 1\nORDER BY name");
+    expect(formatted).toBe("SELECT\n  id,\n  name\nFROM\n  users\nWHERE\n  id = 1\nORDER BY\n  name");
   });
 
   it("keeps multi-word joins intact instead of splitting them", () => {
     const formatted = formatSql("select * from a left join b on a.id = b.a_id");
-    expect(formatted).toBe("SELECT *\nFROM a\nLEFT JOIN b ON a.id = b.a_id");
+    expect(formatted).toBe("SELECT\n  *\nFROM\n  a\n  LEFT JOIN b ON a.id = b.a_id");
   });
 
   it("does not rewrite the contents of string literals", () => {
     const formatted = formatSql("select 'from where select' as label from t");
-    expect(formatted).toBe("SELECT 'from where select' AS label\nFROM t");
+    expect(formatted).toBe("SELECT\n  'from where select' AS label\nFROM\n  t");
   });
 
   it("preserves numeric literals such as LIMIT 100 OFFSET 0", () => {
     const formatted = formatSql("select * from t limit 100 offset 0");
-    expect(formatted).toBe("SELECT *\nFROM t\nLIMIT 100\nOFFSET 0");
+    expect(formatted).toBe("SELECT\n  *\nFROM\n  t\nLIMIT\n  100\nOFFSET\n  0");
   });
 
   it("returns blank input unchanged", () => {
@@ -194,3 +194,4 @@ describe("describeDatabaseError", () => {
     expect(description.technicalDetail).toContain("DATABASE_ERROR");
   });
 });
+
