@@ -11,7 +11,7 @@ use unfour_core::models::{
     DatabaseQueryInput, DatabaseQueryResult, DatabaseQuerySafety, DatabaseResultColumn,
     DatabaseRowMutationInput, DatabaseRowMutationResult, DatabaseSchema, DatabaseTable,
     DatabaseTableColumn, DatabaseTableStructure, DatabaseTableStructureInput, DatabaseTestResult,
-    DbQueryHistoryEntry, DbQueryHistoryRecordInput, StoredConnection,
+    DbQueryHistoryEntry, DbQueryHistoryRecordInput, SavedSql, SavedSqlInput, StoredConnection,
 };
 use unfour_core::{AppError, AppResult};
 use unfour_local_storage::LocalDb;
@@ -723,6 +723,125 @@ impl DatabaseService {
         .await?;
 
         Ok(())
+    }
+
+    pub async fn list_saved_sql(&self, workspace_id: String) -> AppResult<Vec<SavedSql>> {
+        validate_workspace_id(&workspace_id)?;
+        let rows = sqlx::query_as::<_, SavedSql>(
+            r#"
+            SELECT id, workspace_id, connection_id, name, sql, created_at, updated_at
+            FROM saved_sql
+            WHERE workspace_id = ?1
+            ORDER BY updated_at DESC
+            "#,
+        )
+        .bind(workspace_id)
+        .fetch_all(self.db.pool())
+        .await?;
+        Ok(rows)
+    }
+
+    pub async fn save_sql(&self, input: SavedSqlInput) -> AppResult<SavedSql> {
+        validate_workspace_id(&input.workspace_id)?;
+        let name = input.name.trim().to_string();
+        if name.is_empty() {
+            return Err(AppError::Validation(
+                "saved SQL name cannot be empty".to_string(),
+            ));
+        }
+        if name.chars().count() > 120 {
+            return Err(AppError::Validation(
+                "saved SQL name must be 120 characters or fewer".to_string(),
+            ));
+        }
+        let sql = input.sql.trim().to_string();
+        if sql.is_empty() {
+            return Err(AppError::Validation("saved SQL cannot be empty".to_string()));
+        }
+        let connection_id = empty_to_none(input.connection_id);
+        let now = Utc::now().to_rfc3339();
+
+        if let Some(id) = input
+            .id
+            .as_deref()
+            .map(str::trim)
+            .filter(|id| !id.is_empty())
+        {
+            let result = sqlx::query(
+                r#"
+                UPDATE saved_sql
+                SET name = ?1, sql = ?2, connection_id = ?3, updated_at = ?4
+                WHERE id = ?5 AND workspace_id = ?6
+                "#,
+            )
+            .bind(&name)
+            .bind(&sql)
+            .bind(&connection_id)
+            .bind(&now)
+            .bind(id)
+            .bind(&input.workspace_id)
+            .execute(self.db.pool())
+            .await?;
+            if result.rows_affected() == 0 {
+                return Err(AppError::NotFound("saved SQL".to_string()));
+            }
+            return self.get_saved_sql(&input.workspace_id, id).await;
+        }
+
+        let id = Uuid::new_v4().to_string();
+        sqlx::query(
+            r#"
+            INSERT INTO saved_sql (id, workspace_id, connection_id, name, sql, created_at, updated_at)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)
+            "#,
+        )
+        .bind(&id)
+        .bind(&input.workspace_id)
+        .bind(&connection_id)
+        .bind(&name)
+        .bind(&sql)
+        .bind(&now)
+        .execute(self.db.pool())
+        .await?;
+        self.get_saved_sql(&input.workspace_id, &id).await
+    }
+
+    pub async fn delete_saved_sql(
+        &self,
+        workspace_id: String,
+        id: String,
+    ) -> AppResult<Vec<SavedSql>> {
+        validate_workspace_id(&workspace_id)?;
+        let id = id.trim().to_string();
+        if id.is_empty() {
+            return Err(AppError::Validation(
+                "saved SQL id cannot be empty".to_string(),
+            ));
+        }
+        let result = sqlx::query("DELETE FROM saved_sql WHERE id = ?1 AND workspace_id = ?2")
+            .bind(&id)
+            .bind(&workspace_id)
+            .execute(self.db.pool())
+            .await?;
+        if result.rows_affected() == 0 {
+            return Err(AppError::NotFound("saved SQL".to_string()));
+        }
+        self.list_saved_sql(workspace_id).await
+    }
+
+    async fn get_saved_sql(&self, workspace_id: &str, id: &str) -> AppResult<SavedSql> {
+        let row = sqlx::query_as::<_, SavedSql>(
+            r#"
+            SELECT id, workspace_id, connection_id, name, sql, created_at, updated_at
+            FROM saved_sql
+            WHERE id = ?1 AND workspace_id = ?2
+            "#,
+        )
+        .bind(id)
+        .bind(workspace_id)
+        .fetch_optional(self.db.pool())
+        .await?;
+        row.ok_or_else(|| AppError::NotFound("saved SQL".to_string()))
     }
 
     pub async fn browse_table(
@@ -2998,6 +3117,69 @@ mod tests {
             .expect("list other workspace history");
         assert_eq!(other.len(), 1);
         assert_eq!(other[0].id, "history-other");
+    }
+
+    #[tokio::test]
+    async fn saved_sql_crud_is_workspace_scoped_and_validated() {
+        let (service, workspace_id) = service_with_workspace().await;
+
+        let created = service
+            .save_sql(SavedSqlInput {
+                id: None,
+                workspace_id: workspace_id.clone(),
+                connection_id: Some("conn-1".to_string()),
+                name: "Recent users".to_string(),
+                sql: "SELECT * FROM users".to_string(),
+            })
+            .await
+            .expect("create saved sql");
+        assert_eq!(created.name, "Recent users");
+        assert_eq!(created.connection_id.as_deref(), Some("conn-1"));
+
+        let updated = service
+            .save_sql(SavedSqlInput {
+                id: Some(created.id.clone()),
+                workspace_id: workspace_id.clone(),
+                connection_id: None,
+                name: "Active users".to_string(),
+                sql: "SELECT * FROM users WHERE active".to_string(),
+            })
+            .await
+            .expect("update saved sql");
+        assert_eq!(updated.id, created.id);
+        assert_eq!(updated.name, "Active users");
+        assert!(updated.connection_id.is_none());
+
+        let listed = service
+            .list_saved_sql(workspace_id.clone())
+            .await
+            .expect("list saved sql");
+        assert_eq!(listed.len(), 1);
+
+        // Blank name and blank SQL are rejected.
+        assert!(matches!(
+            service
+                .save_sql(SavedSqlInput {
+                    id: None,
+                    workspace_id: workspace_id.clone(),
+                    connection_id: None,
+                    name: "   ".to_string(),
+                    sql: "SELECT 1".to_string(),
+                })
+                .await,
+            Err(AppError::Validation(_))
+        ));
+
+        let remaining = service
+            .delete_saved_sql(workspace_id.clone(), created.id.clone())
+            .await
+            .expect("delete saved sql");
+        assert!(remaining.is_empty());
+
+        assert!(matches!(
+            service.delete_saved_sql(workspace_id, created.id).await,
+            Err(AppError::NotFound(_))
+        ));
     }
 
     async fn sqlite_fixture() -> PathBuf {

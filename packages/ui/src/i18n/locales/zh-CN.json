@@ -290,6 +290,8 @@
       "refreshModule": "刷新数据库模块",
       "refreshSchema": "刷新 Schema",
       "run": "运行",
+      "savedSql": "已保存",
+      "saveSql": "保存 SQL",
       "stopSql": "停止 SQL 执行"
     },
     "editor": {
@@ -394,6 +396,19 @@
       "completed": "查询完成，用时 {durationMs}ms",
       "previewLoaded": "预览已加载：{count} 行",
       "unknownConnection": "未知连接"
+    },
+    "saved": {
+      "allConnections": "所有连接",
+      "connectionScope": "保存到 {name}",
+      "defaultName": "已保存 SQL",
+      "deleteLabel": "删除已保存 SQL {name}",
+      "empty": "已保存 SQL 片段会显示在这里。",
+      "listTitle": "已保存 SQL",
+      "missingConnection": "连接已不存在",
+      "name": "名称",
+      "namePlaceholder": "片段名称",
+      "saveTitle": "保存 SQL",
+      "saving": "保存中"
     },
     "result": {
       "executionFailed": "执行失败",

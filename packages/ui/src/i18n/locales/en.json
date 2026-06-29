@@ -291,6 +291,8 @@
       "refreshModule": "Refresh database module",
       "refreshSchema": "Refresh Schema",
       "run": "Run",
+      "savedSql": "Saved",
+      "saveSql": "Save SQL",
       "stopSql": "Stop SQL execution"
     },
     "editor": {
@@ -395,6 +397,19 @@
       "completed": "Query completed in {durationMs}ms",
       "previewLoaded": "Preview loaded: {count} rows",
       "unknownConnection": "Unknown connection"
+    },
+    "saved": {
+      "allConnections": "All connections",
+      "connectionScope": "Saved for {name}",
+      "defaultName": "Saved SQL",
+      "deleteLabel": "Delete saved SQL {name}",
+      "empty": "Saved SQL snippets will appear here.",
+      "listTitle": "Saved SQL",
+      "missingConnection": "Missing connection",
+      "name": "Name",
+      "namePlaceholder": "Snippet name",
+      "saveTitle": "Save SQL",
+      "saving": "Saving"
     },
     "result": {
       "executionFailed": "Execution failed",

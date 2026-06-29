@@ -66,6 +66,7 @@ export function DatabaseWorkspace({
   tableSegment,
   tableSort,
   tableView,
+  workspaceId,
 }: {
   activeResultTab: DatabaseResultTab;
   activeStructureTab: StructureTab;
@@ -111,6 +112,7 @@ export function DatabaseWorkspace({
   tableSegment: TableSegment;
   tableSort: { column: string; descending: boolean } | null;
   tableView: DatabaseTableViewState | null;
+  workspaceId: string;
 }) {
   const { t } = useI18n();
   const isTableTab = activeTabId === "table";
@@ -198,6 +200,7 @@ export function DatabaseWorkspace({
               schemaOptions={schemaOptions}
               selectedConnectionId={selectedConnectionId}
               sql={sql}
+              workspaceId={workspaceId}
             />
             <QueryResultPanel
               activeTab={activeResultTab}

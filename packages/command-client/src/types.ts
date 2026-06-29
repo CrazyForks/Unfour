@@ -434,6 +434,24 @@ export type DbQueryHistoryEntry = {
   executedAt: string;
 };
 
+export type SavedSql = {
+  id: string;
+  workspaceId: string;
+  connectionId: string | null;
+  name: string;
+  sql: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type SavedSqlInput = {
+  id?: string | null;
+  workspaceId: string;
+  connectionId?: string | null;
+  name: string;
+  sql: string;
+};
+
 export type DatabaseBrowseInput = {
   workspaceId: string;
   connectionId: string;

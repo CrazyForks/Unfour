@@ -663,6 +663,29 @@ pub struct DbQueryHistoryRecordInput {
     pub executed_at: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct SavedSql {
+    pub id: String,
+    pub workspace_id: String,
+    pub connection_id: Option<String>,
+    pub name: String,
+    pub sql: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SavedSqlInput {
+    /// Present when updating an existing snippet; absent to create a new one.
+    pub id: Option<String>,
+    pub workspace_id: String,
+    pub connection_id: Option<String>,
+    pub name: String,
+    pub sql: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DatabaseBrowseInput {

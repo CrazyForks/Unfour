@@ -1247,6 +1247,7 @@ export function DatabasePage({
               : null
           }
           tableView={tableView}
+          workspaceId={workspaceId}
         />
       </div>
       <DatabaseStatusBar connection={selectedConnection} executing={executePending} session={selectedSession} />
