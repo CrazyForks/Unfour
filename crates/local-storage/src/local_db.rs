@@ -3,10 +3,17 @@ use std::time::Duration;
 
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::SqlitePool;
-use tauri::{AppHandle, Manager};
 use unfour_core::{AppError, AppResult};
 
 const DB_FILENAME: &str = "unfour.sqlite";
+
+/// Directory name under the OS data dir where the desktop app and satellite
+/// processes (e.g. the MCP server) locate `unfour.sqlite`. Kept here so both
+/// the Tauri entry and the identifier-based entry resolve to the same path.
+/// Matches `productName` ("Unfour") to align with sibling apps under
+/// `%APPDATA%` / `~/Library/Application Support`. The Tauri `identifier`
+/// (`dev.unfour`) is unrelated and stays as the bundle/installer identity.
+pub const DEFAULT_APP_IDENTIFIER: &str = "Unfour";
 
 /// How long a connection waits for a held lock before returning
 /// `SQLITE_BUSY`. The desktop app and satellite processes (e.g. the MCP server)
@@ -20,13 +27,18 @@ pub struct LocalDb {
 }
 
 impl LocalDb {
-    pub async fn connect(app: &AppHandle) -> AppResult<Self> {
-        let app_data_dir = app.path().app_data_dir()?;
-        Self::connect_path(app_data_dir.join(DB_FILENAME)).await
+    /// Connect using the default app data directory (`<os_data_dir>/Unfour`).
+    ///
+    /// Both the desktop app and satellite processes must resolve to the same
+    /// directory, so this deliberately bypasses Tauri's `app_data_dir()` (which
+    /// derives from `identifier` and would yield `dev.unfour`) and uses the
+    /// shared `DEFAULT_APP_IDENTIFIER` instead.
+    pub async fn connect_default() -> AppResult<Self> {
+        Self::connect_app_data(DEFAULT_APP_IDENTIFIER).await
     }
 
     pub async fn connect_app_data(identifier: &str) -> AppResult<Self> {
-        Self::connect_path(app_data_path(identifier)?).await
+        Self::connect_path(app_data_path(identifier)?.join(DB_FILENAME)).await
     }
 
     pub async fn connect_existing_app_data_read_only(identifier: &str) -> AppResult<Self> {

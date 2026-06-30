@@ -370,7 +370,7 @@ approval.
 On Windows this resolves to:
 
 ```text
-%APPDATA%\dev.unfour\unfour.sqlite
+%APPDATA%\Unfour\unfour.sqlite
 ```
 
 The MCP process does not run migrations, seed workspaces, or write fallback

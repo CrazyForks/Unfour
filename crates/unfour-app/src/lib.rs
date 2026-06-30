@@ -34,9 +34,8 @@ pub struct AppState {
 /// `.run(tauri::generate_context!())`.
 pub fn configure(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
     builder.plugin(tauri_plugin_opener::init()).setup(|app| {
-        let app_handle = app.handle().clone();
         let command_bus = tauri::async_runtime::block_on(async {
-            let db = LocalDb::connect(&app_handle).await?;
+            let db = LocalDb::connect_default().await?;
             db.migrate().await?;
             CommandBus::from_db_with_secret_store(db, SecretStore::new("unfour")).await
         })?;
@@ -45,7 +44,7 @@ pub fn configure(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::W
 
         #[cfg(feature = "ssh-native")]
         {
-            let event_app = app_handle.clone();
+            let event_app = app.handle().clone();
             let channel_slot = terminal_channel.clone();
             command_bus.set_terminal_output_callback(std::sync::Arc::new(move |payload| {
                 use tauri::Emitter;

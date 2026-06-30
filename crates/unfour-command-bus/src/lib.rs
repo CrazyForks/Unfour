@@ -20,11 +20,10 @@ use unfour_core::AppResult;
 use unfour_database_engine::DatabaseService;
 use unfour_http_engine::ApiClientService;
 use unfour_local_storage::{ActivityLogService, LocalDb};
+pub use unfour_local_storage::DEFAULT_APP_IDENTIFIER;
 use unfour_secret_store::SecretStore;
 use unfour_ssh_engine::SshService;
 use unfour_workspace_engine::WorkspaceService;
-
-pub const DEFAULT_APP_IDENTIFIER: &str = "dev.unfour";
 
 /// OS keychain service name under which credentials are stored. Must match the
 /// value the desktop app passes to `SecretStore::new` (see
