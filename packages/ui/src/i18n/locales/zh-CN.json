@@ -108,7 +108,6 @@
       "deleteFolder": "删除目录",
       "deleteFolderConfirm": "删除该目录、子目录及其中的已保存请求？此操作无法撤销。",
       "export": "导出集合",
-      "moveTo": "移动到",
       "defaultCollection": "默认集合",
       "none": "还没有集合。新建一个来组织请求。"
     },

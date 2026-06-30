@@ -5,6 +5,27 @@ import { TreeView } from "./tree-view";
 
 afterEach(cleanup);
 
+function dataTransfer(): DataTransfer {
+  const data = new Map<string, string>();
+  return {
+    clearData: vi.fn((format?: string) => {
+      if (format) {
+        data.delete(format);
+      } else {
+        data.clear();
+      }
+    }),
+    dropEffect: "move",
+    effectAllowed: "all",
+    files: [] as unknown as FileList,
+    getData: vi.fn((format: string) => data.get(format) ?? ""),
+    items: [] as unknown as DataTransferItemList,
+    setData: vi.fn((format: string, value: string) => data.set(format, value)),
+    types: [],
+    setDragImage: vi.fn(),
+  };
+}
+
 describe("TreeView", () => {
   it("uses a compact disclosure control in sidebar rows", () => {
     render(
@@ -94,5 +115,150 @@ describe("TreeView", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Collapse" }));
     expect(onToggle).toHaveBeenLastCalledWith("db", false);
+  });
+
+  it("calls onDrop when a draggable item is dropped on an accepted target", () => {
+    const onDrop = vi.fn();
+    render(
+      <TreeView
+        canDrag={(item) => item.id === "request"}
+        canDrop={(source, target) => source.id === "request" && target.id === "folder"}
+        defaultExpandedIds={["folder"]}
+        items={[
+          {
+            id: "folder",
+            label: "Folder",
+            children: [{ id: "request", label: "Request" }],
+          },
+        ]}
+        onDrop={onDrop}
+      />,
+    );
+
+    const requestRow = screen.getByText("Request").closest("[role='treeitem']");
+    const folderRow = screen.getByText("Folder").closest("[role='treeitem']");
+    expect(requestRow).not.toBeNull();
+    expect(folderRow).not.toBeNull();
+
+    const transfer = dataTransfer();
+    fireEvent.dragStart(requestRow as HTMLElement, { dataTransfer: transfer });
+    fireEvent.dragOver(folderRow as HTMLElement, { dataTransfer: transfer });
+    fireEvent.drop(folderRow as HTMLElement, { dataTransfer: transfer });
+
+    expect(onDrop).toHaveBeenCalledWith({
+      source: expect.objectContaining({ id: "request" }),
+      target: expect.objectContaining({ id: "folder" }),
+    });
+  });
+
+  it("keeps internal tree dragging out of native HTML drag mode", () => {
+    render(
+      <TreeView
+        canDrag={(item) => item.id === "request"}
+        items={[{ id: "request", label: "Request" }]}
+        onDrop={vi.fn()}
+      />,
+    );
+
+    const requestLabel = screen.getByRole("button", { name: "Request" });
+    expect(requestLabel).not.toHaveAttribute("draggable", "true");
+    expect(requestLabel.closest("[role='treeitem']")).not.toHaveAttribute(
+      "draggable",
+      "true",
+    );
+  });
+
+  it("uses the dataTransfer item id when drop target handlers run before drag state renders", () => {
+    const onDrop = vi.fn();
+    render(
+      <TreeView
+        canDrag={(item) => item.id === "request"}
+        canDrop={(source, target) => source.id === "request" && target.id === "folder"}
+        defaultExpandedIds={["folder"]}
+        items={[
+          {
+            id: "folder",
+            label: "Folder",
+            children: [{ id: "request", label: "Request" }],
+          },
+        ]}
+        onDrop={onDrop}
+      />,
+    );
+
+    const folderRow = screen.getByText("Folder").closest("[role='treeitem']");
+    expect(folderRow).not.toBeNull();
+
+    const transfer = dataTransfer();
+    transfer.setData("text/plain", "request");
+    fireEvent.dragOver(folderRow as HTMLElement, { dataTransfer: transfer });
+    fireEvent.drop(folderRow as HTMLElement, { dataTransfer: transfer });
+
+    expect(onDrop).toHaveBeenCalledWith({
+      source: expect.objectContaining({ id: "request" }),
+      target: expect.objectContaining({ id: "folder" }),
+    });
+  });
+
+  it("drops with pointer dragging when native drag events are unavailable", () => {
+    const onDrop = vi.fn();
+    const onSelect = vi.fn();
+    render(
+      <TreeView
+        canDrag={(item) => item.id === "request"}
+        canDrop={(source, target) => source.id === "request" && target.id === "folder"}
+        defaultExpandedIds={["folder"]}
+        items={[
+          {
+            id: "folder",
+            label: "Folder",
+            children: [{ id: "request", label: "Request" }],
+          },
+        ]}
+        onDrop={onDrop}
+        onSelect={onSelect}
+      />,
+    );
+
+    const requestLabel = screen.getByRole("button", { name: "Request" });
+    const folderRow = screen.getByText("Folder").closest("[role='treeitem']");
+    expect(folderRow).not.toBeNull();
+    const originalElementFromPoint = document.elementFromPoint;
+    const elementFromPoint = vi.fn(() => folderRow as Element);
+    Object.defineProperty(document, "elementFromPoint", {
+      configurable: true,
+      value: elementFromPoint,
+    });
+
+    try {
+      fireEvent.pointerDown(requestLabel, {
+        button: 0,
+        clientX: 12,
+        clientY: 12,
+        pointerId: 1,
+      });
+      fireEvent.pointerMove(requestLabel, {
+        clientX: 28,
+        clientY: 28,
+        pointerId: 1,
+      });
+      fireEvent.pointerUp(requestLabel, {
+        clientX: 28,
+        clientY: 28,
+        pointerId: 1,
+      });
+      fireEvent.click(requestLabel);
+
+      expect(onDrop).toHaveBeenCalledWith({
+        source: expect.objectContaining({ id: "request" }),
+        target: expect.objectContaining({ id: "folder" }),
+      });
+      expect(onSelect).not.toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(document, "elementFromPoint", {
+        configurable: true,
+        value: originalElementFromPoint,
+      });
+    }
   });
 });

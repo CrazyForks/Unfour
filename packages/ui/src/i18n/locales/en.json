@@ -108,7 +108,6 @@
       "deleteFolder": "Delete folder",
       "deleteFolderConfirm": "Delete this folder, its subfolders, and saved requests inside them? This cannot be undone.",
       "export": "Export collection",
-      "moveTo": "Move to",
       "defaultCollection": "Default Collection",
       "none": "No collections yet. Create one to organize requests."
     },

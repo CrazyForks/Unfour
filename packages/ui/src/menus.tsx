@@ -4,7 +4,7 @@ import * as React from "react";
 import { cn } from "./utils";
 
 const menuContent =
-  "z-50 min-w-[180px] overflow-hidden rounded-[var(--u-radius-md)] border border-[var(--u-color-border)] bg-[var(--u-color-surface)] p-1 text-[12px] text-[var(--u-color-text)] shadow-lg";
+  "z-50 min-w-[180px] overflow-hidden rounded-[var(--u-radius-md)] border border-[var(--u-color-border)] bg-[var(--u-color-surface)] p-1 text-[12px] font-normal text-[var(--u-color-text)] shadow-lg";
 const menuItem =
   "flex h-7 cursor-default select-none items-center gap-2 rounded-[var(--u-radius-sm)] px-2 outline-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[highlighted]:bg-[var(--u-color-surface-hover)]";
 

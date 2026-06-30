@@ -3,6 +3,8 @@ import { ChevronRight } from "lucide-react";
 import { cn } from "./utils";
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "./menus";
 
+const TREE_DRAG_TYPE = "application/x-unfour-tree-item";
+
 export type TreeViewItem = {
   actions?: React.ReactNode;
   children?: TreeViewItem[];
@@ -15,12 +17,25 @@ export type TreeViewItem = {
   title?: string;
 };
 
+export type TreeViewDropEvent = {
+  source: TreeViewItem;
+  target: TreeViewItem;
+};
+
 type FlatNode = {
   expanded: boolean;
   hasChildren: boolean;
   item: TreeViewItem;
   level: number;
   parentId: string | null;
+};
+
+type PointerDragState = {
+  active: boolean;
+  pointerId: number;
+  source: TreeViewItem;
+  startX: number;
+  startY: number;
 };
 
 function flatten(
@@ -54,19 +69,25 @@ function escapeId(id: string): string {
 }
 
 export function TreeView({
+  canDrag,
+  canDrop,
   className,
   defaultExpandedIds = [],
   items,
   onActivate,
+  onDrop,
   onSelect,
   onToggle,
   selectedId,
 }: {
+  canDrag?: (item: TreeViewItem) => boolean;
+  canDrop?: (source: TreeViewItem, target: TreeViewItem) => boolean;
   className?: string;
   defaultExpandedIds?: string[];
   items: TreeViewItem[];
   /** Fired on double-click of a row label (e.g. "double-click to connect"). */
   onActivate?: (item: TreeViewItem) => void;
+  onDrop?: (event: TreeViewDropEvent) => void;
   onSelect?: (item: TreeViewItem) => void;
   /** Fired when a node is expanded or collapsed (e.g. to lazy-load children). */
   onToggle?: (id: string, expanded: boolean) => void;
@@ -74,7 +95,12 @@ export function TreeView({
 }) {
   const [expandedIds, setExpandedIds] = React.useState(() => new Set(defaultExpandedIds));
   const [focusedId, setFocusedId] = React.useState<string | null>(null);
+  const [dragSource, setDragSource] = React.useState<TreeViewItem | null>(null);
+  const [dragTargetId, setDragTargetId] = React.useState<string | null>(null);
   const containerRef = React.useRef<HTMLDivElement>(null);
+  const dragSourceRef = React.useRef<TreeViewItem | null>(null);
+  const pointerDragRef = React.useRef<PointerDragState | null>(null);
+  const suppressClickRef = React.useRef<string | null>(null);
   const typeAheadRef = React.useRef<{ buffer: string; at: number }>({ buffer: "", at: 0 });
 
   // Auto-expand ids already applied. Lets lazily-loaded content (e.g. a database
@@ -111,6 +137,10 @@ export function TreeView({
   }, [defaultsKey, onToggle]);
 
   const flat = React.useMemo(() => flatten(items, expandedIds), [items, expandedIds]);
+  const itemById = React.useMemo(
+    () => new Map(flat.map((node) => [node.item.id, node.item])),
+    [flat],
+  );
 
   function toggle(id: string) {
     // Derive the next state from current expandedIds rather than from inside the
@@ -151,6 +181,112 @@ export function TreeView({
     if (node) {
       focusId(node.item.id);
     }
+  }
+
+  function canDropOn(source: TreeViewItem, target: TreeViewItem) {
+    if (!onDrop || source.id === target.id || target.disabled) {
+      return false;
+    }
+    return canDrop ? canDrop(source, target) : true;
+  }
+
+  function setDragSourceItem(item: TreeViewItem | null) {
+    dragSourceRef.current = item;
+    setDragSource(item);
+  }
+
+  function dragSourceFromEvent(event: React.DragEvent<HTMLDivElement>) {
+    if (dragSourceRef.current) {
+      return dragSourceRef.current;
+    }
+    const sourceId =
+      event.dataTransfer.getData(TREE_DRAG_TYPE) ||
+      event.dataTransfer.getData("text/plain");
+    return sourceId ? (itemById.get(sourceId) ?? null) : null;
+  }
+
+  function itemFromPoint(clientX: number, clientY: number) {
+    const target = document.elementFromPoint(clientX, clientY);
+    const row = target?.closest<HTMLElement>("[data-tree-id]");
+    const id = row?.dataset.treeId;
+    return id ? (itemById.get(id) ?? null) : null;
+  }
+
+  function startPointerDrag(
+    item: TreeViewItem,
+    event: React.PointerEvent<HTMLElement>,
+  ) {
+    if (event.button !== 0 || item.disabled) {
+      return;
+    }
+    pointerDragRef.current = {
+      active: false,
+      pointerId: event.pointerId,
+      source: item,
+      startX: event.clientX,
+      startY: event.clientY,
+    };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  }
+
+  function updatePointerDrag(event: React.PointerEvent<HTMLElement>) {
+    const state = pointerDragRef.current;
+    if (!state || state.pointerId !== event.pointerId) {
+      return;
+    }
+    const moved =
+      Math.abs(event.clientX - state.startX) > 4 ||
+      Math.abs(event.clientY - state.startY) > 4;
+    if (!moved && !state.active) {
+      return;
+    }
+    state.active = true;
+    setDragSourceItem(state.source);
+    event.preventDefault();
+    const target = itemFromPoint(event.clientX, event.clientY);
+    setDragTargetId(target && canDropOn(state.source, target) ? target.id : null);
+  }
+
+  function endPointerDrag(event: React.PointerEvent<HTMLElement>) {
+    const state = pointerDragRef.current;
+    if (!state || state.pointerId !== event.pointerId) {
+      return;
+    }
+    pointerDragRef.current = null;
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+    if (state.active) {
+      event.preventDefault();
+      event.stopPropagation();
+      suppressClickRef.current = state.source.id;
+      const target = itemFromPoint(event.clientX, event.clientY);
+      if (target && canDropOn(state.source, target)) {
+        onDrop?.({ source: state.source, target });
+      }
+    }
+    clearDrag();
+  }
+
+  function cancelPointerDrag(event: React.PointerEvent<HTMLElement>) {
+    const state = pointerDragRef.current;
+    if (!state || state.pointerId !== event.pointerId) {
+      return;
+    }
+    pointerDragRef.current = null;
+    clearDrag();
+  }
+
+  function consumeSuppressedClick(item: TreeViewItem) {
+    if (suppressClickRef.current !== item.id) {
+      return false;
+    }
+    suppressClickRef.current = null;
+    return true;
+  }
+
+  function clearDrag() {
+    dragSourceRef.current = null;
+    setDragSource(null);
+    setDragTargetId(null);
   }
 
   function step(fromIndex: number, direction: 1 | -1) {
@@ -255,13 +391,27 @@ export function TreeView({
     >
       {items.map((item) => (
         <TreeRow
+          canDrag={canDrag}
+          canDropOn={canDropOn}
+          dragSource={dragSource}
+          dragTargetId={dragTargetId}
           expandedIds={expandedIds}
           item={item}
           key={item.id}
           level={0}
           onActivate={onActivate}
+          onClearDrag={clearDrag}
+          onDropItem={(source, target) => onDrop?.({ source, target })}
           onFocusRow={setFocusedId}
+          onGetDragSource={dragSourceFromEvent}
+          onCancelPointerDrag={cancelPointerDrag}
+          onConsumeSuppressedClick={consumeSuppressedClick}
           onSelect={onSelect}
+          onStartPointerDrag={startPointerDrag}
+          onUpdatePointerDrag={updatePointerDrag}
+          onEndPointerDrag={endPointerDrag}
+          onSetDragSource={setDragSourceItem}
+          onSetDragTarget={setDragTargetId}
           rovingId={rovingId}
           selectedId={selectedId}
           toggle={toggle}
@@ -272,28 +422,107 @@ export function TreeView({
 }
 
 function TreeRow({
+  canDrag,
+  canDropOn,
+  dragSource,
+  dragTargetId,
   expandedIds,
   item,
   level,
   onActivate,
+  onClearDrag,
+  onDropItem,
   onFocusRow,
+  onGetDragSource,
+  onCancelPointerDrag,
+  onConsumeSuppressedClick,
   onSelect,
+  onStartPointerDrag,
+  onUpdatePointerDrag,
+  onEndPointerDrag,
+  onSetDragSource,
+  onSetDragTarget,
   rovingId,
   selectedId,
   toggle,
 }: {
+  canDrag?: (item: TreeViewItem) => boolean;
+  canDropOn: (source: TreeViewItem, target: TreeViewItem) => boolean;
+  dragSource: TreeViewItem | null;
+  dragTargetId: string | null;
   expandedIds: Set<string>;
   item: TreeViewItem;
   level: number;
   onActivate?: (item: TreeViewItem) => void;
+  onClearDrag: () => void;
+  onDropItem: (source: TreeViewItem, target: TreeViewItem) => void;
   onFocusRow: (id: string) => void;
+  onGetDragSource: (event: React.DragEvent<HTMLDivElement>) => TreeViewItem | null;
+  onCancelPointerDrag: (event: React.PointerEvent<HTMLElement>) => void;
+  onConsumeSuppressedClick: (item: TreeViewItem) => boolean;
   onSelect?: (item: TreeViewItem) => void;
+  onStartPointerDrag: (
+    item: TreeViewItem,
+    event: React.PointerEvent<HTMLElement>,
+  ) => void;
+  onUpdatePointerDrag: (event: React.PointerEvent<HTMLElement>) => void;
+  onEndPointerDrag: (event: React.PointerEvent<HTMLElement>) => void;
+  onSetDragSource: (item: TreeViewItem | null) => void;
+  onSetDragTarget: (id: string | null) => void;
   rovingId: string | null;
   selectedId?: string | null;
   toggle: (id: string) => void;
 }) {
   const hasChildren = Boolean(item.children?.length);
   const expanded = expandedIds.has(item.id);
+  const draggable = !item.disabled && Boolean(canDrag?.(item));
+  const canReceiveDrop = dragSource ? canDropOn(dragSource, item) : false;
+  const isDropTarget = canReceiveDrop && dragTargetId === item.id;
+
+  function handleDragStart(event: React.DragEvent<HTMLElement>) {
+    if (!draggable) {
+      event.preventDefault();
+      return;
+    }
+    onSetDragSource(item);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData(TREE_DRAG_TYPE, item.id);
+    event.dataTransfer.setData("text/plain", item.id);
+  }
+
+  function handleDragOver(event: React.DragEvent<HTMLDivElement>) {
+    const source = onGetDragSource(event);
+    if (!source || !canDropOn(source, item)) {
+      if (dragTargetId === item.id) {
+        onSetDragTarget(null);
+      }
+      return;
+    }
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    onSetDragTarget(item.id);
+  }
+
+  function handleDragLeave(event: React.DragEvent<HTMLDivElement>) {
+    if (
+      event.relatedTarget instanceof Node &&
+      event.currentTarget.contains(event.relatedTarget)
+    ) {
+      return;
+    }
+    onSetDragTarget(null);
+  }
+
+  function handleDrop(event: React.DragEvent<HTMLDivElement>) {
+    const source = onGetDragSource(event);
+    if (!source || !canDropOn(source, item)) {
+      return;
+    }
+    event.preventDefault();
+    onDropItem(source, item);
+    onClearDrag();
+  }
+
   const row = (
     <div
       aria-disabled={item.disabled || undefined}
@@ -303,9 +532,16 @@ function TreeRow({
         "group flex h-[var(--u-size-sidebar-row)] min-w-0 items-center gap-0.5 rounded-[var(--u-radius-sm)] px-1 text-[12px] text-[var(--u-color-text-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_srgb,var(--u-color-focus)_32%,transparent)]",
         selectedId === item.id &&
           "bg-[var(--u-color-primary-soft)] font-semibold text-[var(--u-color-primary)]",
+        isDropTarget &&
+          "bg-[var(--u-color-primary-soft)] text-[var(--u-color-primary)] ring-1 ring-inset ring-[var(--u-color-border-strong)]",
         item.disabled ? "opacity-60" : "hover:bg-[var(--u-color-surface-hover)] hover:text-[var(--u-color-text)]",
       )}
       data-tree-id={item.id}
+      onDragEnd={draggable ? onClearDrag : undefined}
+      onDragLeave={handleDragLeave}
+      onDragOver={handleDragOver}
+      onDragStart={draggable ? handleDragStart : undefined}
+      onDrop={handleDrop}
       onFocus={() => onFocusRow(item.id)}
       role="treeitem"
       style={{ paddingLeft: `${4 + level * 14}px` }}
@@ -326,10 +562,27 @@ function TreeRow({
       </button>
       {item.icon && <span className="grid h-4 w-4 shrink-0 place-items-center">{item.icon}</span>}
       <button
-        className="min-w-0 flex-1 truncate text-left disabled:cursor-not-allowed"
+        className={cn(
+          "min-w-0 flex-1 truncate text-left disabled:cursor-not-allowed",
+          draggable && "cursor-grab active:cursor-grabbing",
+        )}
         disabled={item.disabled}
-        onClick={() => onSelect?.(item)}
+        onClick={(event) => {
+          if (onConsumeSuppressedClick(item)) {
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+          }
+          onSelect?.(item);
+        }}
         onDoubleClick={() => onActivate?.(item)}
+        onDragStart={draggable ? handleDragStart : undefined}
+        onPointerCancel={draggable ? onCancelPointerDrag : undefined}
+        onPointerDown={
+          draggable ? (event) => onStartPointerDrag(item, event) : undefined
+        }
+        onPointerMove={draggable ? onUpdatePointerDrag : undefined}
+        onPointerUp={draggable ? onEndPointerDrag : undefined}
         tabIndex={-1}
         type="button"
       >
@@ -354,13 +607,27 @@ function TreeRow({
         <div role="group">
           {item.children?.map((child) => (
             <TreeRow
+              canDrag={canDrag}
+              canDropOn={canDropOn}
+              dragSource={dragSource}
+              dragTargetId={dragTargetId}
               expandedIds={expandedIds}
               item={child}
               key={child.id}
               level={level + 1}
               onActivate={onActivate}
+              onClearDrag={onClearDrag}
+              onDropItem={onDropItem}
               onFocusRow={onFocusRow}
+              onGetDragSource={onGetDragSource}
+              onCancelPointerDrag={onCancelPointerDrag}
+              onConsumeSuppressedClick={onConsumeSuppressedClick}
               onSelect={onSelect}
+              onStartPointerDrag={onStartPointerDrag}
+              onUpdatePointerDrag={onUpdatePointerDrag}
+              onEndPointerDrag={onEndPointerDrag}
+              onSetDragSource={onSetDragSource}
+              onSetDragTarget={onSetDragTarget}
               rovingId={rovingId}
               selectedId={selectedId}
               toggle={toggle}

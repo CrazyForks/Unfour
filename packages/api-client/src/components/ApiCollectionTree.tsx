@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Folder, FolderOpen, FolderPlus, MoreHorizontal, Plus, Search, Send } from "lucide-react";
+import { Folder, FolderOpen, FolderPlus, Plus, Search, Send } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Button,
@@ -11,10 +11,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
   Input,
   SidebarRow,
   SidebarSection,
@@ -29,7 +25,6 @@ import {
   listSavedApiRequests,
   updateApiRequest,
   type ApiCollection,
-  type ApiCollectionFolder,
   type ApiSavedRequest,
 } from "@unfour/command-client";
 import {
@@ -44,23 +39,11 @@ import type { ApiOpenIntent } from "../model/types";
 import { useApiCollectionFolders } from "../hooks/useApiCollectionFolders";
 import { useApiCollections } from "../hooks/useApiCollections";
 import { ApiHistoryTree } from "./ApiHistoryTree";
-
-type Translate = (key: string, params?: Record<string, string | number>) => string;
-
-type RequestMenuContext = {
-  collections: ApiCollection[];
-  duplicate: (requestId: string) => void;
-  folders: ApiCollectionFolder[];
-  move: (
-    request: ApiSavedRequest,
-    collectionId: string,
-    parentFolderId: string | null,
-  ) => void;
-  onOpenIntent: (intent: ApiOpenIntent) => void;
-  remove: (requestId: string) => void;
-  rename: (request: ApiSavedRequest) => void;
-  t: Translate;
-};
+import {
+  RequestActionMenu,
+  RequestContextMenu,
+  type RequestTreeActionContext,
+} from "./ApiRequestTreeActions";
 
 type NameTarget =
   | { kind: "collection" }
@@ -159,16 +142,9 @@ export function ApiCollectionTree({
       : true,
   );
 
-  const menuContext: RequestMenuContext = {
-    collections,
+  const menuContext: RequestTreeActionContext = {
     duplicate: duplicateMutation.mutate,
-    folders,
-    move: (request, collectionId, parentFolderId) =>
-      moveRequestMut.mutate({
-        collectionId,
-        parentFolderId,
-        requestId: request.id,
-      }),
+    exportRequest,
     onOpenIntent,
     remove: deleteMutation.mutate,
     rename: (request) => {
@@ -295,6 +271,60 @@ export function ApiCollectionTree({
       ),
     ],
   }));
+  const requestById = new Map(savedRequests.map((request) => [request.id, request]));
+  const folderById = new Map(folders.map((folder) => [folder.id, folder]));
+
+  function dropTargetLocation(itemId: string) {
+    if (itemId.startsWith("collection:")) {
+      return {
+        collectionId: itemId.slice("collection:".length),
+        parentFolderId: null,
+      };
+    }
+    if (itemId.startsWith("folder:")) {
+      const folder = folderById.get(itemId.slice("folder:".length));
+      if (folder) {
+        return {
+          collectionId: folder.collectionId,
+          parentFolderId: folder.id,
+        };
+      }
+    }
+    return null;
+  }
+
+  function canDropRequest(source: TreeViewItem, target: TreeViewItem) {
+    if (!source.id.startsWith("request:")) {
+      return false;
+    }
+    const request = requestById.get(source.id.slice("request:".length));
+    const targetLocation = dropTargetLocation(target.id);
+    return Boolean(
+      request &&
+        targetLocation &&
+        (request.collectionId !== targetLocation.collectionId ||
+          request.parentFolderId !== targetLocation.parentFolderId),
+    );
+  }
+
+  function moveDroppedRequest(source: TreeViewItem, target: TreeViewItem) {
+    const request = requestById.get(source.id.slice("request:".length));
+    const targetLocation = dropTargetLocation(target.id);
+    if (!request || !targetLocation) {
+      return;
+    }
+    if (
+      request.collectionId === targetLocation.collectionId &&
+      request.parentFolderId === targetLocation.parentFolderId
+    ) {
+      return;
+    }
+    moveRequestMut.mutate({
+      collectionId: targetLocation.collectionId,
+      parentFolderId: targetLocation.parentFolderId,
+      requestId: request.id,
+    });
+  }
 
   // Re-key the tree on its expandable structure so newly created collections
   // and folders auto-expand (TreeView only reads defaultExpandedIds on mount).
@@ -344,9 +374,12 @@ export function ApiCollectionTree({
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
         {collectionItems.length ? (
           <TreeView
+            canDrag={(item) => item.id.startsWith("request:")}
+            canDrop={canDropRequest}
             defaultExpandedIds={expandableIds}
             items={collectionItems}
             key={expandableIds.join("|")}
+            onDrop={({ source, target }) => moveDroppedRequest(source, target)}
             onSelect={(item) => {
               if (item.id.startsWith("request:")) {
                 onOpenIntent({
@@ -679,20 +712,8 @@ function collectExpandableIds(items: TreeViewItem[]): string[] {
 
 function requestTreeItem(
   request: ApiSavedRequest,
-  ctx: RequestMenuContext,
+  ctx: RequestTreeActionContext,
 ): TreeViewItem {
-  const open = (action: "open" | "send" = "open") =>
-    ctx.onOpenIntent({
-      action,
-      kind: "saved",
-      nonce: Date.now(),
-      requestId: request.id,
-    });
-  const moveTargets = requestMoveTargets(
-    request,
-    ctx.collections,
-    ctx.folders,
-  );
   return {
     id: `request:${request.id}`,
     label: (
@@ -702,172 +723,9 @@ function requestTreeItem(
       </span>
     ),
     title: request.url,
-    actions: <RequestActionMenu ctx={ctx} open={open} request={request} />,
-    contextMenu: (
-      <>
-        <ContextMenuItem onSelect={() => open()}>
-          {ctx.t("api.request.openInTab")}
-        </ContextMenuItem>
-        <ContextMenuItem onSelect={() => open("send")}>
-          {ctx.t("api.actions.send")}
-        </ContextMenuItem>
-        <ContextMenuItem onSelect={() => ctx.rename(request)}>
-          {ctx.t("api.request.rename")}
-        </ContextMenuItem>
-        <ContextMenuItem onSelect={() => ctx.duplicate(request.id)}>
-          {ctx.t("api.actions.duplicate")}
-        </ContextMenuItem>
-        <ContextMenuItem
-          onSelect={() => void navigator.clipboard?.writeText(request.url)}
-        >
-          {ctx.t("api.request.copyUrl")}
-        </ContextMenuItem>
-        <ContextMenuItem onSelect={() => exportRequest(request)}>
-          {ctx.t("api.actions.export")}
-        </ContextMenuItem>
-        {moveTargets.length > 0 && (
-          <ContextMenuItem disabled>{ctx.t("api.collection.moveTo")}</ContextMenuItem>
-        )}
-        {moveTargets.map((collection) => (
-          <ContextMenuItem
-            key={`${collection.collectionId}:${collection.parentFolderId ?? "root"}`}
-            onSelect={() =>
-              ctx.move(request, collection.collectionId, collection.parentFolderId)
-            }
-          >
-            {collection.label}
-          </ContextMenuItem>
-        ))}
-        <ContextMenuItem
-          className="text-[var(--u-color-danger)]"
-          onSelect={() => ctx.remove(request.id)}
-        >
-          {ctx.t("api.actions.deleteRequest")}
-        </ContextMenuItem>
-      </>
-    ),
+    actions: <RequestActionMenu ctx={ctx} request={request} />,
+    contextMenu: <RequestContextMenu ctx={ctx} request={request} />,
   };
-}
-
-function requestMoveTargets(
-  request: ApiSavedRequest,
-  collections: ApiCollection[],
-  folders: ApiCollectionFolder[],
-) {
-  const collectionById = new Map(collections.map((collection) => [collection.id, collection]));
-  const folderById = new Map(folders.map((folder) => [folder.id, folder]));
-  const targets: Array<{
-    collectionId: string;
-    label: string;
-    parentFolderId: string | null;
-  }> = [];
-
-  for (const collection of collections) {
-    if (!(request.collectionId === collection.id && request.parentFolderId === null)) {
-      targets.push({
-        collectionId: collection.id,
-        label: collection.name,
-        parentFolderId: null,
-      });
-    }
-  }
-
-  for (const folder of [...folders].sort(compareCollectionFoldersForMenu)) {
-    if (request.collectionId === folder.collectionId && request.parentFolderId === folder.id) {
-      continue;
-    }
-    const collection = collectionById.get(folder.collectionId);
-    if (!collection) continue;
-    targets.push({
-      collectionId: folder.collectionId,
-      label: `${collection.name} / ${folderTreeLabel(folder, folderById)}`,
-      parentFolderId: folder.id,
-    });
-  }
-
-  return targets;
-}
-
-function compareCollectionFoldersForMenu(
-  left: ApiCollectionFolder,
-  right: ApiCollectionFolder,
-) {
-  return (
-    left.collectionId.localeCompare(right.collectionId) ||
-    left.sortOrder - right.sortOrder ||
-    left.name.localeCompare(right.name)
-  );
-}
-
-function folderTreeLabel(
-  folder: ApiCollectionFolder,
-  folderById: Map<string, ApiCollectionFolder>,
-) {
-  const parts = [folder.name];
-  let current = folder.parentFolderId;
-  const seen = new Set<string>([folder.id]);
-  while (current && !seen.has(current)) {
-    seen.add(current);
-    const parent = folderById.get(current);
-    if (!parent) break;
-    parts.unshift(parent.name);
-    current = parent.parentFolderId;
-  }
-  return parts.join(" / ");
-}
-
-function RequestActionMenu({
-  ctx,
-  open,
-  request,
-}: {
-  ctx: RequestMenuContext;
-  open: (action?: "open" | "send") => void;
-  request: ApiSavedRequest;
-}) {
-  const label = ctx.t("api.request.actionsLabel", { name: request.name });
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          aria-label={label}
-          className="grid h-5 w-5 place-items-center rounded-[var(--u-radius-sm)] text-[var(--u-color-text-soft)] opacity-0 hover:bg-[var(--u-color-surface-hover)] hover:text-[var(--u-color-text)] focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100"
-          onClick={(event) => event.stopPropagation()}
-          onPointerDown={(event) => event.stopPropagation()}
-          title={label}
-          type="button"
-        >
-          <MoreHorizontal size={13} />
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem onSelect={() => open()}>
-          {ctx.t("api.request.openInTab")}
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => open("send")}>
-          {ctx.t("api.actions.send")}
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => ctx.rename(request)}>
-          {ctx.t("api.request.rename")}
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => ctx.duplicate(request.id)}>
-          {ctx.t("api.actions.duplicate")}
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => void navigator.clipboard?.writeText(request.url)}>
-          {ctx.t("api.request.copyUrl")}
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => exportRequest(request)}>
-          {ctx.t("api.actions.export")}
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          className="text-[var(--u-color-danger)]"
-          onSelect={() => ctx.remove(request.id)}
-        >
-          {ctx.t("api.actions.deleteRequest")}
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
 }
 
 function MethodMeta({ method }: { method: string }) {
