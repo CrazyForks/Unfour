@@ -227,18 +227,16 @@ describe("groupRequestsByCollection", () => {
     const groups = groupRequestsByCollection(
       [makeSavedRequest("In Beta", null, "c-1")],
       collections,
-      "Unfiled",
     );
     expect(groups.map((group) => group.name)).toEqual(["Alpha", "Beta"]);
     const alpha = groups.find((group) => group.id === "c-2");
-    // Empty collection still surfaces its persisted empty folder.
     expect(alpha?.tree.rootRequests).toEqual([]);
     expect(alpha?.tree.folders[0].name).toBe("Drafts");
     const beta = groups.find((group) => group.id === "c-1");
     expect(beta?.tree.rootRequests[0].name).toBe("In Beta");
   });
 
-  it("places uncollected and orphaned requests under Unfiled first", () => {
+  it("places uncollected and orphaned requests under the first collection", () => {
     const groups = groupRequestsByCollection(
       [
         makeSavedRequest("No Collection", null, null),
@@ -246,21 +244,20 @@ describe("groupRequestsByCollection", () => {
         makeSavedRequest("In Beta", "Auth", "c-1"),
       ],
       collections,
-      "Unfiled",
     );
-    expect(groups[0].id).toBeNull();
-    expect(groups[0].name).toBe("Unfiled");
-    const unfiledNames = collectTreeRequests(groups[0].tree).map((r) => r.name);
-    expect(unfiledNames).toContain("No Collection");
-    expect(unfiledNames).toContain("Orphan");
+    expect(groups[0].id).toBe("c-2");
+    expect(groups[0].name).toBe("Alpha");
+    const firstNames = collectTreeRequests(groups[0].tree).map((r) => r.name);
+    expect(firstNames).toContain("No Collection");
+    expect(firstNames).toContain("Orphan");
   });
 
-  it("omits Unfiled when every request belongs to a collection", () => {
+  it("works normally when every request belongs to a collection", () => {
     const groups = groupRequestsByCollection(
       [makeSavedRequest("In Beta", null, "c-1")],
       collections,
-      "Unfiled",
     );
+    expect(groups).toHaveLength(2);
     expect(groups.some((group) => group.id === null)).toBe(false);
   });
 });

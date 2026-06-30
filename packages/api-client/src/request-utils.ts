@@ -179,8 +179,8 @@ export type FolderTree = {
 };
 
 export type ApiCollectionGroup = {
-  collection: ApiCollection | null;
-  id: string | null;
+  collection: ApiCollection;
+  id: string;
   name: string;
   tree: FolderTree;
 };
@@ -257,44 +257,38 @@ export function collectTreeRequests(tree: FolderTree): ApiSavedRequest[] {
 /**
  * Group saved requests under their owning collection, then into a nested folder
  * tree (collection-owned empty folders included). Empty collections are still
- * returned so they remain visible. Requests with no collection — or whose
- * collection no longer exists — fall under a synthetic "Unfiled" group first.
+ * returned so they remain visible. Requests whose collection no longer exists
+ * are grouped with the first collection.
  */
 export function groupRequestsByCollection(
   requests: ApiSavedRequest[],
   collections: ApiCollection[],
-  unfiledLabel: string,
 ): ApiCollectionGroup[] {
-  const byCollection = new Map<string | null, ApiSavedRequest[]>();
+  const byCollection = new Map<string, ApiSavedRequest[]>();
   for (const request of requests) {
-    const key = request.collectionId ?? null;
+    const key = request.collectionId ?? collections[0]?.id ?? "";
     byCollection.set(key, [...(byCollection.get(key) ?? []), request]);
   }
 
   const known = new Set(collections.map((collection) => collection.id));
-  const groups: ApiCollectionGroup[] = [...collections]
-    .sort((left, right) => left.name.localeCompare(right.name))
-    .map((collection) => ({
-      collection,
-      id: collection.id,
-      name: collection.name,
-      tree: buildFolderTree(
-        byCollection.get(collection.id) ?? [],
-        collection.folders,
-      ),
-    }));
-
-  const unfiled = requests.filter(
+  const orphaned = requests.filter(
     (request) => !request.collectionId || !known.has(request.collectionId),
   );
-  if (unfiled.length) {
-    groups.unshift({
-      collection: null,
-      id: null,
-      name: unfiledLabel,
-      tree: buildFolderTree(unfiled),
+
+  const groups: ApiCollectionGroup[] = [...collections]
+    .sort((left, right) => left.name.localeCompare(right.name))
+    .map((collection, index) => {
+      const collectionRequests =
+        index === 0 && orphaned.length
+          ? [...(byCollection.get(collection.id) ?? []), ...orphaned]
+          : byCollection.get(collection.id) ?? [];
+      return {
+        collection,
+        id: collection.id,
+        name: collection.name,
+        tree: buildFolderTree(collectionRequests, collection.folders),
+      };
     });
-  }
 
   return groups;
 }

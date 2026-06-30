@@ -12,6 +12,7 @@ use unfour_local_storage::LocalDb;
 use uuid::Uuid;
 
 const DEFAULT_AUTH_JSON: &str = r#"{"type":"none"}"#;
+const DEFAULT_COLLECTION_NAME: &str = "My Collection";
 
 #[derive(Clone)]
 pub struct ApiClientService {
@@ -823,8 +824,9 @@ impl ApiClientService {
         self.list_collections(workspace_id).await
     }
 
-    /// Reassign a saved request to a different collection and/or folder. Passing
-    /// `None` for `collection_id` moves the request back to "Unfiled".
+    /// Reassign a saved request to a different collection and/or folder. If
+    /// `collection_id` is `None`, the request is moved to the first collection
+    /// in the workspace (creating a default collection if none exists).
     pub async fn move_request(
         &self,
         workspace_id: String,
@@ -839,8 +841,21 @@ impl ApiClientService {
             ));
         }
         let collection_id = normalize_collection_id(collection_id);
+        let collection_id = match collection_id {
+            Some(id) => Some(id),
+            None => {
+                let collections = self.list_collections(workspace_id.clone()).await?;
+                if collections.is_empty() {
+                    let default = self
+                        .create_collection(workspace_id.clone(), DEFAULT_COLLECTION_NAME.to_string())
+                        .await?;
+                    Some(default.id)
+                } else {
+                    Some(collections[0].id.clone())
+                }
+            }
+        };
         let folder_path = normalize_folder_path(folder_path)?;
-        // Reject a move into a collection that does not belong to the workspace.
         if let Some(target) = &collection_id {
             self.get_collection(&workspace_id, target).await?;
         }
@@ -897,6 +912,23 @@ impl ApiClientService {
     ) -> AppResult<(String, Option<String>, Option<String>)> {
         let folder_path = normalize_folder_path(input.folder_path.clone())?;
         let collection_id = normalize_collection_id(input.collection_id.clone());
+        let collection_id = match collection_id {
+            Some(id) => Some(id),
+            None => {
+                let collections = self.list_collections(input.workspace_id.clone()).await?;
+                if collections.is_empty() {
+                    let default = self
+                        .create_collection(
+                            input.workspace_id.clone(),
+                            DEFAULT_COLLECTION_NAME.to_string(),
+                        )
+                        .await?;
+                    Some(default.id)
+                } else {
+                    Some(collections[0].id.clone())
+                }
+            }
+        };
         if let Some(target) = &collection_id {
             self.get_collection(&input.workspace_id, target).await?;
         }
@@ -1760,28 +1792,42 @@ mod tests {
     #[tokio::test]
     async fn collection_lifecycle_create_rename_delete_cascades_requests() {
         let service = service().await;
-        let collection = service
+        let collection_a = service
             .create_collection("workspace-a".to_string(), "APIs".to_string())
             .await
-            .expect("create collection");
+            .expect("create collection A");
+        let collection_b = service
+            .create_collection("workspace-a".to_string(), "Other".to_string())
+            .await
+            .expect("create collection B");
 
-        let in_collection = save_in_collection(
+        let in_collection_a = save_in_collection(
             &service,
             "workspace-a",
-            "Inside",
-            Some(collection.id.clone()),
+            "Inside A",
+            Some(collection_a.id.clone()),
         )
         .await;
         assert_eq!(
-            in_collection.collection_id.as_deref(),
-            Some(collection.id.as_str())
+            in_collection_a.collection_id.as_deref(),
+            Some(collection_a.id.as_str())
         );
-        let unfiled = save_in_collection(&service, "workspace-a", "Unfiled", None).await;
+        let in_collection_b = save_in_collection(
+            &service,
+            "workspace-a",
+            "Inside B",
+            Some(collection_b.id.clone()),
+        )
+        .await;
+        assert_eq!(
+            in_collection_b.collection_id.as_deref(),
+            Some(collection_b.id.as_str())
+        );
 
         let renamed = service
             .rename_collection(
                 "workspace-a".to_string(),
-                collection.id.clone(),
+                collection_a.id.clone(),
                 "Public APIs".to_string(),
             )
             .await
@@ -1789,22 +1835,23 @@ mod tests {
         assert_eq!(renamed.name, "Public APIs");
 
         let remaining_collections = service
-            .delete_collection("workspace-a".to_string(), collection.id.clone())
+            .delete_collection("workspace-a".to_string(), collection_a.id.clone())
             .await
             .expect("delete collection");
-        assert!(remaining_collections.is_empty());
+        assert_eq!(remaining_collections.len(), 1);
+        assert_eq!(remaining_collections[0].id, collection_b.id);
 
-        // The request inside the collection was cascade soft-deleted; the
-        // Unfiled request survives.
+        // The request inside the deleted collection was cascade soft-deleted;
+        // the request in the other collection survives.
         let saved = service
             .list_saved_requests("workspace-a".to_string())
             .await
             .expect("list saved");
         assert_eq!(saved.len(), 1);
-        assert_eq!(saved[0].id, unfiled.id);
+        assert_eq!(saved[0].id, in_collection_b.id);
 
         let deleted_again = service
-            .delete_collection("workspace-a".to_string(), collection.id)
+            .delete_collection("workspace-a".to_string(), collection_a.id)
             .await;
         assert!(matches!(deleted_again, Err(AppError::NotFound(_))));
     }
@@ -1905,31 +1952,38 @@ mod tests {
     #[tokio::test]
     async fn move_request_reassigns_collection_and_folder() {
         let service = service().await;
-        let collection = service
+        let collection_a = service
             .create_collection("workspace-a".to_string(), "APIs".to_string())
             .await
-            .expect("create collection");
-        let request = save_in_collection(&service, "workspace-a", "Movable", None).await;
-        assert!(request.collection_id.is_none());
+            .expect("create collection A");
+        let collection_b = service
+            .create_collection("workspace-a".to_string(), "Other".to_string())
+            .await
+            .expect("create collection B");
+        let request =
+            save_in_collection(&service, "workspace-a", "Movable", Some(collection_a.id.clone()))
+                .await;
+        assert_eq!(request.collection_id.as_deref(), Some(collection_a.id.as_str()));
 
         let moved = service
             .move_request(
                 "workspace-a".to_string(),
                 request.id.clone(),
-                Some(collection.id.clone()),
+                Some(collection_b.id.clone()),
                 Some("Sub".to_string()),
             )
             .await
-            .expect("move into collection");
-        assert_eq!(moved.collection_id.as_deref(), Some(collection.id.as_str()));
+            .expect("move into collection B");
+        assert_eq!(moved.collection_id.as_deref(), Some(collection_b.id.as_str()));
         assert_eq!(moved.folder_path.as_deref(), Some("Sub"));
 
-        // Moving with None returns the request to "Unfiled".
-        let unfiled = service
+        // Moving with None moves the request to the first collection.
+        let first_id = collection_a.id.clone();
+        let moved_to_first = service
             .move_request("workspace-a".to_string(), request.id.clone(), None, None)
             .await
-            .expect("move to unfiled");
-        assert!(unfiled.collection_id.is_none());
+            .expect("move to first collection");
+        assert_eq!(moved_to_first.collection_id.as_deref(), Some(first_id.as_str()));
 
         // Moving into a collection that does not exist is rejected.
         let missing = service
@@ -1978,7 +2032,7 @@ mod tests {
         assert_eq!(updated.id, request.id);
         assert_eq!(updated.name, "Updated");
         assert_eq!(updated.method, "POST");
-        assert!(updated.collection_id.is_none());
+        assert!(updated.collection_id.is_some());
         assert_eq!(updated.folder_path.as_deref(), Some("Moved"));
 
         let saved = service

@@ -104,6 +104,8 @@ export function useApiRequestTabs(workspaceId: string) {
     onSuccess: (saved, variables) => {
       setState((current) => completeTabSave(current, variables.tabId, saved));
       queryClient.invalidateQueries({ queryKey: ["api-saved", workspaceId] });
+      // Also invalidate collections in case a default was auto-created
+      queryClient.invalidateQueries({ queryKey: ["api-collections", workspaceId] });
     },
     onError: (error, variables) =>
       setState((current) =>

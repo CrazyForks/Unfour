@@ -106,7 +106,7 @@
       "deleteConfirm": "Delete this collection and all of its saved requests? This cannot be undone.",
       "export": "Export collection",
       "moveTo": "Move to",
-      "unfiled": "Unfiled",
+      "defaultCollection": "Default Collection",
       "none": "No collections yet. Create one to organize requests."
     },
     "environment": {
@@ -173,7 +173,6 @@
       "location": "Save to",
       "subfolder": "New subfolder (optional)",
       "subfolderPlaceholder": "Subfolder name",
-      "unfiled": "Unfiled",
       "newCollection": "+ New collection",
       "newCollectionLabel": "New collection name",
       "newCollectionPlaceholder": "Collection name",

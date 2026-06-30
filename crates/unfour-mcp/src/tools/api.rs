@@ -879,14 +879,8 @@ mod tests {
                                 request_count: 3,
                                 workspace_id: "ws-1".to_string(),
                             },
-                            ApiCollectionSummary {
-                                id: String::new(),
-                                name: "General".to_string(),
-                                request_count: 1,
-                                workspace_id: "ws-1".to_string(),
-                            },
                         ],
-                        count: 2,
+                        count: 1,
                         source: "command-bus".to_string(),
                     })
                 }
@@ -1180,7 +1174,7 @@ mod tests {
             .expect("should succeed");
 
         assert_eq!(result["isError"], false);
-        assert_eq!(result["structuredContent"]["count"], 2);
+        assert_eq!(result["structuredContent"]["count"], 1);
         assert_eq!(
             result["structuredContent"]["collections"][0]["name"],
             "Users"

@@ -470,16 +470,13 @@ impl CommandBus {
 
                 let mut request_counts: std::collections::BTreeMap<String, usize> =
                     std::collections::BTreeMap::new();
-                let mut unfiled_count = 0;
                 for request in &requests {
                     if let Some(collection_id) = request.collection_id.as_deref() {
                         *request_counts.entry(collection_id.to_string()).or_insert(0) += 1;
-                    } else {
-                        unfiled_count += 1;
                     }
                 }
 
-                let mut summaries = collections
+                let summaries = collections
                     .into_iter()
                     .map(|collection| {
                         let count = request_counts.remove(&collection.id).unwrap_or(0);
@@ -491,17 +488,6 @@ impl CommandBus {
                         }
                     })
                     .collect::<Vec<_>>();
-                if unfiled_count > 0 {
-                    summaries.insert(
-                        0,
-                        ApiCollectionSummary {
-                            id: String::new(),
-                            name: "General".to_string(),
-                            request_count: unfiled_count,
-                            workspace_id: ws_id.clone(),
-                        },
-                    );
-                }
 
                 Ok(ReadCommandResult::ApiCollections(ApiCollectionListResult {
                     count: summaries.len(),

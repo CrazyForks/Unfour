@@ -49,7 +49,7 @@ type Translate = (key: string, params?: Record<string, string | number>) => stri
 type RequestMenuContext = {
   collections: ApiCollection[];
   duplicate: (requestId: string) => void;
-  move: (request: ApiSavedRequest, collectionId: string | null) => void;
+  move: (request: ApiSavedRequest, collectionId: string) => void;
   onOpenIntent: (intent: ApiOpenIntent) => void;
   remove: (requestId: string) => void;
   rename: (request: ApiSavedRequest) => void;
@@ -113,7 +113,7 @@ export function ApiCollectionTree({
       folderPath,
       requestId,
     }: {
-      collectionId: string | null;
+      collectionId: string;
       folderPath: string | null;
       requestId: string;
     }) => moveApiRequest(workspaceId, requestId, collectionId, folderPath),
@@ -194,13 +194,13 @@ export function ApiCollectionTree({
 
   function folderToTreeItem(
     node: FolderNode,
-    collectionId: string | null,
+    collectionId: string,
   ): TreeViewItem {
     return {
-      id: `folder:${collectionId ?? "unfiled"}:${node.path}`,
+      id: `folder:${collectionId}:${node.path}`,
       icon: <Folder size={13} />,
       label: node.name,
-      actions: collectionId ? addFolderAction(collectionId, node.path) : undefined,
+      actions: addFolderAction(collectionId, node.path),
       children: [
         ...node.folders.map((child) => folderToTreeItem(child, collectionId)),
         ...node.requests.map((request) => requestTreeItem(request, menuContext)),
@@ -211,10 +211,9 @@ export function ApiCollectionTree({
   const collectionGroups = groupRequestsByCollection(
     savedRequests,
     collections,
-    t("api.collection.unfiled"),
   );
   const collectionItems: TreeViewItem[] = collectionGroups.map((group) => ({
-    id: `collection:${group.id ?? "unfiled"}`,
+    id: `collection:${group.id}`,
     icon: <FolderOpen size={13} />,
     label: group.name,
     meta: (
@@ -222,10 +221,8 @@ export function ApiCollectionTree({
         {collectTreeRequests(group.tree).length}
       </span>
     ),
-    actions: group.collection
-      ? addFolderAction(group.collection.id, "")
-      : undefined,
-    contextMenu: group.collection ? (
+    actions: addFolderAction(group.collection.id, ""),
+    contextMenu: (
       <>
         <ContextMenuItem
           onSelect={() => {
@@ -237,8 +234,7 @@ export function ApiCollectionTree({
         </ContextMenuItem>
         <ContextMenuItem
           onSelect={() =>
-            group.collection &&
-            openFolderDialog(group.collection.id, "")
+            group.collection && openFolderDialog(group.collection.id, "")
           }
         >
           {t("api.collection.addFolder")}
@@ -257,7 +253,7 @@ export function ApiCollectionTree({
           {t("api.collection.delete")}
         </ContextMenuItem>
       </>
-    ) : undefined,
+    ),
     children: [
       ...group.tree.folders.map((folder) => folderToTreeItem(folder, group.id)),
       ...group.tree.rootRequests.map((request) =>
@@ -600,13 +596,8 @@ function requestTreeItem(
         <ContextMenuItem onSelect={() => exportRequest(request)}>
           {ctx.t("api.actions.export")}
         </ContextMenuItem>
-        {(request.collectionId || moveTargets.length > 0) && (
+        {moveTargets.length > 0 && (
           <ContextMenuItem disabled>{ctx.t("api.collection.moveTo")}</ContextMenuItem>
-        )}
-        {request.collectionId && (
-          <ContextMenuItem onSelect={() => ctx.move(request, null)}>
-            {ctx.t("api.collection.unfiled")}
-          </ContextMenuItem>
         )}
         {moveTargets.map((collection) => (
           <ContextMenuItem

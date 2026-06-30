@@ -106,7 +106,7 @@
       "deleteConfirm": "删除该集合及其全部已保存请求？此操作无法撤销。",
       "export": "导出集合",
       "moveTo": "移动到",
-      "unfiled": "未分组",
+      "defaultCollection": "默认集合",
       "none": "还没有集合。新建一个来组织请求。"
     },
     "environment": {
@@ -173,7 +173,6 @@
       "location": "保存到",
       "subfolder": "新建子目录（可选）",
       "subfolderPlaceholder": "子目录名称",
-      "unfiled": "未分组",
       "newCollection": "+ 新建集合",
       "newCollectionLabel": "新集合名称",
       "newCollectionPlaceholder": "集合名称",
