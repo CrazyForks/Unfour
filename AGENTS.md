@@ -83,6 +83,26 @@ During modification:
 - Do not add business logic to `packages/ui`.
 - Preserve uncommitted user work.
 
+## File Size Discipline
+
+- Do not keep adding complex logic to ordinary source files that are already
+  over 800 lines; prefer splitting the touched responsibility first.
+- When modifying a file over 800 lines, first look for low-risk extractions
+  such as types, constants, mock data, pure utilities, serializers, parsers,
+  adapters, hooks, services, or child components.
+- New ordinary source files should stay under 500 lines unless there is a
+  documented reason.
+- New complex pages or container files should stay under 800 lines unless
+  there is a documented reason.
+- If a file must exceed these thresholds, explain the reason in the final
+  report or the relevant code review context.
+- Generated files, lock files, snapshots, vendored files, and build output are
+  exempt from these size limits.
+- Splits must preserve module and package boundaries; feature packages must not
+  gain reverse dependencies on `packages/app-shell`.
+- Prefer responsibility-based splits through hooks, services, adapters,
+  components, types, constants, and utilities instead of arbitrary tiny files.
+
 For implementation-task workflow, verification defaults, commit discipline, and
 final reporting, follow `docs/agents/EXECUTION_PROTOCOL.md`.
 
