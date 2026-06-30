@@ -87,6 +87,7 @@ export function DatabaseConnectionTree({
     const selected = connection.id === selectedConnectionId;
     const session = connectionStates?.[connection.id];
     const status = resolveConnectionStatus({ session });
+    const statusLabel = databaseConnectionStatusLabel(status, t);
 
     // Auto-expand the selected connection so it shows its databases without an
     // extra click; the rest stay collapsed until the user opens them.
@@ -141,8 +142,10 @@ export function DatabaseConnectionTree({
       label: connection.name,
       meta: (
         <ConnectionStatus
-          label={status}
+          dotOnly
+          label={statusLabel}
           status={status === "failed" ? "error" : status}
+          variant="dot"
         />
       ),
       title: connectionStateTitle(connection, session),
@@ -740,6 +743,16 @@ function resolveConnectionStatus({
   session?: DatabaseConnectionSessionState;
 }): DatabaseConnectionStatus {
   return session?.status ?? "disconnected";
+}
+
+function databaseConnectionStatusLabel(
+  status: DatabaseConnectionStatus,
+  t: ReturnType<typeof useI18n>["t"],
+) {
+  if (status === "connecting") {
+    return t("common.actions.connecting");
+  }
+  return t(`database.connection.${status}`);
 }
 
 function connectionStateTitle(

@@ -1,33 +1,57 @@
 import type { DatabaseConnection } from "@unfour/command-client";
-import { StatusBadge, useI18n } from "@unfour/ui";
+import type { ReactNode } from "react";
+import { ConnectionStatus, StatusBadge, StatusBar, useI18n } from "@unfour/ui";
 import type { DatabaseConnectionSessionState, DatabaseConnectionStatus } from "../model/types";
 
 export function DatabaseStatusBar({
   connection,
   executing,
+  rightAccessory,
   session,
+  workspaceName,
 }: {
   connection: DatabaseConnection | null;
   executing: boolean;
+  rightAccessory?: ReactNode;
   session?: DatabaseConnectionSessionState;
+  workspaceName: string;
 }) {
   const { t } = useI18n();
   const status: DatabaseConnectionStatus = session?.status ?? "disconnected";
   const message = executing
-    ? "SQL executing"
+    ? t("database.connection.executingSql")
     : session?.message
       ? session.message
       : status === "connected"
-        ? "Ready"
-        : "No active database session";
+        ? t("database.connection.ready")
+        : t("database.connection.noActiveSession");
 
   return (
-    <div className="u-statusbar flex items-center justify-between">
-      <div className="flex min-w-0 items-center gap-2">
-        <span className="truncate">{connection ? `${connection.name} · ${status}` : "No database connection"}</span>
+    <StatusBar>
+      <div className="flex min-w-0 items-center gap-3">
+        <span className="truncate">{workspaceName}</span>
+        <span className="truncate">{connection?.name ?? t("database.connection.noConnection")}</span>
+        <ConnectionStatus
+          label={databaseConnectionStatusLabel(status, t)}
+          status={status === "failed" ? "error" : status}
+          variant="dot"
+        />
         {connection?.readOnly ? <StatusBadge tone="warning">{t("database.fields.readOnly")}</StatusBadge> : null}
       </div>
-      <span className="truncate">{message}</span>
-    </div>
+      <div className="flex shrink-0 items-center gap-3">
+        <span className="truncate">{message}</span>
+        {rightAccessory}
+      </div>
+    </StatusBar>
   );
+}
+
+function databaseConnectionStatusLabel(
+  status: DatabaseConnectionStatus,
+  t: ReturnType<typeof useI18n>["t"],
+) {
+  if (status === "connecting") {
+    return t("common.actions.connecting");
+  }
+  return t(`database.connection.${status}`);
 }

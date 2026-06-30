@@ -35,6 +35,7 @@ export function DesktopApp() {
   const [apiSidebarContent, setApiSidebarContent] = useState<ReactNode>(null);
   const [sshSidebarContent, setSshSidebarContent] = useState<ReactNode>(null);
   const [databaseSidebarContent, setDatabaseSidebarContent] = useState<ReactNode>(null);
+  const [databaseStatusBarContent, setDatabaseStatusBarContent] = useState<ReactNode>(null);
   const [rightInspectorCollapsed, setRightInspectorCollapsed] = useState(true);
   const [rightInspectorWidth, setRightInspectorWidth] = useState(300);
   const [sidebarWidth, setSidebarWidth] = useState(248);
@@ -81,6 +82,9 @@ export function DesktopApp() {
   }, []);
   const handleDatabaseSidebarChange = useCallback((content: ReactNode | null) => {
     setDatabaseSidebarContent(content);
+  }, []);
+  const handleDatabaseStatusBarChange = useCallback((content: ReactNode | null) => {
+    setDatabaseStatusBarContent(content);
   }, []);
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? tabs[0];
   const layoutControls = useMemo(
@@ -167,6 +171,8 @@ export function DesktopApp() {
               workspaceId={activeWorkspace.id}
               workspaceName={activeWorkspace.name}
             />
+          ) : activeTab.kind === "database" && databaseStatusBarContent ? (
+            databaseStatusBarContent
           ) : (
             <StatusBarPlaceholder
               activeTab={activeTab}
@@ -202,6 +208,9 @@ export function DesktopApp() {
             {activeTab.kind === "database" && activeWorkspace && (
               <DatabasePage
                 onShellSidebarChange={handleDatabaseSidebarChange}
+                onShellStatusBarChange={handleDatabaseStatusBarChange}
+                statusBarRightAccessory={layoutControls}
+                workspaceName={activeWorkspace.name}
                 workspaceId={activeWorkspace.id}
               />
             )}

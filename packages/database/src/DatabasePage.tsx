@@ -66,9 +66,15 @@ const MAX_HISTORY_ENTRIES = 25;
 
 export function DatabasePage({
   onShellSidebarChange,
+  onShellStatusBarChange,
+  statusBarRightAccessory,
+  workspaceName,
   workspaceId,
 }: {
   onShellSidebarChange?: (sidebar: ReactNode | null) => void;
+  onShellStatusBarChange?: (statusBar: ReactNode | null) => void;
+  statusBarRightAccessory?: ReactNode;
+  workspaceName?: string;
   workspaceId: string;
 }) {
   const { t } = useI18n();
@@ -1171,6 +1177,33 @@ export function DatabasePage({
 
   const activeError = clientError ?? (layout.activeTabId === "table" ? browseMutation.error : executeMutation.error);
   const executePending = executeMutation.isPending || browseMutation.isPending;
+  const shellStatusBar = useMemo(
+    () => (
+      <DatabaseStatusBar
+        connection={selectedConnection}
+        executing={executePending}
+        rightAccessory={statusBarRightAccessory}
+        session={selectedSession}
+        workspaceName={workspaceName ?? workspaceId}
+      />
+    ),
+    [
+      executePending,
+      selectedConnection,
+      selectedSession,
+      statusBarRightAccessory,
+      workspaceId,
+      workspaceName,
+    ],
+  );
+
+  useEffect(() => {
+    if (!onShellStatusBarChange) {
+      return;
+    }
+    onShellStatusBarChange(shellStatusBar);
+    return () => onShellStatusBarChange(null);
+  }, [onShellStatusBarChange, shellStatusBar]);
 
   // Inline editing is available when a real table with a primary key is being
   // browsed on a connected session; the primary key locates rows for the
@@ -1269,7 +1302,6 @@ export function DatabasePage({
           workspaceId={workspaceId}
         />
       </div>
-      <DatabaseStatusBar connection={selectedConnection} executing={executePending} session={selectedSession} />
       <DatabaseConnectionDialog
         error={saveMutation.error ?? testMutation.error}
         form={form}

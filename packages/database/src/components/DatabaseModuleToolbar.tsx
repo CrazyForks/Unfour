@@ -45,6 +45,10 @@ export function DatabaseModuleToolbar({
   const { t } = useI18n();
   const selected = connections.find((connection) => connection.id === selectedConnectionId);
   const connected = connectionStatus === "connected" || connectionStatus === "connecting";
+  const connectionStatusLabel =
+    connectionStatus === "connecting"
+      ? t("common.actions.connecting")
+      : t(`database.connection.${connectionStatus}`);
 
   return (
     <Toolbar>
@@ -67,7 +71,11 @@ export function DatabaseModuleToolbar({
         </IconButton>
       </ToolbarGroup>
       <ToolbarGroup className="max-w-[560px]">
-        <ConnectionStatus label={connectionStatus} status={connectionStatus === "failed" ? "error" : connectionStatus} />
+        <ConnectionStatus
+          label={connectionStatusLabel}
+          status={connectionStatus === "failed" ? "error" : connectionStatus}
+          variant="dot"
+        />
         <Select
           aria-label={t("database.connection.selectAria")}
           className="w-[220px]"
