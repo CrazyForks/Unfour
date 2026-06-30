@@ -58,6 +58,9 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      - name: Prepare Tauri sidecars
+        run: node scripts/prepare-tauri-sidecars.mjs
+
       - name: cargo check (workspace)
         run: cargo check --workspace
 
