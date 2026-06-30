@@ -13,8 +13,8 @@
     },
     {
       "path": "crates/http-engine/src/api_client.rs",
-      "maxLines": 2098,
-      "reason": "Historical API client service entry; needs future utility/test extraction."
+      "maxLines": 1627,
+      "reason": "Historical API client service entry; second batch extracted tests to api_client_tests/ and pure helpers to helpers.rs."
     },
     {
       "path": "packages/command-client/src/tauri.ts",
