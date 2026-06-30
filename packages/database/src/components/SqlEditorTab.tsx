@@ -1,5 +1,5 @@
 import Editor, { type OnMount } from "@monaco-editor/react";
-import { AlignLeft, Eraser, History, Info, Play, Save, Square, Star, Trash2 } from "lucide-react";
+import { AlignLeft, Eraser, History, Info, MoreHorizontal, Play, Save, Star, StopCircle, Trash2 } from "lucide-react";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import type { DatabaseConnection, DatabaseSchema, SavedSql } from "@unfour/command-client";
 import {
@@ -10,6 +10,10 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
   EmptyState,
   ErrorState,
   IconButton,
@@ -208,10 +212,17 @@ export function SqlEditorTab({
     <div className="flex min-h-0 flex-1 flex-col">
       <Toolbar className="h-9">
         <ToolbarGroup>
-          <Button disabled={!selectedConnectionId || executePending} onClick={runFromEditor} size="sm" type="button">
-            <Play size={13} />
-            {pendingConfirmation ? t("database.actions.confirmRun") : t("database.actions.run")}
-          </Button>
+          {executePending ? (
+            <Button onClick={onStop} size="sm" type="button">
+              <StopCircle size={13} />
+              {t("database.actions.stopSql")}
+            </Button>
+          ) : (
+            <Button disabled={!selectedConnectionId} onClick={runFromEditor} size="sm" type="button">
+              <Play size={13} />
+              {pendingConfirmation ? t("database.actions.confirmRun") : t("database.actions.run")}
+            </Button>
+          )}
           <Button
             disabled={!selectedConnectionId || !sql.trim() || executePending}
             onClick={explainFromEditor}
@@ -226,30 +237,31 @@ export function SqlEditorTab({
             <AlignLeft size={13} />
             {t("database.actions.format")}
           </Button>
-          <Button onClick={onShowHistory} size="sm" type="button" variant="ghost">
-            <History size={13} />
-            {t("database.actions.history")}
-          </Button>
-          <Button
-            disabled={!sql.trim() || savedSql.savePending}
-            onClick={openSaveDialog}
-            size="sm"
-            type="button"
-            variant="ghost"
-          >
-            <Save size={13} />
-            {savedSql.savePending ? t("database.saved.saving") : t("database.actions.saveSql")}
-          </Button>
-          <Button onClick={() => setSavedDialogOpen(true)} size="sm" type="button" variant="ghost">
-            <Star size={13} />
-            {t("database.actions.savedSql")}
-          </Button>
-          <IconButton disabled={!sql.trim() || executePending} label={t("database.actions.clearSql")} onClick={onClearSql}>
-            <Eraser size={13} />
-          </IconButton>
-          <IconButton disabled={!executePending} label={t("database.actions.stopSql")} onClick={onStop}>
-            <Square size={13} />
-          </IconButton>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <IconButton disabled={executePending} label={t("database.actions.moreActions")}>
+                <MoreHorizontal size={13} />
+              </IconButton>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuItem onSelect={onShowHistory}>
+                <History size={13} />
+                {t("database.actions.history")}
+              </DropdownMenuItem>
+              <DropdownMenuItem disabled={!sql.trim() || savedSql.savePending} onSelect={openSaveDialog}>
+                <Save size={13} />
+                {savedSql.savePending ? t("database.saved.saving") : t("database.actions.saveSql")}
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setSavedDialogOpen(true)}>
+                <Star size={13} />
+                {t("database.actions.savedSql")}
+              </DropdownMenuItem>
+              <DropdownMenuItem disabled={!sql.trim() || executePending} onSelect={onClearSql}>
+                <Eraser size={13} />
+                {t("database.actions.clearSql")}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </ToolbarGroup>
         <ToolbarGroup className="min-w-0">
           <Select

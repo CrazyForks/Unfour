@@ -13,7 +13,7 @@ import type {
   TableEditing,
   TableSegment,
 } from "../model/types";
-import { SplitPane, Tabs, useI18n } from "@unfour/ui";
+import { SplitPane, useI18n, type WorkspaceTab } from "@unfour/ui";
 import { QueryResultPanel } from "./QueryResultPanel";
 import { SqlEditorTab } from "./SqlEditorTab";
 import { TableDataTab } from "./TableDataTab";
@@ -117,41 +117,79 @@ export function DatabaseWorkspace({
   const { t } = useI18n();
   const isTableTab = activeTabId === "table";
 
+  const tabs: WorkspaceTab[] = [
+    {
+      id: "table",
+      loading: isTableTab && executePending,
+      meta: selectedTable ? (
+        <span className="text-[11px] text-[var(--u-color-text-soft)]">{selectedTable.name}</span>
+      ) : null,
+      title: t("database.editor.tableTab"),
+    },
+    {
+      id: "query",
+      loading: !isTableTab && executePending,
+      modified: sql.trim().length > 0,
+      title: t("database.editor.queryConsole"),
+    },
+  ];
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <Tabs
-        activeId={activeTabId}
-        onSelect={(id) => onSelectTab(id as DatabaseWorkspaceTabId)}
-        tabs={[
-          {
-            id: "table",
-            loading: isTableTab && executePending,
-            meta: selectedTable ? (
-              <span className="text-[11px] text-[var(--u-color-text-soft)]">{selectedTable.name}</span>
-            ) : null,
-            title: t("database.editor.tableTab"),
-          },
-          {
-            id: "query",
-            loading: !isTableTab && executePending,
-            modified: sql.trim().length > 0,
-            title: t("database.editor.queryConsole"),
-          },
-        ]}
-      />
+      {/* Merged Tab bar + SegmentedControl row: eliminates a separate SegmentedControl bar. */}
+      <div
+        className="flex h-[var(--u-size-tabbar)] shrink-0 items-end justify-between overflow-x-auto border-b border-[var(--u-color-border)] bg-[var(--u-color-surface-subtle)] px-2"
+        role="tablist"
+      >
+        <div className="flex items-end">
+          {tabs.map((tab) => {
+            const active = tab.id === activeTabId;
+            return (
+              <div
+                className={
+                  "group flex h-[30px] min-w-[120px] max-w-[220px] items-center gap-2 rounded-t-[var(--u-radius-sm)] border px-2 text-[12px] font-medium transition-colors " +
+                  (active
+                    ? "border-[var(--u-color-border)] border-b-[var(--u-color-surface)] bg-[var(--u-color-surface)] text-[var(--u-color-text)]"
+                    : "border-transparent text-[var(--u-color-text-muted)] hover:bg-[var(--u-color-surface-hover)] hover:text-[var(--u-color-text)]")
+                }
+                key={tab.id}
+              >
+                <button
+                  aria-selected={active}
+                  className="flex min-w-0 flex-1 items-center gap-2 focus-visible:outline-none"
+                  onClick={() => onSelectTab(tab.id as DatabaseWorkspaceTabId)}
+                  role="tab"
+                  type="button"
+                >
+                  <span className="min-w-0 flex-1 truncate text-left">
+                    {tab.modified ? "* " : ""}
+                    {tab.title}
+                  </span>
+                  {tab.loading && (
+                    <span className="h-1.5 w-1.5 rounded-full bg-[var(--u-color-primary)]" />
+                  )}
+                  {tab.meta}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+        {isTableTab && (
+          <div className="ml-3 shrink-0 pb-0.5">
+            <SegmentedControl
+              onChange={onSelectTableSegment}
+              options={[
+                { label: t("database.editor.dataView"), value: "data" },
+                { label: t("database.editor.structureView"), value: "structure" },
+              ]}
+              value={tableSegment}
+            />
+          </div>
+        )}
+      </div>
       <div className="flex min-h-0 flex-1 flex-col">
         {isTableTab ? (
           <>
-            <div className="flex h-9 shrink-0 items-center border-b border-[var(--u-color-border)] bg-[var(--u-color-surface)] px-2">
-              <SegmentedControl
-                onChange={onSelectTableSegment}
-                options={[
-                  { label: t("database.editor.dataView"), value: "data" },
-                  { label: t("database.editor.structureView"), value: "structure" },
-                ]}
-                value={tableSegment}
-              />
-            </div>
             {tableSegment === "data" ? (
               <TableDataTab
                 editing={tableEditing}

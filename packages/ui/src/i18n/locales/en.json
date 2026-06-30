@@ -287,6 +287,7 @@
       "explain": "Explain",
       "format": "Format",
       "history": "History",
+      "moreActions": "More actions",
       "newQuery": "New Query",
       "newQueryLabel": "New database query",
       "refreshConnections": "Refresh Connections",
@@ -380,6 +381,7 @@
       "refreshPreview": "Refresh table data",
       "rowCopied": "Row copied",
       "rowsRendered": "{count} rows rendered",
+      "selectToCopy": "Select text to copy",
       "showingFirst": "Showing first {shown} of {total} rows",
       "sortBy": "Sort by {column}",
       "valueViewer": "Cell value",
@@ -415,6 +417,7 @@
     },
     "result": {
       "executionFailed": "Execution failed",
+      "export": "Export",
       "noExecution": "No execution yet",
       "rowsInMs": "{rows} rows in {durationMs}ms",
       "statusFailed": "Failed",

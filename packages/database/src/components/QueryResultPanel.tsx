@@ -1,7 +1,22 @@
-import { Clipboard, Download, Trash2 } from "lucide-react";
+import { Clipboard, Download, FileDown, FileJson, Trash2 } from "lucide-react";
 import { useState } from "react";
 import type { DatabaseQueryResult } from "@unfour/command-client";
-import { Button, EmptyState, ErrorState, LoadingState, StatusBadge, Tabs, Toolbar, ToolbarGroup, useI18n } from "@unfour/ui";
+import {
+  Button,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  EmptyState,
+  ErrorState,
+  IconButton,
+  LoadingState,
+  StatusBadge,
+  Tabs,
+  Toolbar,
+  ToolbarGroup,
+  useI18n,
+} from "@unfour/ui";
 import type { DatabaseResultTab, SqlHistoryEntry } from "../model/types";
 import { describeDatabaseError, serializeDatabaseResult, serializeDatabaseResultJson } from "../result-utils";
 import { DatabaseErrorDetails } from "./DatabaseErrorDetails";
@@ -115,14 +130,23 @@ export function QueryResultPanel({
                 <Clipboard size={13} />
                 {copyStatus === "copied" ? "Copied" : copyStatus === "failed" ? "Copy failed" : "Copy result"}
               </Button>
-              <Button disabled={!result} onClick={exportCsv} size="sm" type="button" variant="outline">
-                <Download size={13} />
-                Export CSV
-              </Button>
-              <Button disabled={!result} onClick={exportJson} size="sm" type="button" variant="outline">
-                <Download size={13} />
-                Export JSON
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <IconButton disabled={!result} label={t("database.result.export")}>
+                    <Download size={13} />
+                  </IconButton>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent>
+                  <DropdownMenuItem disabled={!result} onSelect={exportCsv}>
+                    <FileDown size={13} />
+                    Export CSV
+                  </DropdownMenuItem>
+                  <DropdownMenuItem disabled={!result} onSelect={exportJson}>
+                    <FileJson size={13} />
+                    Export JSON
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </>
           )}
         </ToolbarGroup>

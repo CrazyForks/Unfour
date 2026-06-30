@@ -53,6 +53,7 @@ export function TableDataGrid({
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied-cell" | "copied-row" | "failed">("idle");
   const [filter, setFilter] = useState("");
   const [sort, setSort] = useState<SortState | null>(null);
+  const [activeCell, setActiveCell] = useState<{ row: number; column: number } | null>(null);
   const [viewer, setViewer] = useState<CellViewer | null>(null);
   const [viewerRaw, setViewerRaw] = useState(false);
   const viewerJson = viewer && viewer.value !== null ? tryFormatJson(viewer.value) : null;
@@ -167,8 +168,9 @@ export function TableDataGrid({
   const columns: DataTableColumn<Array<string | null>>[] = [
     rowActionColumn,
     ...result.columns.map((column, columnIndex) => ({
-      cell: (row: Array<string | null>) => {
+      cell: (row: Array<string | null>, rowIndex: number) => {
         const value = row[columnIndex];
+        const isActive = activeCell?.row === rowIndex && activeCell?.column === columnIndex;
         if (edit && edit.row === row && edit.columnIndex === columnIndex) {
           return (
             <input
@@ -191,8 +193,14 @@ export function TableDataGrid({
         }
         return (
           <button
-            className="block w-full cursor-pointer truncate text-left font-mono text-[12px] text-[var(--u-color-text)] hover:text-[var(--u-color-primary)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--u-color-focus)]"
+            className={
+              "block w-full cursor-pointer truncate text-left font-mono text-[12px] text-[var(--u-color-text)] hover:text-[var(--u-color-primary)] focus-visible:outline-none " +
+              (isActive
+                ? "ring-1 ring-inset ring-[var(--u-color-focus)]"
+                : "focus-visible:ring-1 focus-visible:ring-[var(--u-color-focus)]")
+            }
             onClick={() => {
+              setActiveCell({ row: rowIndex, column: columnIndex });
               setViewerRaw(false);
               setViewer({ columnName: column.name, value: value ?? null });
             }}
@@ -213,7 +221,7 @@ export function TableDataGrid({
       },
       header: (
         <button
-          className="flex w-full min-w-0 cursor-pointer items-center gap-1 text-left hover:text-[var(--u-color-text)] focus-visible:outline-none"
+          className="group/header flex w-full min-w-0 cursor-pointer items-center gap-1 text-left hover:text-[var(--u-color-text)] focus-visible:outline-none"
           onClick={() => (server ? server.onSort(column.name) : toggleSort(columnIndex))}
           title={t("database.grid.sortBy", { column: column.name })}
           type="button"
@@ -288,12 +296,17 @@ export function TableDataGrid({
                     </button>
                   </div>
                 ) : null}
-                <pre className="max-h-[50vh] overflow-auto whitespace-pre-wrap break-words rounded border border-[var(--u-color-border)] bg-[var(--u-color-surface-subtle)] p-2 font-mono text-[12px] text-[var(--u-color-text)]">
-                  {viewerJson?.isJson && !viewerRaw ? viewerJson.formatted : viewer?.value}
-                </pre>
+                <div className="max-h-[50vh] overflow-auto rounded border border-[var(--u-color-border)] bg-[var(--u-color-surface-subtle)]">
+                  <pre className="whitespace-pre-wrap break-words p-2 font-mono text-[12px] text-[var(--u-color-text)]">
+                    {viewerJson?.isJson && !viewerRaw ? viewerJson.formatted : viewer?.value}
+                  </pre>
+                </div>
               </>
             )}
-            <div className="flex justify-end">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] text-[var(--u-color-text-soft)]">
+                {t("database.grid.selectToCopy")}
+              </span>
               <Button
                 disabled={viewer?.value == null}
                 onClick={() => viewer?.value != null && copyText(serializeDatabaseCell(viewer.value, "\t"), "copied-cell")}
@@ -366,13 +379,15 @@ function compareCells(a: string | null, b: string | null) {
 }
 
 function renderSortIcon(sort: SortState | null, columnIndex: number) {
-  if (!sort || sort.columnIndex !== columnIndex) {
-    return <ChevronsUpDown className="shrink-0 text-[var(--u-color-text-soft)]" size={12} />;
-  }
-  return sort.direction === "asc" ? (
-    <ArrowUp className="shrink-0 text-[var(--u-color-primary)]" size={12} />
+  const active = sort && sort.columnIndex === columnIndex;
+  return active ? (
+    sort.direction === "asc" ? (
+      <ArrowUp className="shrink-0 text-[var(--u-color-primary)]" size={12} />
+    ) : (
+      <ArrowDown className="shrink-0 text-[var(--u-color-primary)]" size={12} />
+    )
   ) : (
-    <ArrowDown className="shrink-0 text-[var(--u-color-primary)]" size={12} />
+    <ChevronsUpDown className="shrink-0 text-[var(--u-color-text-soft)] opacity-0 transition-opacity group-hover/header:opacity-100" size={12} />
   );
 }
 
@@ -380,13 +395,15 @@ function renderServerSortIcon(
   sort: { column: string; descending: boolean } | null,
   columnName: string,
 ) {
-  if (!sort || sort.column !== columnName) {
-    return <ChevronsUpDown className="shrink-0 text-[var(--u-color-text-soft)]" size={12} />;
-  }
-  return sort.descending ? (
-    <ArrowDown className="shrink-0 text-[var(--u-color-primary)]" size={12} />
+  const active = sort && sort.column === columnName;
+  return active ? (
+    sort.descending ? (
+      <ArrowDown className="shrink-0 text-[var(--u-color-primary)]" size={12} />
+    ) : (
+      <ArrowUp className="shrink-0 text-[var(--u-color-primary)]" size={12} />
+    )
   ) : (
-    <ArrowUp className="shrink-0 text-[var(--u-color-primary)]" size={12} />
+    <ChevronsUpDown className="shrink-0 text-[var(--u-color-text-soft)] opacity-0 transition-opacity group-hover/header:opacity-100" size={12} />
   );
 }
 
