@@ -262,7 +262,7 @@ function BodyEditor({
               scrollBeyondLastLine: false,
               wordWrap: "on",
             }}
-            theme={theme === "dark" ? "vs-dark" : "vs"}
+            theme={theme === "dark" ? "unfour-dark" : "unfour-light"}
             value={body}
           />
         )}

@@ -21,7 +21,7 @@ Findings:
 - The API, SSH, and Database panels use similar two-column layouts but each
   owns its local panel composition.
 - There are many hardcoded Tailwind color utilities such as `bg-slate-*`,
-  `text-slate-*`, `border-slate-*`, `bg-teal-*`, `bg-rose-*`, and state colors.
+  `bg-teal-*`, `bg-rose-*`, and state colors.
 - Existing CSS includes gradients and panel shadows that make the UI feel more
   like a web dashboard than a restrained desktop tool.
 - Several icon-only buttons have accessible labels, but not all provide an
