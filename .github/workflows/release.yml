@@ -18,12 +18,16 @@ jobs:
         include:
           - platform: macos-latest
             args: '--target aarch64-apple-darwin'
+            target: aarch64-apple-darwin
           - platform: macos-latest
             args: '--target x86_64-apple-darwin'
+            target: x86_64-apple-darwin
           - platform: ubuntu-latest
             args: ''
+            target: x86_64-unknown-linux-gnu
           - platform: windows-latest
             args: ''
+            target: x86_64-pc-windows-msvc
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -64,6 +68,7 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          UNFOUR_TAURI_TARGET: ${{ matrix.target }}
         with:
           projectPath: apps/desktop
           tagName: ${{ github.ref_name }}

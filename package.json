@@ -10,6 +10,7 @@
     "build": "pnpm --filter @unfour/desktop build",
     "preview": "pnpm --filter @unfour/desktop preview",
     "tauri": "pnpm --filter @unfour/desktop tauri",
+    "tauri:prepare-sidecars": "node scripts/prepare-tauri-sidecars.mjs",
     "check": "pnpm run build && pnpm run check:rust && pnpm run check:large-files",
     "check:rust": "cargo check --workspace",
     "check:rust:ssh": "cargo check -p unfour --features ssh-native",
