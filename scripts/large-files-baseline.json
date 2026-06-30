@@ -8,8 +8,8 @@
     },
     {
       "path": "crates/ssh-engine/src/ssh.rs",
-      "maxLines": 2964,
-      "reason": "Historical SSH service entry; needs a future runtime/test split."
+      "maxLines": 1954,
+      "reason": "Historical SSH service entry; second batch extracted tests to ssh_tests/ and diagnostic validation to diagnostics.rs."
     },
     {
       "path": "crates/http-engine/src/api_client.rs",
