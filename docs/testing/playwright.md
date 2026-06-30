@@ -15,7 +15,7 @@ pnpm run test:e2e
 Run a focused spec:
 
 ```bash
-pnpm exec playwright test tests/e2e/ui-smoke.spec.ts --project=chromium
+pnpm exec playwright test apps/desktop/tests/smoke/ui-smoke.spec.ts --project=chromium
 ```
 
 Open the Playwright UI:

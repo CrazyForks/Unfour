@@ -6,7 +6,7 @@ export default defineConfig({
   },
   fullyParallel: true,
   reporter: "list",
-  testDir: "./tests/e2e",
+  testDir: "./apps/desktop/tests/smoke",
   timeout: 30_000,
   use: {
     baseURL: "http://127.0.0.1:1420",

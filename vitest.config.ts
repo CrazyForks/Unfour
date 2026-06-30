@@ -14,6 +14,10 @@ export default defineConfig({
     include: [
       "packages/*/src/**/*.test.{ts,tsx}",
       "apps/*/src/**/*.test.{ts,tsx}",
+      // Cross-module integration tests live outside src; *.test.ts only so
+      // Playwright *.spec.ts files are not picked up by vitest.
+      "packages/*/tests/integration/**/*.test.{ts,tsx}",
+      "apps/*/tests/**/*.test.{ts,tsx}",
     ],
     // Node by default keeps the pure-logic suite fast. Component tests opt into
     // a DOM via a `// @vitest-environment jsdom` docblock at the top of the file.
