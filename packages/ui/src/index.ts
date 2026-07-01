@@ -1,7 +1,7 @@
 export { Badge } from "./badge";
 export { Button, type ButtonProps } from "./button";
 export { ConfirmDialog } from "./confirm-dialog";
-export { DataTable, type DataTableColumn } from "./data-table";
+export { DataTable, type DataTableColumn, type DataTableSelection } from "./data-table";
 export { Dialog, DialogClose, DialogTrigger } from "./dialog-primitives";
 export {
   DialogBody,
@@ -83,7 +83,7 @@ export {
   type ConnectionStatusValue,
   type StatusTone,
 } from "./status";
-export { Tabs, type WorkspaceTab } from "./tabs";
+export { Tabs, type WorkspaceTab, type TabsAction } from "./tabs";
 export { Toolbar, ToolbarGroup } from "./toolbar";
 export {
   TreeView,

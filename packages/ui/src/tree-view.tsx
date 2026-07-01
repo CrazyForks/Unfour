@@ -1,5 +1,5 @@
 import * as React from "react";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, Loader2 } from "lucide-react";
 import { cn } from "./utils";
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "./menus";
 
@@ -11,6 +11,8 @@ export type TreeViewItem = {
   children?: TreeViewItem[];
   contextMenu?: React.ReactNode;
   disabled?: boolean;
+  /** Show a loading spinner on the expand arrow (for async child loading). */
+  loading?: boolean;
   icon?: React.ReactNode;
   id: string;
   label: React.ReactNode;
@@ -473,6 +475,16 @@ export function TreeView({
           onSelect?.(node.item);
         }
         break;
+      case "F10":
+      case "ContextMenu":
+        if ((event.shiftKey || event.key === "ContextMenu") && node && !node.item.disabled) {
+          event.preventDefault();
+          const el = containerRef.current?.querySelector<HTMLElement>(
+            `[data-tree-id="${escapeId(node.item.id)}"]`,
+          );
+          el?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+        }
+        break;
       default:
         if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
           typeAhead(event.key);
@@ -676,15 +688,18 @@ function TreeRow({
       {isDropAfter && <DropLine position="after" />}
       <button
         aria-label={expanded ? "Collapse" : "Expand"}
+        aria-busy={item.loading || undefined}
         className="grid h-4 w-4 shrink-0 place-items-center rounded-[var(--u-radius-sm)] text-[var(--u-color-text-soft)] hover:bg-[var(--u-color-surface-hover)]"
-        disabled={!hasChildren}
+        disabled={!hasChildren && !item.loading}
         onClick={() => hasChildren && toggle(item.id)}
         tabIndex={-1}
         type="button"
       >
-        {hasChildren && (
+        {item.loading ? (
+          <Loader2 className="animate-spin" size={12} />
+        ) : hasChildren ? (
           <ChevronRight className={cn("transition-transform", expanded && "rotate-90")} size={12} />
-        )}
+        ) : null}
       </button>
       {item.icon && <span className="grid h-4 w-4 shrink-0 place-items-center">{item.icon}</span>}
       <button

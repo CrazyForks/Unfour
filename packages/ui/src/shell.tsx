@@ -489,6 +489,7 @@ export function SplitPane({
   className,
   defaultRatio = 50,
   minPaneSize = 160,
+  onRatioChange,
   orientation = "horizontal",
   resizable = false,
 }: {
@@ -496,6 +497,8 @@ export function SplitPane({
   className?: string;
   defaultRatio?: number;
   minPaneSize?: number;
+  /** Optional callback receiving the first pane's percentage (0-100) on resize. */
+  onRatioChange?: (ratio: number) => void;
   orientation?: "horizontal" | "vertical";
   resizable?: boolean;
 }) {
@@ -510,6 +513,7 @@ export function SplitPane({
       className={className}
       defaultRatio={defaultRatio}
       minPaneSize={minPaneSize}
+      onRatioChange={onRatioChange}
       orientation={orientation}
     >
       {[panes[0], panes[1]]}

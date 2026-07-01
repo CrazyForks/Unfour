@@ -16,10 +16,22 @@ export function DropdownMenuContent({
 }
 
 export function DropdownMenuItem({
+  children,
   className,
+  shortcut,
   ...props
-}: React.ComponentProps<typeof DropdownMenuPrimitive.Item>) {
-  return <DropdownMenuPrimitive.Item className={cn(menuItem, className)} {...props} />;
+}: React.ComponentProps<typeof DropdownMenuPrimitive.Item> & {
+  /** Optional shortcut hint displayed at the right edge (e.g. "Ctrl+S"). */
+  shortcut?: string;
+}) {
+  return (
+    <DropdownMenuPrimitive.Item className={cn(menuItem, className)} {...props}>
+      <span className="flex-1 truncate">{children}</span>
+      {shortcut && (
+        <span className="ml-auto shrink-0 text-[11px] text-[var(--u-color-text-soft)]">{shortcut}</span>
+      )}
+    </DropdownMenuPrimitive.Item>
+  );
 }
 
 export const ContextMenu = ContextMenuPrimitive.Root;
@@ -57,10 +69,13 @@ export function ContextMenuItem({
   className,
   disabled,
   onSelect,
+  shortcut,
   tone = "default",
   ...props
 }: Omit<React.ComponentProps<typeof ContextMenuPrimitive.Item>, "onSelect"> & {
   onSelect?: (event: Event) => void;
+  /** Optional shortcut hint displayed at the right edge (e.g. "Ctrl+S"). */
+  shortcut?: string;
   tone?: "default" | "danger";
 }) {
   return (
@@ -74,7 +89,10 @@ export function ContextMenuItem({
       onSelect={onSelect}
       {...props}
     >
-      {children}
+      <span className="flex-1 truncate">{children}</span>
+      {shortcut && (
+        <span className="ml-auto shrink-0 text-[11px] text-[var(--u-color-text-soft)]">{shortcut}</span>
+      )}
     </ContextMenuPrimitive.Item>
   );
 }

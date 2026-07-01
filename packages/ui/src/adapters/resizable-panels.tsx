@@ -7,12 +7,15 @@ export function ResizableSplitPane({
   className,
   defaultRatio,
   minPaneSize,
+  onRatioChange,
   orientation,
 }: {
   children: [React.ReactNode, React.ReactNode];
   className?: string;
   defaultRatio: number;
   minPaneSize: number;
+  /** Optional controlled callback — receives the new ratio (0-100) on every resize. */
+  onRatioChange?: (ratio: number) => void;
   orientation: "horizontal" | "vertical";
 }) {
   const hostRef = React.useRef<HTMLDivElement | null>(null);
@@ -38,6 +41,11 @@ export function ResizableSplitPane({
     return () => observer.disconnect();
   }, [orientation]);
 
+  const handleDoubleClick = React.useCallback(() => {
+    // Double-click resets to the default ratio
+    onRatioChange?.(defaultRatio);
+  }, [defaultRatio, onRatioChange]);
+
   return (
     <Group
       className={cn(
@@ -48,17 +56,28 @@ export function ResizableSplitPane({
       orientation={orientation}
       elementRef={hostRef}
     >
-      <Panel className="flex min-h-0 min-w-0" defaultSize={`${firstPaneSize}%`} minSize={`${minSizePercent}%`}>
+      <Panel
+        className="flex min-h-0 min-w-0"
+        collapsible
+        defaultSize={`${firstPaneSize}%`}
+        minSize={`${minSizePercent}%`}
+      >
         {children[0]}
       </Panel>
       <Separator
-        aria-label={`Resize ${orientation === "horizontal" ? "horizontal" : "vertical"} split`}
+        aria-label={`Resize ${orientation === "horizontal" ? "horizontal" : "vertical"} split (double-click to reset)`}
         className={cn(
-          "shrink-0 bg-[var(--u-color-border)] hover:bg-[var(--u-color-focus)]",
+          "shrink-0 bg-[var(--u-color-border)] hover:bg-[var(--u-color-focus)] transition-colors duration-150",
           orientation === "horizontal" ? "w-px cursor-col-resize" : "h-px cursor-row-resize",
         )}
+        onDoubleClick={handleDoubleClick}
       />
-      <Panel className="flex min-h-0 min-w-0" defaultSize={`${secondPaneSize}%`} minSize={`${minSizePercent}%`}>
+      <Panel
+        className="flex min-h-0 min-w-0"
+        collapsible
+        defaultSize={`${secondPaneSize}%`}
+        minSize={`${minSizePercent}%`}
+      >
         {children[1]}
       </Panel>
     </Group>
