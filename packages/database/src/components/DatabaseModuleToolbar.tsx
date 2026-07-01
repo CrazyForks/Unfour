@@ -14,6 +14,7 @@ import type { DatabaseConnectionStatus } from "../model/types";
 export function DatabaseModuleToolbar({
   connectionStatus,
   connections,
+  canRunSql,
   executePending,
   onClearSql,
   onConnect,
@@ -29,6 +30,7 @@ export function DatabaseModuleToolbar({
 }: {
   connectionStatus: DatabaseConnectionStatus;
   connections: DatabaseConnection[];
+  canRunSql: boolean;
   executePending: boolean;
   onClearSql: () => void;
   onConnect: () => void;
@@ -53,10 +55,15 @@ export function DatabaseModuleToolbar({
   return (
     <Toolbar>
       <ToolbarGroup>
-        <Button onClick={onNewQuery} size="sm" type="button" variant="outline">
+        <Button
+          onClick={() => onNewQuery()}
+          size="sm"
+          type="button"
+          variant="outline"
+        >
           {t("database.actions.newQuery")}
         </Button>
-        <Button disabled={!selectedConnectionId || executePending} onClick={onRun} size="sm" type="button">
+        <Button disabled={!canRunSql || executePending} onClick={onRun} size="sm" type="button">
           <Play size={14} />
           {pendingConfirmation ? t("database.actions.confirmRun") : t("database.actions.run")}
         </Button>
