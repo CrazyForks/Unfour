@@ -74,6 +74,26 @@ export default tseslint.config(
     },
   },
   {
+    // React component files (.tsx) carry more logic per function than plain
+    // modules: JSX, event handlers, conditional rendering, and keyboard
+    // dispatchers inflate line count and complexity without indicating mixed
+    // responsibilities. Relax thresholds here; non-component .ts files keep
+    // the stricter defaults.
+    files: ["**/*.tsx"],
+    rules: {
+      "complexity": ["warn", 50],
+      "max-lines-per-function": [
+        "warn",
+        {
+          IIFEs: true,
+          max: 300,
+          skipBlankLines: true,
+          skipComments: true,
+        },
+      ],
+    },
+  },
+  {
     files: ["**/*.test.{ts,tsx}", "**/*.spec.{ts,tsx}"],
     rules: {
       "complexity": ["warn", 25],
