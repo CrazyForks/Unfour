@@ -54,7 +54,7 @@ export function DatabaseConnectionTree({
   onDeleteConnection?: (connection: DatabaseConnection) => void;
   onDisconnect?: (connection: DatabaseConnection) => void;
   onEditConnection?: (connection: DatabaseConnection) => void;
-  onNewQuery?: () => void;
+  onNewQuery?: (connection?: DatabaseConnection) => void;
   onPreviewTable?: (connectionId: string, table: DatabaseTable) => void;
   onRefresh?: () => void;
   onRefreshSchema?: (connection: DatabaseConnection) => void;
@@ -64,7 +64,7 @@ export function DatabaseConnectionTree({
   onToggleCatalog?: (connectionId: string, catalog: string) => void;
   /** Fired when a connection node is expanded, so its databases can load. */
   onToggleConnection?: (connection: DatabaseConnection) => void;
-  onUseSql?: (sql: string) => void;
+  onUseSql?: (connectionId: string, sql: string, table?: DatabaseTable) => void;
   /** Loaded schemas keyed `${connectionId}::${catalog}` (catalog "" for SQLite). */
   schemaCache?: Record<string, DatabaseSchema>;
   selectedConnectionId: string | null;
@@ -88,6 +88,11 @@ export function DatabaseConnectionTree({
     const session = connectionStates?.[connection.id];
     const status = resolveConnectionStatus({ session });
     const statusLabel = databaseConnectionStatusLabel(status, t);
+    const rootLoading =
+      status === "connected" &&
+      Boolean(
+        loadingKeys?.some((key) => key === `names::${connection.id}` || key.startsWith(`${connection.id}::`)),
+      );
 
     // Auto-expand only once the connection has succeeded, so saved but unopened
     // connections stay as plain rows until they can actually reveal schema data.
@@ -143,6 +148,7 @@ export function DatabaseConnectionTree({
       icon: <Database size={13} />,
       id: connection.id,
       label: connection.name,
+      loading: rootLoading,
       meta: (
         <ConnectionStatus
           dotOnly
@@ -234,7 +240,7 @@ function buildConnectionChildren({
   onDesignTable?: (connectionId: string, table: DatabaseTable) => void;
   onPreviewTable?: (connectionId: string, table: DatabaseTable) => void;
   onRefreshSchema?: (connection: DatabaseConnection) => void;
-  onUseSql?: (sql: string) => void;
+  onUseSql?: (connectionId: string, sql: string, table?: DatabaseTable) => void;
   schemaCache?: Record<string, DatabaseSchema>;
   status: DatabaseConnectionStatus;
   t: ReturnType<typeof useI18n>["t"];
@@ -272,6 +278,7 @@ function buildConnectionChildren({
       return renderCatalogContents({
         connection,
         defaultExpandedIds,
+        onDesignTable,
         onPreviewTable,
         onRefreshSchema,
         onUseSql,
@@ -335,6 +342,7 @@ function buildConnectionChildren({
       icon: <Database size={13} />,
       id: catalogNodeId,
       label: name,
+      loading: isLoading(key),
       title: name,
     };
   });
@@ -379,7 +387,7 @@ function renderCatalogContents({
   onDesignTable?: (connectionId: string, table: DatabaseTable) => void;
   onPreviewTable?: (connectionId: string, table: DatabaseTable) => void;
   onRefreshSchema?: (connection: DatabaseConnection) => void;
-  onUseSql?: (sql: string) => void;
+  onUseSql?: (connectionId: string, sql: string, table?: DatabaseTable) => void;
   parentId: string;
   t: ReturnType<typeof useI18n>["t"];
   tableLookup: Map<string, { connectionId: string; table: DatabaseTable }>;
@@ -457,7 +465,7 @@ function buildTableGroups({
   defaultExpandedIds: Set<string>;
   onDesignTable?: (connectionId: string, table: DatabaseTable) => void;
   onPreviewTable?: (connectionId: string, table: DatabaseTable) => void;
-  onUseSql?: (sql: string) => void;
+  onUseSql?: (connectionId: string, sql: string, table?: DatabaseTable) => void;
   parentId: string;
   t: ReturnType<typeof useI18n>["t"];
   tableLookup: Map<string, { connectionId: string; table: DatabaseTable }>;
@@ -513,7 +521,7 @@ function tableItem({
   connection: DatabaseConnection;
   onDesignTable?: (connectionId: string, table: DatabaseTable) => void;
   onPreviewTable?: (connectionId: string, table: DatabaseTable) => void;
-  onUseSql?: (sql: string) => void;
+  onUseSql?: (connectionId: string, sql: string, table?: DatabaseTable) => void;
   t: ReturnType<typeof useI18n>["t"];
   table: DatabaseTable;
   tableLookup: Map<string, { connectionId: string; table: DatabaseTable }>;
@@ -562,7 +570,7 @@ function TableContextMenu({
   connection: DatabaseConnection;
   onDesignTable?: (connectionId: string, table: DatabaseTable) => void;
   onPreviewTable?: (connectionId: string, table: DatabaseTable) => void;
-  onUseSql?: (sql: string) => void;
+  onUseSql?: (connectionId: string, sql: string, table?: DatabaseTable) => void;
   t: ReturnType<typeof useI18n>["t"];
   table: DatabaseTable;
 }) {
@@ -579,12 +587,12 @@ function TableContextMenu({
         </ContextMenuItem>
       )}
       {onUseSql && (
-        <ContextMenuItem onSelect={() => onUseSql(generateSelectSql(connection.driver, table))}>
+        <ContextMenuItem onSelect={() => onUseSql(connection.id, generateSelectSql(connection.driver, table), table)}>
           {t("database.tree.generateSelect")}
         </ContextMenuItem>
       )}
       {onUseSql && (
-        <ContextMenuItem onSelect={() => onUseSql(generateInsertSql(connection.driver, table))}>
+        <ContextMenuItem onSelect={() => onUseSql(connection.id, generateInsertSql(connection.driver, table), table)}>
           {t("database.tree.generateInsert")}
         </ContextMenuItem>
       )}
@@ -641,7 +649,7 @@ function ConnectionActions({
   onDeleteConnection?: (connection: DatabaseConnection) => void;
   onDisconnect?: (connection: DatabaseConnection) => void;
   onEditConnection?: (connection: DatabaseConnection) => void;
-  onNewQuery?: () => void;
+  onNewQuery?: (connection?: DatabaseConnection) => void;
   onRefresh?: () => void;
   onRefreshSchema?: (connection: DatabaseConnection) => void;
   status: DatabaseConnectionStatus;
@@ -660,7 +668,7 @@ function ConnectionActions({
         <DropdownMenuItem disabled={status === "disconnected"} onSelect={() => onDisconnect?.(connection)}>
           {t("common.actions.disconnect")}
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={onNewQuery}>{t("database.actions.newQuery")}</DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => onNewQuery?.(connection)}>{t("database.actions.newQuery")}</DropdownMenuItem>
         <DropdownMenuItem onSelect={onRefresh}>{t("database.actions.refreshConnections")}</DropdownMenuItem>
         <DropdownMenuItem onSelect={() => onRefreshSchema?.(connection)}>{t("database.actions.refreshSchema")}</DropdownMenuItem>
         {onEditConnection && (
@@ -702,7 +710,7 @@ function ConnectionContextMenu({
   onDeleteConnection?: (connection: DatabaseConnection) => void;
   onDisconnect?: (connection: DatabaseConnection) => void;
   onEditConnection?: (connection: DatabaseConnection) => void;
-  onNewQuery?: () => void;
+  onNewQuery?: (connection?: DatabaseConnection) => void;
   onRefreshSchema?: (connection: DatabaseConnection) => void;
   status: DatabaseConnectionStatus;
 }) {
@@ -721,7 +729,7 @@ function ConnectionContextMenu({
         <Square size={13} />
         {t("common.actions.disconnect")}
       </ContextMenuItem>
-      <ContextMenuItem onSelect={onNewQuery}>
+      <ContextMenuItem onSelect={() => onNewQuery?.(connection)}>
         <PlusCircle size={13} />
         {t("database.actions.newQuery")}
       </ContextMenuItem>

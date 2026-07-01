@@ -305,6 +305,7 @@
       "empty": "Create or select a database connection to start writing SQL.",
       "noConnectionSelected": "No connection selected",
       "queryConsole": "Query Console",
+      "queryTitle": "Query {index}",
       "schemaAria": "Query schema",
       "sqlEditor": "SQL Editor",
       "structureView": "Structure",

@@ -56,22 +56,59 @@ export type QueryContext = {
 
 export type DatabaseResultTab = "results" | "messages" | "logs" | "history";
 
-// Object-level workspace tabs: the Table object tab (with an inner Data /
-// Structure segment) and the Query Console tab.
-export type DatabaseWorkspaceTabId = "table" | "query";
+export type DatabaseStructureTab = "ddl" | "indexes" | "constraints" | "properties";
+
+export type TableQueryState = {
+  orderBy: string | null;
+  orderDescending: boolean;
+  filter: string;
+};
+
+export const emptyTableQuery: TableQueryState = {
+  orderBy: null,
+  orderDescending: false,
+  filter: "",
+};
+
+// Object-level workspace tab ids are dynamic so multiple query/table objects
+// can stay open at once.
+export type DatabaseWorkspaceTabId = string;
 
 export type TableSegment = "data" | "structure";
 
 export type DatabaseWorkspaceTabKind = "query" | "table";
 
-export type DatabaseWorkspaceTab = {
-  connectionId?: string | null;
+export type DatabaseQueryWorkspaceTab = {
+  catalog: string | null;
+  connectionId: string | null;
+  error: unknown;
   id: DatabaseWorkspaceTabId;
-  kind: DatabaseWorkspaceTabKind;
+  kind: "query";
   loading?: boolean;
-  modified?: boolean;
+  pendingConfirmation: boolean;
+  result: DatabaseQueryResult | null;
+  resultTab: DatabaseResultTab;
+  schema: string | null;
+  sql: string;
   title: string;
 };
+
+export type DatabaseTableWorkspaceTab = {
+  connectionId: string;
+  error: unknown;
+  id: DatabaseWorkspaceTabId;
+  kind: "table";
+  loading?: boolean;
+  queryResult: DatabaseQueryResult | null;
+  segment: TableSegment;
+  structureTab: DatabaseStructureTab;
+  table: DatabaseTable;
+  tableQuery: TableQueryState;
+  tableView: DatabaseTableViewState | null;
+  title: string;
+};
+
+export type DatabaseWorkspaceTab = DatabaseQueryWorkspaceTab | DatabaseTableWorkspaceTab;
 
 export type DatabasePanelState = {
   connections: DatabaseConnection[];

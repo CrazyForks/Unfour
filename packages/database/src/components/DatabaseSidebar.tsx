@@ -48,7 +48,7 @@ export function DatabaseSidebar({
   onDisconnect: (connection: DatabaseConnection) => void;
   onEditConnection: (connection: DatabaseConnection) => void;
   onNewConnection: () => void;
-  onNewQuery: () => void;
+  onNewQuery: (connection?: DatabaseConnection) => void;
   onPreviewTable: (connectionId: string, table: DatabaseTable) => void;
   onRefresh: () => void;
   onRefreshSchema: (connection: DatabaseConnection) => void;
@@ -56,7 +56,7 @@ export function DatabaseSidebar({
   onSelectTable: (connectionId: string, table: DatabaseTable) => void;
   onToggleCatalog: (connectionId: string, catalog: string) => void;
   onToggleConnection: (connection: DatabaseConnection) => void;
-  onUseSql: (sql: string) => void;
+  onUseSql: (connectionId: string, sql: string, table?: DatabaseTable) => void;
   schemaCache?: Record<string, DatabaseSchema>;
   selectedConnectionId: string | null;
   selectedTableId?: string | null;

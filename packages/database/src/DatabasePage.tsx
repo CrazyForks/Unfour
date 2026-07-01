@@ -43,22 +43,24 @@ import { DatabaseModuleToolbar } from "./components/DatabaseModuleToolbar";
 import { DatabaseStatusBar } from "./components/DatabaseStatusBar";
 import { DatabaseWorkspace } from "./components/DatabaseWorkspace";
 import { useDatabaseConnections } from "./hooks/useDatabaseConnections";
-import { useDatabaseLayout } from "./hooks/useDatabaseLayout";
+import { databaseTableTabId, useDatabaseTabs } from "./hooks/useDatabaseTabs";
 import { useDatabaseCatalogs } from "./hooks/useDatabaseCatalogs";
 import { useQueryHistory } from "./hooks/useQueryHistory";
 import { useSchemaTree } from "./hooks/useSchemaTree";
 import { useSqlExecution } from "./hooks/useSqlExecution";
 import { useTableData } from "./hooks/useTableData";
 import { useTableStructure } from "./hooks/useTableStructure";
-import { defaultSql } from "./model/database-state";
-import { buildDatabaseTree, databaseTableTreeId } from "./model/database-tree";
+import { buildDatabaseTree, databaseTableTreeId, type DatabaseTreeModel } from "./model/database-tree";
 import type {
+  DatabaseQueryWorkspaceTab,
   DatabaseConnectionSessionState,
   DatabaseConnectionStatus,
-  DatabaseTableViewState,
+  DatabaseTableWorkspaceTab,
   SqlHistoryEntry,
   TableEditing,
+  TableQueryState,
 } from "./model/types";
+import { emptyTableQuery } from "./model/types";
 import { describeDatabaseError, formatDatabaseError, isConfirmationRequired } from "./result-utils";
 
 const DEFAULT_PREVIEW_PAGE_SIZE = 100;
@@ -83,34 +85,21 @@ export function DatabasePage({
     selectedDatabaseConnectionId: selectedConnectionId,
     setSelectedDatabaseConnection,
   } = useWorkspaceStore();
-  const layout = useDatabaseLayout();
+  const databaseTabs = useDatabaseTabs({
+    formatQueryTitle: (index) => t("database.editor.queryTitle", { index }),
+  });
   const [editorOpen, setEditorOpen] = useState(false);
-  const [clientError, setClientError] = useState<unknown>(null);
   const [connectionStates, setConnectionStates] = useState<Record<string, DatabaseConnectionSessionState>>({});
   const [testResult, setTestResult] = useState<DatabaseTestResult | null>(null);
   const [queryHistory, setQueryHistory] = useState<SqlHistoryEntry[]>([]);
-  const [queryResult, setQueryResult] = useState<DatabaseQueryResult | null>(null);
-  const [pendingSqlConfirmation, setPendingSqlConfirmation] = useState(false);
-  const [sql, setSql] = useState(defaultSql);
-  const [tableView, setTableView] = useState<DatabaseTableViewState | null>(null);
   const [selectedTable, setSelectedTable] = useState<DatabaseTable | null>(null);
-  const [queryContext, setQueryContext] = useState<{ catalog: string | null; schema: string | null }>({
-    catalog: null,
-    schema: null,
-  });
-  // Server-side sort/filter for the table data view, pushed into browse_table so
-  // it applies to the whole table rather than only the loaded page.
-  const [tableQuery, setTableQuery] = useState<{
-    orderBy: string | null;
-    orderDescending: boolean;
-    filter: string;
-  }>({ orderBy: null, orderDescending: false, filter: "" });
   const filterDebounceRef = useRef<number | null>(null);
-  const emptyTableQuery = { orderBy: null, orderDescending: false, filter: "" } as const;
   // Set when the user stops a running query so a late-arriving backend result
   // (the statement keeps running server-side until it finishes or times out) is
   // ignored instead of replacing the cancelled state.
   const cancelledRef = useRef(false);
+  const executingRef = useRef<{ connectionId: string | null; sql: string; tabId: string } | null>(null);
+  const browsingRef = useRef<{ connectionId: string; table: DatabaseTable; tabId: string } | null>(null);
   // Per-connection tree data so multiple connections can be browsed at once.
   // catalogNamesByConn: connectionId -> database names (PostgreSQL/MySQL).
   // treeSchemaCache: `${connectionId}::${catalog}` -> that database's schema
@@ -136,9 +125,9 @@ export function DatabasePage({
     [connections, selectedConnectionId],
   );
   const prevSelectedConnectionIdRef = useRef(selectedConnectionId);
-  // Tracks the SQL actually sent to the backend (may be a highlighted
-  // selection rather than the full editor contents) so history reflects it.
-  const executedSqlRef = useRef(sql);
+  const activeTab = databaseTabs.activeTab;
+  const activeQueryTab = activeTab?.kind === "query" ? activeTab : null;
+  const activeTableTab = activeTab?.kind === "table" ? activeTab : null;
   const selectedSession = selectedConnectionId ? connectionStates[selectedConnectionId] : undefined;
   const selectedConnectionStatus: DatabaseConnectionStatus = selectedSession?.status ?? "disconnected";
   const schemaEnabled = Boolean(
@@ -189,35 +178,43 @@ export function DatabasePage({
       return [];
     }
     const activeCatalog =
-      treeModel.catalogs.find((catalog) => catalog.key === queryContext.catalog) ??
+      treeModel.catalogs.find((catalog) => catalog.key === activeQueryTab?.catalog) ??
       treeModel.catalogs[0];
     if (!activeCatalog?.hasSchemaLevel) {
       return [];
     }
     return activeCatalog.schemas.map((schema) => schema.key).filter((key) => key !== "");
-  }, [treeModel, queryContext.catalog]);
+  }, [treeModel, activeQueryTab?.catalog]);
   const structureEnabled = Boolean(
-    selectedConnection &&
-      selectedTable &&
-      layout.activeTabId === "table" &&
-      layout.tableSegment === "structure" &&
-      (selectedConnectionStatus === "connecting" || selectedConnectionStatus === "connected"),
+    activeTableTab &&
+      activeTableTab.segment === "structure" &&
+      (connectionStates[activeTableTab.connectionId]?.status === "connecting" ||
+        connectionStates[activeTableTab.connectionId]?.status === "connected"),
   );
   const structureQuery = useTableStructure({
-    connectionId: selectedConnectionId,
+    connectionId: activeTableTab?.connectionId ?? null,
     enabled: structureEnabled,
-    table: selectedTable,
+    table: activeTableTab?.table ?? null,
     workspaceId,
   });
   const selectedTableId =
     selectedConnectionId && selectedTable ? databaseTableTreeId(selectedConnectionId, selectedTable) : null;
 
   useEffect(() => {
+    if (!activeTab) {
+      return;
+    }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- active workspace tab drives shell/tree selection after tab changes
+    setSelectedDatabaseConnection(activeTab.connectionId);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- active workspace tab drives shell/tree selection after tab changes
+    setSelectedTable(activeTab.kind === "table" ? activeTab.table : null);
+  }, [activeTab?.id, setSelectedDatabaseConnection]);
+
+  useEffect(() => {
     if (selectedConnectionId && !connections.some((connection) => connection.id === selectedConnectionId)) {
       setSelectedDatabaseConnection(null);
       // eslint-disable-next-line react-hooks/set-state-in-effect -- clearing derived state when parent selection is removed
       setSelectedTable(null);
-      setTableView(null);
     }
 
     setConnectionStates((current) => {
@@ -339,36 +336,20 @@ export function DatabasePage({
     });
   }, [selectedConnectionId, selectedSchemaData]);
 
-  // Keep the query context pointed at a valid catalog/schema as the schema
+  // Keep the active query tab pointed at a valid catalog/schema as the schema
   // loads or changes. Preserves a still-valid user selection; otherwise falls
   // back to the first catalog and (for PostgreSQL) its first schema.
   useEffect(() => {
-    if (!treeModel) {
+    if (!treeModel || !activeQueryTab) {
+      return;
+    }
+    const next = normalizeQueryContext(activeQueryTab, treeModel);
+    if (next.catalog === activeQueryTab.catalog && next.schema === activeQueryTab.schema) {
       return;
     }
     // eslint-disable-next-line react-hooks/set-state-in-effect -- re-deriving context defaults when the loaded schema changes
-    setQueryContext((current) => {
-      const activeCatalog =
-        treeModel.catalogs.find((catalog) => catalog.key === current.catalog) ??
-        treeModel.catalogs.find((catalog) => catalog.key !== "") ??
-        treeModel.catalogs[0] ??
-        null;
-      const catalog = activeCatalog && activeCatalog.key !== "" ? activeCatalog.key : null;
-
-      let schema: string | null = null;
-      if (activeCatalog?.hasSchemaLevel) {
-        const keep = activeCatalog.schemas.some((node) => node.key === current.schema);
-        schema = keep
-          ? current.schema
-          : (activeCatalog.schemas.find((node) => node.key !== "")?.key ?? null);
-      }
-
-      if (catalog === current.catalog && schema === current.schema) {
-        return current;
-      }
-      return { catalog, schema };
-    });
-  }, [treeModel]);
+    databaseTabs.updateQueryTab(activeQueryTab.id, next);
+  }, [treeModel, activeQueryTab?.id, activeQueryTab?.catalog, activeQueryTab?.schema]);
 
   const saveMutation = useMutation({
     mutationFn: async ({ input, secret }: { input: DatabaseConnectionInput; secret: string }) => {
@@ -404,7 +385,6 @@ export function DatabasePage({
   });
 
   const [deleteConfirm, setDeleteConfirm] = useState<DatabaseConnection | null>(null);
-  const [historyConfirm, setHistoryConfirm] = useState<SqlHistoryEntry | null>(null);
   const deleteMutation = useMutation({
     mutationFn: (connectionId: string) => deleteDatabaseConnection(workspaceId, connectionId),
     onSuccess: (_result, connectionId) => {
@@ -419,12 +399,9 @@ export function DatabasePage({
       if (connectionId === selectedConnectionId) {
         setSelectedDatabaseConnection(null);
         setTestResult(null);
-        setQueryResult(null);
-        setTableView(null);
         setSelectedTable(null);
-        setPendingSqlConfirmation(false);
-        setClientError(null);
       }
+      databaseTabs.removeConnectionTabs(connectionId);
       setDeleteConfirm(null);
       queryClient.invalidateQueries({ queryKey: ["database-connections", workspaceId] });
     },
@@ -459,18 +436,30 @@ export function DatabasePage({
   });
 
   const executeMutation = useSqlExecution({
-    connectionId: selectedConnectionId,
-    onConfirmationRequired: setPendingSqlConfirmation,
+    connectionId: activeQueryTab?.connectionId ?? null,
+    onConfirmationRequired: (required) => {
+      const tabId = executingRef.current?.tabId ?? activeQueryTab?.id;
+      if (tabId) {
+        databaseTabs.updateQueryTab(tabId, { pendingConfirmation: required });
+      }
+    },
     onError: (error) => {
-      layout.setResultTab("results");
+      const execution = executingRef.current;
+      if (execution) {
+        databaseTabs.updateQueryTab(execution.tabId, {
+          error,
+          loading: false,
+          resultTab: "results",
+        });
+      }
       if (isConfirmationRequired(error)) {
         return;
       }
 
-      recordFailedHistory(error);
+      recordFailedHistory(error, execution);
       const description = describeDatabaseError(error);
-      if (selectedConnectionId && ["connection", "network", "permission"].includes(description.category)) {
-        setConnectionState(selectedConnectionId, {
+      if (execution?.connectionId && ["connection", "network", "permission"].includes(description.category)) {
+        setConnectionState(execution.connectionId, {
           message: description.message,
           status: "failed",
         });
@@ -478,27 +467,38 @@ export function DatabasePage({
     },
     onExecuteStart: () => {
       cancelledRef.current = false;
-      setClientError(null);
-      setTableView(null);
-      layout.setActiveTabId("query");
-      layout.setResultTab("results");
+      const execution = executingRef.current;
+      if (execution) {
+        databaseTabs.updateQueryTab(execution.tabId, {
+          error: null,
+          loading: true,
+          resultTab: "results",
+        });
+      }
     },
     onSuccess: (result) => {
       if (cancelledRef.current) {
         return;
       }
-      setTableView(null);
-      setQueryResult(result);
-      layout.setResultTab("results");
-      if (selectedConnectionId) {
-        setConnectionState(selectedConnectionId, {
+      const execution = executingRef.current;
+      if (execution) {
+        databaseTabs.updateQueryTab(execution.tabId, {
+          error: null,
+          loading: false,
+          pendingConfirmation: false,
+          result,
+          resultTab: "results",
+        });
+      }
+      if (execution?.connectionId) {
+        setConnectionState(execution.connectionId, {
           message: t("database.query.completed", {
             durationMs: result.durationMs,
           }),
           status: "connected",
         });
       }
-      recordSuccessfulHistory(result);
+      recordSuccessfulHistory(result, execution);
     },
     workspaceId,
   });
@@ -506,27 +506,35 @@ export function DatabasePage({
   const browseMutation = useTableData({
     onBrowseStart: () => {
       cancelledRef.current = false;
-      setClientError(null);
-      setPendingSqlConfirmation(false);
-      layout.setActiveTabId("table");
-      layout.setTableSegment("data");
-      layout.setResultTab("results");
+      const browse = browsingRef.current;
+      if (browse) {
+        databaseTabs.updateTableTab(browse.tabId, {
+          error: null,
+          loading: true,
+          segment: "data",
+        });
+      }
     },
     onSuccess: (browse) => {
       if (cancelledRef.current) {
         return;
       }
-      setPendingSqlConfirmation(false);
-      setQueryResult(browse.result);
-      setTableView({
-        pageIndex: Math.floor(browse.offset / Math.max(1, browse.limit)),
-        pageSize: browse.limit,
-        readOnly: browse.readOnly,
-        tableName: browse.tableName,
-        totalRows: browse.totalRows,
-      });
-      if (selectedConnectionId) {
-        setConnectionState(selectedConnectionId, {
+      const target = browsingRef.current;
+      if (target) {
+        databaseTabs.updateTableTab(target.tabId, {
+          error: null,
+          loading: false,
+          queryResult: browse.result,
+          segment: "data",
+          tableView: {
+            pageIndex: Math.floor(browse.offset / Math.max(1, browse.limit)),
+            pageSize: browse.limit,
+            readOnly: browse.readOnly,
+            tableName: browse.tableName,
+            totalRows: browse.totalRows,
+          },
+        });
+        setConnectionState(target.connectionId, {
           message: t("database.query.previewLoaded", {
             count: browse.result.rows.length,
           }),
@@ -544,24 +552,27 @@ export function DatabasePage({
       refreshTablePage();
     },
     onError: (error) => {
-      layout.setResultTab("results");
-      setClientError(error);
+      if (activeTableTab) {
+        databaseTabs.updateTableTab(activeTableTab.id, { error });
+      }
     },
   });
 
   useEffect(() => {
-    if (!selectedConnectionId || !browseMutation.error) {
+    const browse = browsingRef.current;
+    if (!browse || !browseMutation.error) {
       return;
     }
 
     const description = describeDatabaseError(browseMutation.error);
+    databaseTabs.updateTableTab(browse.tabId, { error: browseMutation.error, loading: false });
     if (["connection", "network", "permission"].includes(description.category)) {
-      setConnectionState(selectedConnectionId, {
+      setConnectionState(browse.connectionId, {
         message: description.message,
         status: "failed",
       });
     }
-  }, [browseMutation.error, selectedConnectionId]);
+  }, [browseMutation.error]);
 
   function setConnectionState(connectionId: string, patch: Partial<DatabaseConnectionSessionState>) {
     setConnectionStates((current) => ({
@@ -597,17 +608,8 @@ export function DatabasePage({
 
   function selectConnection(connectionId: string | null) {
     setSelectedDatabaseConnection(connectionId);
-    setClientError(null);
-    setPendingSqlConfirmation(false);
     setTestResult(null);
     setSelectedTable(null);
-    setTableView(null);
-    setQueryResult(null);
-    setTableQuery(emptyTableQuery);
-    // Drop the previous datasource's context; the schema-load effect repopulates
-    // a valid default for the newly selected connection. The per-connection tree
-    // caches are kept so other connections stay expanded.
-    setQueryContext({ catalog: null, schema: null });
   }
 
   // Load a connection's databases when its tree node is expanded: SQLite loads
@@ -620,9 +622,9 @@ export function DatabasePage({
     loadCatalogNames(connection.id);
   }
 
-  function loadCatalogNames(connectionId: string) {
+  function loadCatalogNames(connectionId: string, options: { force?: boolean } = {}) {
     const key = `names::${connectionId}`;
-    if (catalogNamesByConn[connectionId] || treeLoadingKeys.includes(key)) {
+    if ((!options.force && catalogNamesByConn[connectionId]) || treeLoadingKeys.includes(key)) {
       return;
     }
     setTreeLoadingKeys((current) => [...current, key]);
@@ -640,9 +642,9 @@ export function DatabasePage({
   }
 
   // Lazily fetch a database (catalog) schema when its tree node is expanded.
-  function loadCatalogSchema(connectionId: string, catalog: string) {
+  function loadCatalogSchema(connectionId: string, catalog: string, options: { force?: boolean } = {}) {
     const key = `${connectionId}::${catalog}`;
-    if (treeSchemaCache[key] || treeLoadingKeys.includes(key)) {
+    if ((!options.force && treeSchemaCache[key]) || treeLoadingKeys.includes(key)) {
       return;
     }
     setTreeLoadingKeys((current) => [...current, key]);
@@ -677,7 +679,6 @@ export function DatabasePage({
   function connectConnection(connection: DatabaseConnection) {
     selectConnection(connection.id);
     setSelectedTable(null);
-    setTableView(null);
     testMutation.mutate(connection.id);
   }
 
@@ -693,11 +694,7 @@ export function DatabasePage({
       status: "disconnected",
     });
     if (connection.id === selectedConnectionId) {
-      setSelectedTable(null);
-      setTableView(null);
-      setQueryResult(null);
-      setPendingSqlConfirmation(false);
-      setClientError(null);
+      setTestResult(null);
     }
   }
 
@@ -709,8 +706,8 @@ export function DatabasePage({
 
   function refreshConnectionsAndSchema() {
     queryClient.invalidateQueries({ queryKey: ["database-connections", workspaceId] });
-    if (selectedConnectionId && selectedConnectionStatus !== "disconnected") {
-      queryClient.invalidateQueries({ queryKey: ["database-schema", workspaceId, selectedConnectionId] });
+    if (selectedConnection && selectedConnectionStatus !== "disconnected") {
+      refreshConnectionSchema(selectedConnection);
     }
   }
 
@@ -721,56 +718,28 @@ export function DatabasePage({
     }
 
     if (status === "disconnected") {
-      setClientError({
+      setActiveTabError({
         code: "VALIDATION_ERROR",
         message: t("database.connection.connectBeforeRefresh"),
       });
-      layout.setResultTab("results");
       return;
     }
 
-    // Drop this connection's cached tree data so it re-fetches on next expand.
-    clearConnectionTreeCache(connection.id);
     queryClient.invalidateQueries({ queryKey: ["database-schema", workspaceId, connection.id] });
     queryClient.invalidateQueries({ queryKey: ["database-catalogs", workspaceId, connection.id] });
-  }
 
-  // Remove a single connection's entries from the per-connection tree caches.
-  function clearConnectionTreeCache(connectionId: string) {
-    const prefix = `${connectionId}::`;
-    setCatalogNamesByConn((prev) => {
-      if (!(connectionId in prev)) {
-        return prev;
+    const prefix = `${connection.id}::`;
+    const loadedCatalogs = Object.keys(treeSchemaCache)
+      .filter((key) => key.startsWith(prefix))
+      .map((key) => key.slice(prefix.length));
+    if (connection.driver === "sqlite") {
+      loadCatalogSchema(connection.id, "", { force: true });
+    } else {
+      loadCatalogNames(connection.id, { force: true });
+      for (const catalog of loadedCatalogs) {
+        loadCatalogSchema(connection.id, catalog, { force: true });
       }
-      const next = { ...prev };
-      delete next[connectionId];
-      return next;
-    });
-    setTreeSchemaCache((prev) => {
-      const next: Record<string, DatabaseSchema> = {};
-      for (const [key, value] of Object.entries(prev)) {
-        if (!key.startsWith(prefix)) {
-          next[key] = value;
-        }
-      }
-      return next;
-    });
-    setTreeErrors((prev) => {
-      const next: Record<string, string> = {};
-      for (const [key, value] of Object.entries(prev)) {
-        if (!key.startsWith(prefix) && key !== `names::${connectionId}`) {
-          next[key] = value;
-        }
-      }
-      return next;
-    });
-  }
-
-  function refreshSelectedSchema() {
-    if (!selectedConnection) {
-      return;
     }
-    refreshConnectionSchema(selectedConnection);
   }
 
   function selectTable(connectionId: string, table: DatabaseTable) {
@@ -780,21 +749,16 @@ export function DatabasePage({
       selectConnection(connectionId);
     }
     setSelectedTable(table);
-    setClientError(null);
-    applyContextFromTable(table);
-  }
-
-  // Point the query context at the catalog/schema of a selected object so a
-  // query opened from that node runs in the expected place.
-  function applyContextFromTable(table: DatabaseTable) {
-    setQueryContext({ catalog: table.catalog ?? null, schema: table.schema ?? null });
   }
 
   function changeQueryContext(patch: { catalog?: string | null; schema?: string | null }) {
-    setQueryContext((current) => {
-      const next = { ...current, ...patch };
+    if (!activeQueryTab) {
+      return;
+    }
+    databaseTabs.updateQueryTab(activeQueryTab.id, (tab) => {
+      const next = { catalog: tab.catalog, schema: tab.schema, ...patch };
       // Switching catalog invalidates a schema from the previous catalog.
-      if (patch.catalog !== undefined && patch.catalog !== current.catalog) {
+      if (patch.catalog !== undefined && patch.catalog !== tab.catalog) {
         next.schema = null;
       }
       return { catalog: next.catalog, schema: next.schema };
@@ -806,25 +770,22 @@ export function DatabasePage({
     table: DatabaseTable,
     pageIndex: number,
     pageSize: number,
-    query?: { orderBy: string | null; orderDescending: boolean; filter: string },
+    query?: TableQueryState,
   ) {
+    const existingTab = databaseTabs.tabs.find((tab) => tab.id === databaseTableTabId(connectionId, table));
+    const effectiveQuery =
+      query ?? (existingTab?.kind === "table" ? existingTab.tableQuery : { ...emptyTableQuery });
+    const tabId = databaseTabs.openTableTab(connectionId, table, "data");
     if (connectionId !== selectedConnectionId) {
       selectConnection(connectionId);
     }
-    // Switching to a different table drops any prior sort/filter so it does not
-    // leak onto an unrelated table; an explicit query (sort/filter action or
-    // pagination) takes precedence over that reset.
-    const isNewTable = table.name !== selectedTable?.name || connectionId !== selectedConnectionId;
-    const effectiveQuery = query ?? (isNewTable ? emptyTableQuery : tableQuery);
-    if (!query && isNewTable) {
-      setTableQuery(emptyTableQuery);
-    }
     setSelectedTable(table);
-    setClientError(null);
-    applyContextFromTable(table);
-    // Switch to the Table tab in Data view (triggered by double-click in tree).
-    layout.setActiveTabId("table");
-    layout.setTableSegment("data");
+    databaseTabs.updateTableTab(tabId, {
+      error: null,
+      segment: "data",
+      tableQuery: effectiveQuery,
+    });
+    browsingRef.current = { connectionId, table, tabId };
     executeMutation.reset();
     browseMutation.reset();
     browseMutation.mutate({
@@ -843,10 +804,10 @@ export function DatabasePage({
   // Cycle a column through ascending -> descending -> unsorted, re-querying the
   // first page server-side each time.
   function applyTableSort(column: string) {
-    if (!selectedConnectionId || !selectedTable) {
+    if (!activeTableTab) {
       return;
     }
-    const current = tableQuery;
+    const current = activeTableTab.tableQuery;
     let next: { orderBy: string | null; orderDescending: boolean; filter: string };
     if (current.orderBy !== column) {
       next = { ...current, orderBy: column, orderDescending: false };
@@ -855,29 +816,28 @@ export function DatabasePage({
     } else {
       next = { ...current, orderBy: null, orderDescending: false };
     }
-    setTableQuery(next);
     browseTablePage(
-      selectedConnectionId,
-      selectedTable,
+      activeTableTab.connectionId,
+      activeTableTab.table,
       0,
-      tableView?.pageSize ?? DEFAULT_PREVIEW_PAGE_SIZE,
+      activeTableTab.tableView?.pageSize ?? DEFAULT_PREVIEW_PAGE_SIZE,
       next,
     );
   }
 
   // Debounce the cross-column filter so typing does not fire a query per key.
   function applyTableFilter(text: string) {
-    if (!selectedConnectionId || !selectedTable) {
+    if (!activeTableTab) {
       return;
     }
-    const next = { ...tableQuery, filter: text };
-    setTableQuery(next);
+    const next = { ...activeTableTab.tableQuery, filter: text };
+    databaseTabs.updateTableTab(activeTableTab.id, { tableQuery: next });
     if (filterDebounceRef.current) {
       window.clearTimeout(filterDebounceRef.current);
     }
-    const connectionId = selectedConnectionId;
-    const table = selectedTable;
-    const pageSize = tableView?.pageSize ?? DEFAULT_PREVIEW_PAGE_SIZE;
+    const connectionId = activeTableTab.connectionId;
+    const table = activeTableTab.table;
+    const pageSize = activeTableTab.tableView?.pageSize ?? DEFAULT_PREVIEW_PAGE_SIZE;
     filterDebounceRef.current = window.setTimeout(() => {
       browseTablePage(connectionId, table, 0, pageSize, next);
     }, 350);
@@ -887,12 +847,17 @@ export function DatabasePage({
     if (!selectedConnectionId || !selectedTable) {
       return;
     }
-    browseTablePage(selectedConnectionId, selectedTable, 0, tableView?.pageSize ?? DEFAULT_PREVIEW_PAGE_SIZE);
+    browseTablePage(selectedConnectionId, selectedTable, 0, activeTableTab?.tableView?.pageSize ?? DEFAULT_PREVIEW_PAGE_SIZE);
   }
 
   function refreshTablePage() {
-    if (selectedConnectionId && selectedTable && tableView) {
-      browseTablePage(selectedConnectionId, selectedTable, tableView.pageIndex, tableView.pageSize);
+    if (activeTableTab?.tableView) {
+      browseTablePage(
+        activeTableTab.connectionId,
+        activeTableTab.table,
+        activeTableTab.tableView.pageIndex,
+        activeTableTab.tableView.pageSize,
+      );
     }
   }
 
@@ -901,16 +866,16 @@ export function DatabasePage({
     values: DatabaseCellValue[],
     primaryKey: DatabaseCellValue[],
   ) {
-    if (!selectedConnectionId || !selectedTable) {
+    if (!activeTableTab) {
       return;
     }
-    setClientError(null);
+    databaseTabs.updateTableTab(activeTableTab.id, { error: null });
     rowMutation.mutate({
       workspaceId,
-      connectionId: selectedConnectionId,
-      catalog: selectedTable.catalog,
-      schema: selectedTable.schema,
-      tableName: selectedTable.name,
+      connectionId: activeTableTab.connectionId,
+      catalog: activeTableTab.table.catalog,
+      schema: activeTableTab.table.schema,
+      tableName: activeTableTab.table.name,
       operation,
       values,
       primaryKey,
@@ -920,44 +885,59 @@ export function DatabasePage({
   function runSql(overrideSql?: string) {
     executeMutation.reset();
     browseMutation.reset();
-    setClientError(null);
 
-    if (!selectedConnectionId) {
-      setQueryResult(null);
-      setClientError({
-        code: "VALIDATION_ERROR",
-        message: t("database.errors.selectBeforeRun"),
+    if (!activeQueryTab) {
+      return;
+    }
+
+    if (!activeQueryTab.connectionId) {
+      databaseTabs.updateQueryTab(activeQueryTab.id, {
+        error: {
+          code: "VALIDATION_ERROR",
+          message: t("database.errors.selectBeforeRun"),
+        },
+        resultTab: "results",
       });
-      layout.setResultTab("results");
       return;
     }
 
     // Run the highlighted statement when the editor reports a non-empty
     // selection; otherwise fall back to the full editor contents.
-    const effectiveSql = overrideSql && overrideSql.trim() ? overrideSql : sql;
+    const effectiveSql = overrideSql && overrideSql.trim() ? overrideSql : activeQueryTab.sql;
     if (!effectiveSql.trim()) {
-      setQueryResult(null);
-      setClientError({
-        code: "VALIDATION_ERROR",
-        message: t("database.errors.sqlEmpty"),
+      databaseTabs.updateQueryTab(activeQueryTab.id, {
+        error: {
+          code: "VALIDATION_ERROR",
+          message: t("database.errors.sqlEmpty"),
+        },
+        resultTab: "results",
       });
-      layout.setResultTab("results");
       return;
     }
 
-    executedSqlRef.current = effectiveSql;
-    executeMutation.mutate({
-      confirmMutation: pendingSqlConfirmation,
+    executingRef.current = {
+      connectionId: activeQueryTab.connectionId,
       sql: effectiveSql,
-      catalog: queryContext.catalog,
-      schema: queryContext.schema,
+      tabId: activeQueryTab.id,
+    };
+    databaseTabs.updateQueryTab(activeQueryTab.id, { error: null, resultTab: "results" });
+    executeMutation.mutate({
+      confirmMutation: activeQueryTab.pendingConfirmation,
+      sql: effectiveSql,
+      catalog: activeQueryTab.catalog,
+      schema: activeQueryTab.schema,
     });
   }
 
   function clearSql() {
-    setSql("");
-    setClientError(null);
-    setPendingSqlConfirmation(false);
+    if (!activeQueryTab) {
+      return;
+    }
+    databaseTabs.updateQueryTab(activeQueryTab.id, {
+      error: null,
+      pendingConfirmation: false,
+      sql: "",
+    });
     executeMutation.reset();
   }
 
@@ -972,51 +952,74 @@ export function DatabasePage({
     cancelledRef.current = true;
     executeMutation.reset();
     browseMutation.reset();
-    setPendingSqlConfirmation(false);
-    setClientError({ code: "QUERY_CANCELLED", message: t("database.query.cancelled") });
-    layout.setResultTab("results");
-    if (selectedConnectionId) {
-      setConnectionState(selectedConnectionId, {
+    const cancelledError = { code: "QUERY_CANCELLED", message: t("database.query.cancelled") };
+    if (executingRef.current) {
+      databaseTabs.updateQueryTab(executingRef.current.tabId, {
+        error: cancelledError,
+        loading: false,
+        pendingConfirmation: false,
+        resultTab: "results",
+      });
+    }
+    if (browsingRef.current) {
+      databaseTabs.updateTableTab(browsingRef.current.tabId, {
+        error: cancelledError,
+        loading: false,
+      });
+    }
+    const connectionId = executingRef.current?.connectionId ?? browsingRef.current?.connectionId;
+    if (connectionId) {
+      setConnectionState(connectionId, {
         message: t("database.query.cancelled"),
         status: "connected",
       });
     }
   }
 
-  function startNewQuery() {
-    clearSql();
-    setQueryResult(null);
-    setTableView(null);
-    layout.setActiveTabId("query");
-    layout.setResultTab("results");
+  function startNewQuery(
+    connectionId = selectedConnectionId ?? activeQueryTab?.connectionId ?? activeTableTab?.connectionId ?? null,
+  ) {
+    const tabId = databaseTabs.openQueryTab({ connectionId });
+    if (connectionId) {
+      setSelectedDatabaseConnection(connectionId);
+    }
+    setSelectedTable(null);
+    return tabId;
   }
 
   function showQueryHistory() {
-    layout.setActiveTabId("query");
-    layout.setResultTab("history");
+    const tabId = activeQueryTab?.id ?? databaseTabs.openQueryTab({ connectionId: selectedConnectionId });
+    databaseTabs.updateQueryTab(tabId, { resultTab: "history" });
   }
 
-  function recordSuccessfulHistory(result: DatabaseQueryResult) {
+  function recordSuccessfulHistory(
+    result: DatabaseQueryResult,
+    execution: { connectionId: string | null; sql: string } | null,
+  ) {
     appendHistory({
       affectedRows: result.affectedRows,
       classification: result.safety.classification,
-      connectionId: selectedConnectionId,
-      connectionName: selectedConnection?.name ?? t("database.query.unknownConnection"),
+      connectionId: execution?.connectionId ?? null,
+      connectionName: connectionNameForHistory(execution?.connectionId),
       durationMs: result.durationMs,
       rowCount: result.rows.length,
-      sql: executedSqlRef.current,
+      sql: execution?.sql ?? "",
       status: "success",
     });
   }
 
-  function recordFailedHistory(error: unknown) {
+  function recordFailedHistory(error: unknown, execution: { connectionId: string | null; sql: string } | null) {
     appendHistory({
-      connectionId: selectedConnectionId,
-      connectionName: selectedConnection?.name ?? t("database.query.unknownConnection"),
+      connectionId: execution?.connectionId ?? null,
+      connectionName: connectionNameForHistory(execution?.connectionId),
       error: formatDatabaseError(error),
-      sql: executedSqlRef.current,
+      sql: execution?.sql ?? "",
       status: "failed",
     });
+  }
+
+  function connectionNameForHistory(connectionId: string | null | undefined) {
+    return connections.find((connection) => connection.id === connectionId)?.name ?? t("database.query.unknownConnection");
   }
 
   function appendHistory(entry: Omit<SqlHistoryEntry, "executedAt" | "id">) {
@@ -1036,29 +1039,117 @@ export function DatabasePage({
   }
 
   function loadHistoryEntry(entry: SqlHistoryEntry) {
-    if (sql.trim() !== defaultSql.trim()) {
-      setHistoryConfirm(entry);
+    const connectionId = connections.some((connection) => connection.id === entry.connectionId)
+      ? entry.connectionId
+      : null;
+    databaseTabs.openQueryTab({
+      connectionId,
+      sql: entry.sql,
+    });
+    if (connectionId) {
+      setSelectedDatabaseConnection(connectionId);
+    }
+    setSelectedTable(null);
+  }
+
+  // Load generated SQL (e.g. from a table context-menu action) into a fresh editor tab.
+  function loadSqlIntoEditor(connectionId: string, generatedSql: string, table?: DatabaseTable) {
+    databaseTabs.openQueryTab({
+      catalog: table?.catalog ?? null,
+      connectionId,
+      schema: table?.schema ?? null,
+      sql: generatedSql,
+    });
+    setSelectedDatabaseConnection(connectionId);
+    setSelectedTable(null);
+  }
+
+  function setActiveTabError(error: unknown) {
+    if (activeQueryTab) {
+      databaseTabs.updateQueryTab(activeQueryTab.id, { error, resultTab: "results" });
       return;
     }
-    applyHistoryEntry(entry);
-  }
-
-  function applyHistoryEntry(entry: SqlHistoryEntry) {
-    setSql(entry.sql);
-    if (entry.connectionId && connections.some((connection) => connection.id === entry.connectionId)) {
-      setSelectedDatabaseConnection(entry.connectionId);
+    if (activeTableTab) {
+      databaseTabs.updateTableTab(activeTableTab.id, { error });
     }
-    layout.setActiveTabId("query");
-    setHistoryConfirm(null);
   }
 
-  // Load generated SQL (e.g. from a table context-menu action) into the editor.
-  function loadSqlIntoEditor(generatedSql: string) {
-    setSql(generatedSql);
-    setClientError(null);
-    setPendingSqlConfirmation(false);
-    layout.setActiveTabId("query");
-    layout.setResultTab("results");
+  function selectQueryConnection(connectionId: string | null) {
+    setSelectedDatabaseConnection(connectionId);
+    setSelectedTable(null);
+    if (activeQueryTab) {
+      databaseTabs.updateQueryTab(activeQueryTab.id, {
+        catalog: null,
+        connectionId,
+        error: null,
+        pendingConfirmation: false,
+        schema: null,
+      });
+    }
+  }
+
+  function selectDatabaseTab(tabId: string) {
+    const tab = databaseTabs.tabs.find((item) => item.id === tabId);
+    databaseTabs.setActiveTabId(tabId);
+    if (!tab) {
+      return;
+    }
+    setSelectedDatabaseConnection(tab.connectionId);
+    if (tab.kind === "table") {
+      setSelectedTable(tab.table);
+    } else {
+      setSelectedTable(null);
+    }
+  }
+
+  function designTable(connectionId: string, table: DatabaseTable) {
+    const tabId = databaseTabs.openTableTab(connectionId, table, "structure");
+    databaseTabs.updateTableTab(tabId, { segment: "structure" });
+    setSelectedDatabaseConnection(connectionId);
+    setSelectedTable(table);
+  }
+
+  function handleTablePageChange(pageIndex: number, pageSize: number) {
+    if (!activeTableTab) {
+      return;
+    }
+    browseTablePage(activeTableTab.connectionId, activeTableTab.table, pageIndex, pageSize);
+  }
+
+  function handleSelectResultTab(tab: DatabaseQueryWorkspaceTab["resultTab"]) {
+    if (activeQueryTab) {
+      databaseTabs.updateQueryTab(activeQueryTab.id, { resultTab: tab });
+    }
+  }
+
+  function handleSelectStructureTab(tab: DatabaseTableWorkspaceTab["structureTab"]) {
+    if (activeTableTab) {
+      databaseTabs.updateTableTab(activeTableTab.id, { structureTab: tab });
+    }
+  }
+
+  function handleSelectTableSegment(segment: DatabaseTableWorkspaceTab["segment"]) {
+    if (activeTableTab) {
+      databaseTabs.updateTableTab(activeTableTab.id, { segment });
+    }
+  }
+
+  function updateActiveSql(sql: string) {
+    if (activeQueryTab) {
+      databaseTabs.updateQueryTab(activeQueryTab.id, {
+        error: null,
+        pendingConfirmation: false,
+        sql,
+      });
+    }
+  }
+
+  function refreshActiveSchema() {
+    const connectionId = activeTableTab?.connectionId ?? activeQueryTab?.connectionId ?? selectedConnectionId;
+    const connection = connections.find((item) => item.id === connectionId);
+    if (connection) {
+      refreshConnectionSchema(connection);
+    }
   }
 
   function handleNewConnection() {
@@ -1081,7 +1172,7 @@ export function DatabasePage({
     disconnect: (connection: DatabaseConnection) => void;
     edit: (connection: DatabaseConnection) => void;
     newConnection: () => void;
-    newQuery: () => void;
+    newQuery: (connection?: DatabaseConnection) => void;
     previewTable: (connectionId: string, table: DatabaseTable) => void;
     refresh: () => void;
     refreshSchema: (connection: DatabaseConnection) => void;
@@ -1089,22 +1180,18 @@ export function DatabasePage({
     selectTable: (connectionId: string, table: DatabaseTable) => void;
     toggleCatalog: (connectionId: string, catalog: string) => void;
     toggleConnection: (connection: DatabaseConnection) => void;
-    useSql: (sql: string) => void;
+    useSql: (connectionId: string, sql: string, table?: DatabaseTable) => void;
   } | null>(null);
   sidebarActionsRef.current = {
     connect: connectConnection,
     delete: setDeleteConfirm,
-    designTable: (connectionId, table) => {
-      selectTable(connectionId, table);
-      layout.setActiveTabId("table");
-      layout.setTableSegment("structure");
-    },
+    designTable,
     disconnect: disconnectConnection,
     edit: handleEditConnection,
     newConnection: handleNewConnection,
-    newQuery: startNewQuery,
+    newQuery: (connection) => startNewQuery(connection?.id),
     previewTable: (connectionId, table) =>
-      browseTablePage(connectionId, table, 0, tableView?.pageSize ?? DEFAULT_PREVIEW_PAGE_SIZE),
+      browseTablePage(connectionId, table, 0, DEFAULT_PREVIEW_PAGE_SIZE),
     refresh: refreshConnectionsAndSchema,
     refreshSchema: refreshConnectionSchema,
     selectConnection: (connection) => selectConnection(connection.id),
@@ -1123,7 +1210,7 @@ export function DatabasePage({
       onDisconnect: (connection: DatabaseConnection) => sidebarActionsRef.current?.disconnect(connection),
       onEditConnection: (connection: DatabaseConnection) => sidebarActionsRef.current?.edit(connection),
       onNewConnection: () => sidebarActionsRef.current?.newConnection(),
-      onNewQuery: () => sidebarActionsRef.current?.newQuery(),
+      onNewQuery: (connection?: DatabaseConnection) => sidebarActionsRef.current?.newQuery(connection),
       onPreviewTable: (connectionId: string, table: DatabaseTable) =>
         sidebarActionsRef.current?.previewTable(connectionId, table),
       onRefresh: () => sidebarActionsRef.current?.refresh(),
@@ -1135,7 +1222,8 @@ export function DatabasePage({
         sidebarActionsRef.current?.toggleCatalog(connectionId, catalog),
       onToggleConnection: (connection: DatabaseConnection) =>
         sidebarActionsRef.current?.toggleConnection(connection),
-      onUseSql: (sql: string) => sidebarActionsRef.current?.useSql(sql),
+      onUseSql: (connectionId: string, sql: string, table?: DatabaseTable) =>
+        sidebarActionsRef.current?.useSql(connectionId, sql, table),
     }),
     [],
   );
@@ -1175,22 +1263,27 @@ export function DatabasePage({
     return () => onShellSidebarChange(null);
   }, [onShellSidebarChange, shellSidebar]);
 
-  const activeError = clientError ?? (layout.activeTabId === "table" ? browseMutation.error : executeMutation.error);
-  const executePending = executeMutation.isPending || browseMutation.isPending;
+  const toolbarConnectionId = activeQueryTab
+    ? activeQueryTab.connectionId
+    : activeTableTab?.connectionId ?? selectedConnectionId;
+  const toolbarConnection = connections.find((item) => item.id === toolbarConnectionId) ?? null;
+  const toolbarSession = toolbarConnectionId ? connectionStates[toolbarConnectionId] : undefined;
+  const toolbarConnectionStatus: DatabaseConnectionStatus = toolbarSession?.status ?? "disconnected";
+  const executePending = executeMutation.isPending || browseMutation.isPending || rowMutation.isPending;
   const shellStatusBar = useMemo(
     () => (
       <DatabaseStatusBar
-        connection={selectedConnection}
+        connection={toolbarConnection}
         executing={executePending}
         rightAccessory={statusBarRightAccessory}
-        session={selectedSession}
+        session={toolbarSession}
         workspaceName={workspaceName ?? workspaceId}
       />
     ),
     [
       executePending,
-      selectedConnection,
-      selectedSession,
+      toolbarConnection,
+      toolbarSession,
       statusBarRightAccessory,
       workspaceId,
       workspaceName,
@@ -1208,15 +1301,21 @@ export function DatabasePage({
   // Inline editing is available when a real table with a primary key is being
   // browsed on a connected session; the primary key locates rows for the
   // update/delete row commands.
-  const primaryKeyColumns = (selectedTable?.columns ?? [])
+  const activeTableConnection = activeTableTab
+    ? connections.find((connection) => connection.id === activeTableTab.connectionId) ?? null
+    : null;
+  const activeTableStatus = activeTableTab
+    ? connectionStates[activeTableTab.connectionId]?.status ?? "disconnected"
+    : "disconnected";
+  const primaryKeyColumns = (activeTableTab?.table.columns ?? [])
     .filter((column) => column.primaryKey)
     .map((column) => column.name);
   const tableEditing: TableEditing | null =
-    selectedTable &&
-    tableView &&
-    selectedConnectionStatus === "connected" &&
+    activeTableTab &&
+    activeTableTab.tableView &&
+    activeTableStatus === "connected" &&
     primaryKeyColumns.length > 0 &&
-    !selectedConnection?.readOnly
+    !activeTableConnection?.readOnly
       ? {
           pending: rowMutation.isPending,
           primaryKeyColumns,
@@ -1230,75 +1329,60 @@ export function DatabasePage({
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col bg-[var(--u-color-surface)]">
       <DatabaseModuleToolbar
-        connectionStatus={selectedConnectionStatus}
+        canRunSql={Boolean(activeQueryTab?.connectionId)}
+        connectionStatus={toolbarConnectionStatus}
         connections={connections}
         executePending={executePending}
         onClearSql={clearSql}
         onConnect={connectSelectedConnection}
-        onDisconnect={() => selectedConnection && disconnectConnection(selectedConnection)}
+        onDisconnect={() => toolbarConnection && disconnectConnection(toolbarConnection)}
         onNewQuery={startNewQuery}
         onRefresh={refreshConnectionsAndSchema}
         onRun={runSql}
-        onSelectConnection={(connectionId) => selectConnection(connectionId || null)}
+        onSelectConnection={(connectionId) => selectQueryConnection(connectionId || null)}
         onStop={stopQuery}
-        pendingConfirmation={pendingSqlConfirmation}
-        selectedConnectionId={selectedConnectionId}
-        sqlDirty={sql.trim().length > 0}
+        pendingConfirmation={Boolean(activeQueryTab?.pendingConfirmation)}
+        selectedConnectionId={toolbarConnectionId}
+        sqlDirty={Boolean(activeQueryTab?.sql.trim())}
       />
       <div className="flex min-h-0 flex-1 flex-col">
         <DatabaseWorkspace
-          activeResultTab={layout.resultTab}
-          activeStructureTab={layout.inspectorTab}
-          activeTabId={layout.activeTabId}
+          activeTab={activeTab}
+          activeTabId={databaseTabs.activeTabId}
           connections={connections}
-          error={activeError}
           executePending={executePending}
           history={queryHistory}
           catalogOptions={catalogOptions}
           onChangeQueryContext={changeQueryContext}
           onClearSql={clearSql}
+          onCloseTab={databaseTabs.closeTab}
           onClearHistory={clearQueryHistory}
           onPreviewSelectedTable={previewSelectedTable}
-          onRefreshSchema={refreshSelectedSchema}
+          onRefreshSchema={refreshActiveSchema}
+          onReorderTabs={databaseTabs.reorderTabs}
           onRun={runSql}
-          onSelectConnection={(connectionId) => selectConnection(connectionId || null)}
-          queryCatalog={queryContext.catalog}
-          querySchema={queryContext.schema}
+          onSelectConnection={(connectionId) => selectQueryConnection(connectionId || null)}
+          queryCatalog={activeQueryTab?.catalog ?? null}
+          querySchema={activeQueryTab?.schema ?? null}
           schemaOptions={schemaOptions}
           onSelectHistory={loadHistoryEntry}
-          onSelectResultTab={layout.setResultTab}
-          onSelectStructureTab={layout.setInspectorTab}
-          onSelectTab={layout.setActiveTabId}
-          onSelectTableSegment={layout.setTableSegment}
+          onSelectResultTab={handleSelectResultTab}
+          onSelectStructureTab={handleSelectStructureTab}
+          onSelectTab={selectDatabaseTab}
+          onSelectTableSegment={handleSelectTableSegment}
           onShowHistory={showQueryHistory}
-          onSqlChange={setSql}
+          onSqlChange={updateActiveSql}
           onStop={stopQuery}
           onTableFilter={applyTableFilter}
-          onTablePageChange={(pageIndex, pageSize) =>
-            selectedConnectionId &&
-            selectedTable &&
-            browseTablePage(selectedConnectionId, selectedTable, pageIndex, pageSize)
-          }
+          onTablePageChange={handleTablePageChange}
           onTableSort={applyTableSort}
-          pendingConfirmation={pendingSqlConfirmation}
-          queryResult={queryResult}
           schema={visibleSchema}
           schemaError={schemaQuery.error}
-          selectedConnectionId={selectedConnectionId}
-          selectedTable={selectedTable}
-          sql={sql}
           structure={structureQuery.data}
           structureError={structureQuery.error}
           structureLoading={structureEnabled && structureQuery.isFetching}
           tableEditing={tableEditing}
-          tableFilter={tableQuery.filter}
-          tableSegment={layout.tableSegment}
-          tableSort={
-            tableQuery.orderBy
-              ? { column: tableQuery.orderBy, descending: tableQuery.orderDescending }
-              : null
-          }
-          tableView={tableView}
+          tabs={databaseTabs.tabs}
           workspaceId={workspaceId}
         />
       </div>
@@ -1333,14 +1417,6 @@ export function DatabasePage({
         open={deleteConfirm !== null}
         pending={deleteMutation.isPending}
         title={t("database.tree.deleteTitle")}
-      />
-      <ConfirmDialog
-        confirmLabel={t("common.actions.replace")}
-        description={t("database.history.replaceConfirm")}
-        onConfirm={() => historyConfirm && applyHistoryEntry(historyConfirm)}
-        onOpenChange={(open) => !open && setHistoryConfirm(null)}
-        open={historyConfirm !== null}
-        title={t("database.history.replaceTitle")}
       />
     </div>
   );
@@ -1511,4 +1587,27 @@ function Field({
       {children}
     </label>
   );
+}
+
+function normalizeQueryContext(
+  current: Pick<DatabaseQueryWorkspaceTab, "catalog" | "schema">,
+  treeModel: DatabaseTreeModel,
+) {
+  const currentCatalog = treeModel.catalogs.find((catalog) => catalog.key === (current.catalog ?? ""));
+  const fallbackCatalog = currentCatalog ?? treeModel.catalogs[0];
+  if (!fallbackCatalog) {
+    return { catalog: null, schema: null };
+  }
+
+  const catalog = fallbackCatalog.key || null;
+  if (!fallbackCatalog.hasSchemaLevel) {
+    return { catalog, schema: null };
+  }
+
+  const currentSchema = fallbackCatalog.schemas.find((schema) => schema.key === (current.schema ?? ""));
+  const fallbackSchema = currentSchema ?? fallbackCatalog.schemas[0];
+  return {
+    catalog,
+    schema: fallbackSchema?.key || null,
+  };
 }

@@ -304,6 +304,7 @@
       "empty": "创建或选择数据库连接后开始编写 SQL。",
       "noConnectionSelected": "未选择连接",
       "queryConsole": "查询控制台",
+      "queryTitle": "查询 {index}",
       "schemaAria": "查询模式",
       "sqlEditor": "SQL 编辑器",
       "structureView": "结构",
