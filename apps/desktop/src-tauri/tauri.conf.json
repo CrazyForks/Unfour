@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "identifier": "dev.unfour",
   "build": {
-    "beforeDevCommand": "pnpm run dev",
+    "beforeDevCommand": "node ../../scripts/prepare-tauri-sidecars.mjs --debug && pnpm run dev",
     "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "pnpm run build && node ../../scripts/prepare-tauri-sidecars.mjs",
     "frontendDist": "../dist"

@@ -77,9 +77,16 @@ function executableName(name, target) {
 
 async function main() {
   const target = resolveTarget();
-  const cargoArgs = ["build", "-p", binaryBaseName, "--release", "--target", target];
+  const args = process.argv.slice(2);
+  const isDebug = args.includes("--debug") || process.env.UNFOUR_SIDECAR_PROFILE === "debug";
+  const profile = isDebug ? "debug" : "release";
+  const cargoArgs = ["build", "-p", binaryBaseName];
+  if (profile === "release") {
+    cargoArgs.push("--release");
+  }
+  cargoArgs.push("--target", target);
 
-  console.log(`[prepare-tauri-sidecars] Building ${binaryBaseName} for ${target}`);
+  console.log(`[prepare-tauri-sidecars] Building ${binaryBaseName} (${profile}) for ${target}`);
   const build = spawnSync("cargo", cargoArgs, {
     cwd: repoRoot,
     stdio: "inherit",
@@ -89,7 +96,7 @@ async function main() {
     throw new Error(`cargo ${cargoArgs.join(" ")} failed with exit code ${build.status}`);
   }
 
-  const source = join(repoRoot, "target", target, "release", executableName(binaryBaseName, target));
+  const source = join(repoRoot, "target", target, profile, executableName(binaryBaseName, target));
   const destination = join(
     tauriDir,
     "binaries",
