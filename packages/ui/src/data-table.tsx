@@ -80,7 +80,7 @@ export function DataTable<T>({
       const { startRow, endRow, startCol, endCol } = selection;
       const row = e.shiftKey ? endRow : startRow;
       const col = e.shiftKey ? endCol : startCol;
-      let next: DataTableSelection | null = null;
+      let next: DataTableSelection | undefined;
 
       switch (e.key) {
         case "ArrowUp": next = { ...selection, endRow: Math.max(0, row - 1) }; break;
