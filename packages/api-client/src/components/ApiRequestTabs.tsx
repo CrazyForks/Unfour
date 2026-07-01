@@ -121,7 +121,7 @@ export function ApiRequestTabs({
             <ContextMenu key={tab.id}>
               <ContextMenuTrigger asChild>{tabNode}</ContextMenuTrigger>
               <ContextMenuContent>
-                <ContextMenuItem onSelect={() => onClose(tab)}>
+                <ContextMenuItem onSelect={() => onClose(tab)} shortcut="Ctrl+W">
                   {t("api.tabs.closeTab")}
                 </ContextMenuItem>
                 <ContextMenuItem onSelect={onCloseAll}>

@@ -15,6 +15,7 @@ import {
   StatusBadge,
   useI18n,
   type DataTableColumn,
+  type DataTableSelection,
 } from "@unfour/ui";
 import type { TableEditing } from "../model/types";
 import { serializeDatabaseCell, serializeDatabaseRow, tryFormatJson } from "../result-utils";
@@ -61,6 +62,12 @@ export function TableDataGrid({
   const [editValue, setEditValue] = useState("");
   const [deleteRow, setDeleteRow] = useState<DataRow | null>(null);
   const [pendingUpdate, setPendingUpdate] = useState<PendingUpdate | null>(null);
+  const [selection, setSelection] = useState<DataTableSelection | null>(null);
+  const [columnsWidths, setColumnsWidths] = useState<Record<string, number>>(() => {
+    const map: Record<string, number> = {};
+    map["__row_actions"] = editing ? 72 : 48;
+    return map;
+  });
 
   function buildPrimaryKey(row: DataRow): DatabaseCellValue[] {
     return (editing?.primaryKeyColumns ?? []).map((name) => {
@@ -162,7 +169,7 @@ export function TableDataGrid({
     ),
     header: "#",
     id: "__row_actions",
-    width: editing ? 72 : 48,
+    width: columnsWidths["__row_actions"] ?? (editing ? 72 : 48),
   };
 
   const columns: DataTableColumn<Array<string | null>>[] = [
@@ -232,7 +239,7 @@ export function TableDataGrid({
       ),
       id: column.name || `column-${columnIndex}`,
       meta: column.dataType,
-      width: Math.min(Math.max(column.name.length * 9 + 96, 140), 360),
+      width: columnsWidths[column.name || `column-${columnIndex}`] ?? Math.min(Math.max(column.name.length * 9 + 96, 140), 360),
     })),
   ];
 
@@ -264,7 +271,12 @@ export function TableDataGrid({
         columns={columns}
         empty={(server ? server.filter : filter) ? t("database.grid.noMatches") : t("database.grid.empty")}
         getRowKey={(_, index) => index}
+        onColumnResize={(columnId, width) => {
+          setColumnsWidths((prev) => ({ ...prev, [columnId]: width }));
+        }}
+        onSelectionChange={setSelection}
         rows={visibleRows}
+        selection={selection}
       />
       <div className="flex h-7 shrink-0 items-center justify-between border-t border-[var(--u-color-border)] px-2 text-[11px] text-[var(--u-color-text-soft)]">
         <span>{copyStatusLabel(copyStatus, t)}</span>
