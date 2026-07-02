@@ -167,11 +167,12 @@ impl SshService {
         let rows = sqlx::query_as::<_, StoredConnection>(
             r#"
             SELECT
-              id, workspace_id, kind, name, config_json, credential_ref, created_at,
-              updated_at, deleted_at, revision, sync_status, remote_id
-            FROM connections
-            WHERE workspace_id = ?1 AND kind = 'ssh' AND deleted_at IS NULL
-            ORDER BY updated_at DESC
+              c.id, c.workspace_id, c.name, sub.config_json, c.credential_ref,
+              c.created_at, c.updated_at, c.deleted_at, c.revision, c.sync_status, c.remote_id
+            FROM connections c
+            INNER JOIN ssh_connections sub ON sub.connection_id = c.id
+            WHERE c.workspace_id = ?1 AND c.deleted_at IS NULL
+            ORDER BY c.updated_at DESC
             "#,
         )
         .bind(workspace_id)
@@ -205,13 +206,12 @@ impl SshService {
             let result = sqlx::query(
                 r#"
                 UPDATE connections
-                SET name = ?1, config_json = ?2, credential_ref = ?3,
-                    updated_at = ?4, revision = revision + 1, sync_status = 'pending'
-                WHERE id = ?5 AND workspace_id = ?6 AND kind = 'ssh' AND deleted_at IS NULL
+                SET name = ?1, credential_ref = ?2,
+                    updated_at = ?3, revision = revision + 1, sync_status = 'pending'
+                WHERE id = ?4 AND workspace_id = ?5 AND deleted_at IS NULL
                 "#,
             )
             .bind(name)
-            .bind(config_json)
             .bind(credential_ref)
             .bind(now)
             .bind(id)
@@ -223,6 +223,18 @@ impl SshService {
                 return Err(AppError::NotFound("ssh connection".to_string()));
             }
 
+            sqlx::query(
+                r#"
+                UPDATE ssh_connections
+                SET config_json = ?1
+                WHERE connection_id = ?2
+                "#,
+            )
+            .bind(&config_json)
+            .bind(id)
+            .execute(self.db.pool())
+            .await?;
+
             return self.get_connection(&input.workspace_id, id).await;
         }
 
@@ -230,18 +242,28 @@ impl SshService {
         sqlx::query(
             r#"
             INSERT INTO connections (
-              id, workspace_id, kind, name, config_json, credential_ref,
+              id, workspace_id, name, credential_ref,
               created_at, updated_at, revision, sync_status
             )
-            VALUES (?1, ?2, 'ssh', ?3, ?4, ?5, ?6, ?6, 1, 'local')
+            VALUES (?1, ?2, ?3, ?4, ?5, ?5, 1, 'local')
             "#,
         )
         .bind(&id)
         .bind(&input.workspace_id)
         .bind(name)
-        .bind(config_json)
         .bind(credential_ref)
         .bind(now)
+        .execute(self.db.pool())
+        .await?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO ssh_connections (connection_id, config_json)
+            VALUES (?1, ?2)
+            "#,
+        )
+        .bind(&id)
+        .bind(&config_json)
         .execute(self.db.pool())
         .await?;
 
@@ -261,7 +283,7 @@ impl SshService {
             r#"
             UPDATE connections
             SET deleted_at = ?1, updated_at = ?1, revision = revision + 1, sync_status = 'deleted'
-            WHERE id = ?2 AND workspace_id = ?3 AND kind = 'ssh' AND deleted_at IS NULL
+            WHERE id = ?2 AND workspace_id = ?3 AND deleted_at IS NULL
             "#,
         )
         .bind(now)
@@ -921,10 +943,11 @@ impl SshService {
         let row = sqlx::query_as::<_, StoredConnection>(
             r#"
             SELECT
-              id, workspace_id, kind, name, config_json, credential_ref, created_at,
-              updated_at, deleted_at, revision, sync_status, remote_id
-            FROM connections
-            WHERE id = ?1 AND workspace_id = ?2 AND kind = 'ssh' AND deleted_at IS NULL
+              c.id, c.workspace_id, c.name, sub.config_json, c.credential_ref,
+              c.created_at, c.updated_at, c.deleted_at, c.revision, c.sync_status, c.remote_id
+            FROM connections c
+            INNER JOIN ssh_connections sub ON sub.connection_id = c.id
+            WHERE c.id = ?1 AND c.workspace_id = ?2 AND c.deleted_at IS NULL
             "#,
         )
         .bind(id)

@@ -272,10 +272,6 @@ mod tests {
                             response_body_preview: None,
                             created_at: String::new(),
                             updated_at: String::new(),
-                            deleted_at: None,
-                            revision: 1,
-                            sync_status: "local".to_string(),
-                            remote_id: None,
                         },
                         source: "command-bus".to_string(),
                     })

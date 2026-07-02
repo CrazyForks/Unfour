@@ -47,12 +47,15 @@ async fn mysql_password_loads_from_secret_store_and_is_not_persisted() {
         .expect("resolve mysql password");
     assert_eq!(password.as_deref(), Some(secret));
 
-    let stored: (String, Option<String>) =
-        sqlx::query_as("SELECT config_json, credential_ref FROM connections WHERE id = ?1")
-            .bind(&connection.id)
-            .fetch_one(service.db.pool())
-            .await
-            .expect("load persisted connection");
+    let stored: (String, Option<String>) = sqlx::query_as(
+        "SELECT sub.config_json, c.credential_ref FROM connections c \
+         INNER JOIN database_connections sub ON sub.connection_id = c.id \
+         WHERE c.id = ?1",
+    )
+    .bind(&connection.id)
+    .fetch_one(service.db.pool())
+    .await
+    .expect("load persisted connection");
     assert!(!stored.0.contains(secret));
     assert_eq!(
         stored.1.as_deref(),

@@ -46,11 +46,12 @@ impl DatabaseService {
         let rows = sqlx::query_as::<_, StoredConnection>(
             r#"
             SELECT
-              id, workspace_id, kind, name, config_json, credential_ref, created_at,
-              updated_at, deleted_at, revision, sync_status, remote_id
-            FROM connections
-            WHERE workspace_id = ?1 AND kind = 'database' AND deleted_at IS NULL
-            ORDER BY updated_at DESC
+              c.id, c.workspace_id, c.name, sub.config_json, c.credential_ref,
+              c.created_at, c.updated_at, c.deleted_at, c.revision, c.sync_status, c.remote_id
+            FROM connections c
+            INNER JOIN database_connections sub ON sub.connection_id = c.id
+            WHERE c.workspace_id = ?1 AND c.deleted_at IS NULL
+            ORDER BY c.updated_at DESC
             "#,
         )
         .bind(workspace_id)
@@ -81,13 +82,12 @@ impl DatabaseService {
             let result = sqlx::query(
                 r#"
                 UPDATE connections
-                SET name = ?1, config_json = ?2, credential_ref = ?3,
-                    updated_at = ?4, revision = revision + 1, sync_status = 'pending'
-                WHERE id = ?5 AND workspace_id = ?6 AND kind = 'database' AND deleted_at IS NULL
+                SET name = ?1, credential_ref = ?2,
+                    updated_at = ?3, revision = revision + 1, sync_status = 'pending'
+                WHERE id = ?4 AND workspace_id = ?5 AND deleted_at IS NULL
                 "#,
             )
             .bind(name)
-            .bind(config_json)
             .bind(empty_to_none(input.credential_ref))
             .bind(now)
             .bind(id)
@@ -99,6 +99,18 @@ impl DatabaseService {
                 return Err(AppError::NotFound("database connection".to_string()));
             }
 
+            sqlx::query(
+                r#"
+                UPDATE database_connections
+                SET config_json = ?1
+                WHERE connection_id = ?2
+                "#,
+            )
+            .bind(&config_json)
+            .bind(id)
+            .execute(self.db.pool())
+            .await?;
+
             return self.get_connection(&input.workspace_id, id).await;
         }
 
@@ -106,18 +118,28 @@ impl DatabaseService {
         sqlx::query(
             r#"
             INSERT INTO connections (
-              id, workspace_id, kind, name, config_json, credential_ref,
+              id, workspace_id, name, credential_ref,
               created_at, updated_at, revision, sync_status
             )
-            VALUES (?1, ?2, 'database', ?3, ?4, ?5, ?6, ?6, 1, 'local')
+            VALUES (?1, ?2, ?3, ?4, ?5, ?5, 1, 'local')
             "#,
         )
         .bind(&id)
         .bind(&input.workspace_id)
         .bind(name)
-        .bind(config_json)
         .bind(empty_to_none(input.credential_ref))
         .bind(now)
+        .execute(self.db.pool())
+        .await?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO database_connections (connection_id, config_json)
+            VALUES (?1, ?2)
+            "#,
+        )
+        .bind(&id)
+        .bind(&config_json)
         .execute(self.db.pool())
         .await?;
 
@@ -137,7 +159,7 @@ impl DatabaseService {
             r#"
             UPDATE connections
             SET deleted_at = ?1, updated_at = ?1, revision = revision + 1, sync_status = 'deleted'
-            WHERE id = ?2 AND workspace_id = ?3 AND kind = 'database' AND deleted_at IS NULL
+            WHERE id = ?2 AND workspace_id = ?3 AND deleted_at IS NULL
             "#,
         )
         .bind(now)
@@ -726,9 +748,10 @@ impl DatabaseService {
         validate_workspace_id(&workspace_id)?;
         let rows = sqlx::query_as::<_, SavedSql>(
             r#"
-            SELECT id, workspace_id, connection_id, name, sql, created_at, updated_at
+            SELECT id, workspace_id, connection_id, name, sql, created_at, updated_at,
+                   deleted_at, revision, sync_status, remote_id
             FROM saved_sql
-            WHERE workspace_id = ?1
+            WHERE workspace_id = ?1 AND deleted_at IS NULL
             ORDER BY updated_at DESC
             "#,
         )
@@ -767,8 +790,9 @@ impl DatabaseService {
             let result = sqlx::query(
                 r#"
                 UPDATE saved_sql
-                SET name = ?1, sql = ?2, connection_id = ?3, updated_at = ?4
-                WHERE id = ?5 AND workspace_id = ?6
+                SET name = ?1, sql = ?2, connection_id = ?3, updated_at = ?4,
+                    revision = revision + 1, sync_status = 'pending'
+                WHERE id = ?5 AND workspace_id = ?6 AND deleted_at IS NULL
                 "#,
             )
             .bind(&name)
@@ -788,8 +812,11 @@ impl DatabaseService {
         let id = Uuid::new_v4().to_string();
         sqlx::query(
             r#"
-            INSERT INTO saved_sql (id, workspace_id, connection_id, name, sql, created_at, updated_at)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)
+            INSERT INTO saved_sql (
+              id, workspace_id, connection_id, name, sql, created_at, updated_at,
+              revision, sync_status
+            )
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, 1, 'local')
             "#,
         )
         .bind(&id)
@@ -815,11 +842,20 @@ impl DatabaseService {
                 "saved SQL id cannot be empty".to_string(),
             ));
         }
-        let result = sqlx::query("DELETE FROM saved_sql WHERE id = ?1 AND workspace_id = ?2")
-            .bind(&id)
-            .bind(&workspace_id)
-            .execute(self.db.pool())
-            .await?;
+        let now = Utc::now().to_rfc3339();
+        let result = sqlx::query(
+            r#"
+            UPDATE saved_sql
+            SET deleted_at = ?1, updated_at = ?1,
+                revision = revision + 1, sync_status = 'deleted'
+            WHERE id = ?2 AND workspace_id = ?3 AND deleted_at IS NULL
+            "#,
+        )
+        .bind(&now)
+        .bind(&id)
+        .bind(&workspace_id)
+        .execute(self.db.pool())
+        .await?;
         if result.rows_affected() == 0 {
             return Err(AppError::NotFound("saved SQL".to_string()));
         }
@@ -829,9 +865,10 @@ impl DatabaseService {
     async fn get_saved_sql(&self, workspace_id: &str, id: &str) -> AppResult<SavedSql> {
         let row = sqlx::query_as::<_, SavedSql>(
             r#"
-            SELECT id, workspace_id, connection_id, name, sql, created_at, updated_at
+            SELECT id, workspace_id, connection_id, name, sql, created_at, updated_at,
+                   deleted_at, revision, sync_status, remote_id
             FROM saved_sql
-            WHERE id = ?1 AND workspace_id = ?2
+            WHERE id = ?1 AND workspace_id = ?2 AND deleted_at IS NULL
             "#,
         )
         .bind(id)
@@ -1415,10 +1452,11 @@ impl DatabaseService {
         let row = sqlx::query_as::<_, StoredConnection>(
             r#"
             SELECT
-              id, workspace_id, kind, name, config_json, credential_ref, created_at,
-              updated_at, deleted_at, revision, sync_status, remote_id
-            FROM connections
-            WHERE id = ?1 AND workspace_id = ?2 AND kind = 'database' AND deleted_at IS NULL
+              c.id, c.workspace_id, c.name, sub.config_json, c.credential_ref,
+              c.created_at, c.updated_at, c.deleted_at, c.revision, c.sync_status, c.remote_id
+            FROM connections c
+            INNER JOIN database_connections sub ON sub.connection_id = c.id
+            WHERE c.id = ?1 AND c.workspace_id = ?2 AND c.deleted_at IS NULL
             "#,
         )
         .bind(connection_id)

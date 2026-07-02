@@ -60,6 +60,9 @@ pub struct ApiCollectionFolder {
     pub created_at: String,
     pub updated_at: String,
     pub deleted_at: Option<String>,
+    pub revision: i64,
+    pub sync_status: String,
+    pub remote_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -132,10 +135,6 @@ pub struct ApiHistoryItem {
     pub duration_ms: Option<i64>,
     pub created_at: String,
     pub updated_at: String,
-    pub deleted_at: Option<String>,
-    pub revision: i64,
-    pub sync_status: String,
-    pub remote_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
@@ -155,10 +154,6 @@ pub struct ApiHistoryDetail {
     pub response_body_preview: Option<String>,
     pub created_at: String,
     pub updated_at: String,
-    pub deleted_at: Option<String>,
-    pub revision: i64,
-    pub sync_status: String,
-    pub remote_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
@@ -480,8 +475,11 @@ pub struct DatabaseConnection {
 pub struct StoredConnection {
     pub id: String,
     pub workspace_id: String,
-    pub kind: String,
     pub name: String,
+    /// `config_json` is no longer a column on `connections` after the subtype
+    /// split (migration 0009). It is selected from the per-kind subtype table
+    /// (`ssh_connections` / `database_connections`) via a JOIN, so this struct
+    /// still models a joined row and the helpers below do not change.
     pub config_json: String,
     pub credential_ref: Option<String>,
     pub created_at: String,
@@ -689,6 +687,10 @@ pub struct SavedSql {
     pub sql: String,
     pub created_at: String,
     pub updated_at: String,
+    pub deleted_at: Option<String>,
+    pub revision: i64,
+    pub sync_status: String,
+    pub remote_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

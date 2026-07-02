@@ -26,11 +26,12 @@ SQLite-backed records include:
 - workspaces;
 - workspace settings;
 - API requests;
-- API history;
-- connection metadata;
+- API history (local-only log, no sync fields);
+- connection metadata (parent `connections` table plus `ssh_connections` /
+  `database_connections` subtype tables);
 - SSH host-key trust records;
 - terminal history;
-- saved SQL;
+- saved SQL (soft-deleted, sync fields reserved);
 - local activity events.
 
 Schema changes live in `crates/local-storage/migrations/`. Persistence code
@@ -50,9 +51,52 @@ Core local records reserve sync-related fields from the beginning:
 - `sync_status`
 - `remote_id`
 
+Tables that carry these fields today: `workspaces`, `workspace_settings`,
+`api_requests`, `api_collections`, `api_collection_folders`, `api_environments`,
+`connections`, `saved_sql`.
+
+Two local-only log tables intentionally do **not** carry sync fields, because
+they are append-only local trails that are never synced:
+
+- `api_history` — request log (mirrors `db_query_history`).
+- `db_query_history` — SQL execution log.
+
+`api_collection_folders` was retrofitted with sync fields in migration 0008;
+`saved_sql` was retrofitted with `deleted_at` plus sync fields in migration
+0010 (it was previously hard-deleted).
+
 Cloud sync is not part of the v0.1 public release readiness criteria. Future
 sync behavior must remain workspace-scoped and must not overwrite secrets
 automatically.
+
+## Connection Subtype Tables
+
+`connections` is the parent row for a workspace-scoped connection. It holds
+identity and sync metadata (`id`, `workspace_id`, `name`, `credential_ref`,
+timestamps, sync fields) but no longer holds `kind` or `config_json`. Those
+moved into per-kind subtype tables (migration 0009):
+
+- `ssh_connections(connection_id, config_json)` — 1:1 with `connections.id`,
+  `ON DELETE CASCADE`.
+- `database_connections(connection_id, config_json)` — 1:1 with
+  `connections.id`, `ON DELETE CASCADE`.
+
+Engine services JOIN the parent with their subtype table on read and write
+both rows on insert/update. `credential_ref` stays on the parent because it
+is shared identity metadata. Tables that reference a connection by id
+(`saved_sql.connection_id`, `db_query_history.connection_id`,
+`ssh_terminal_history.connection_id`) point at the parent `connections.id`
+and do not need to know which subtype the row belongs to.
+
+## Single Active Environment
+
+`api_environments.is_active` is constrained to a single active row per
+workspace by the partial unique index
+`uq_api_environments_active_per_workspace` (migration 0007). The application
+layer in `http-engine` still wraps activate/deactivate in one transaction,
+but the index is the source of truth: it enforces uniqueness at the
+statement level, so the activate flow must deactivate other rows **before**
+activating the target.
 
 ## Workspace Environments
 

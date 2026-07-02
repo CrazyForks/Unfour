@@ -126,6 +126,7 @@ fn app_data_path(identifier: &str) -> AppResult<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::Utc;
     use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 
     async fn test_db() -> LocalDb {
@@ -176,6 +177,226 @@ mod tests {
         assert!(names.contains(&"ssh_terminal_history"));
         assert!(names.contains(&"api_collections"));
         assert!(names.contains(&"api_collection_folders"));
+        assert!(names.contains(&"ssh_connections"));
+        assert!(names.contains(&"database_connections"));
+    }
+
+    #[tokio::test]
+    async fn migrate_drops_api_history_sync_fields() {
+        let db = test_db().await;
+        db.migrate().await.expect("migration");
+
+        let columns: Vec<(String,)> =
+            sqlx::query_as("SELECT name FROM pragma_table_info('api_history')")
+                .fetch_all(db.pool())
+                .await
+                .expect("list columns");
+        let names: Vec<&str> = columns.iter().map(|(name,)| name.as_str()).collect();
+
+        assert!(!names.contains(&"revision"), "revision should be dropped");
+        assert!(
+            !names.contains(&"sync_status"),
+            "sync_status should be dropped"
+        );
+        assert!(!names.contains(&"remote_id"), "remote_id should be dropped");
+        assert!(!names.contains(&"deleted_at"), "deleted_at should be dropped");
+        assert!(names.contains(&"created_at"), "created_at retained");
+        assert!(names.contains(&"updated_at"), "updated_at retained");
+    }
+
+    #[tokio::test]
+    async fn migrate_creates_single_active_environment_index() {
+        let db = test_db().await;
+        db.migrate().await.expect("migration");
+
+        let now = Utc::now().to_rfc3339();
+        sqlx::query(
+            r#"
+            INSERT INTO workspaces (id, name, is_default, created_at, updated_at, revision, sync_status)
+            VALUES ('ws-active', 'Active', 0, ?1, ?1, 1, 'local')
+            "#,
+        )
+        .bind(&now)
+        .execute(db.pool())
+        .await
+        .expect("insert workspace");
+
+        sqlx::query(
+            r#"
+            INSERT INTO api_environments (id, workspace_id, name, is_active, created_at, updated_at, revision, sync_status)
+            VALUES ('env-1', 'ws-active', 'Env 1', 1, ?1, ?1, 1, 'local')
+            "#,
+        )
+        .bind(&now)
+        .execute(db.pool())
+        .await
+        .expect("insert first active env");
+
+        // A second active environment in the same workspace must be rejected.
+        let err = sqlx::query(
+            r#"
+            INSERT INTO api_environments (id, workspace_id, name, is_active, created_at, updated_at, revision, sync_status)
+            VALUES ('env-2', 'ws-active', 'Env 2', 1, ?1, ?1, 1, 'local')
+            "#,
+        )
+        .bind(&now)
+        .execute(db.pool())
+        .await
+        .expect_err("second active env should violate unique index");
+        let msg = err.to_string().to_lowercase();
+        assert!(
+            msg.contains("unique") || msg.contains("constraint"),
+            "expected unique constraint violation, got: {msg}"
+        );
+    }
+
+    #[tokio::test]
+    async fn migrate_adds_api_collection_folders_sync_fields() {
+        let db = test_db().await;
+        db.migrate().await.expect("migration");
+
+        let columns: Vec<(String,)> =
+            sqlx::query_as("SELECT name FROM pragma_table_info('api_collection_folders')")
+                .fetch_all(db.pool())
+                .await
+                .expect("list columns");
+        let names: Vec<&str> = columns.iter().map(|(name,)| name.as_str()).collect();
+
+        assert!(names.contains(&"revision"), "revision added");
+        assert!(names.contains(&"sync_status"), "sync_status added");
+        assert!(names.contains(&"remote_id"), "remote_id added");
+    }
+
+    #[tokio::test]
+    async fn migrate_splits_connections_into_subtypes() {
+        let db = test_db().await;
+        db.migrate().await.expect("migration");
+
+        // Parent must no longer carry kind / config_json.
+        let columns: Vec<(String,)> =
+            sqlx::query_as("SELECT name FROM pragma_table_info('connections')")
+                .fetch_all(db.pool())
+                .await
+                .expect("list columns");
+        let names: Vec<&str> = columns.iter().map(|(name,)| name.as_str()).collect();
+        assert!(!names.contains(&"kind"), "kind dropped from connections");
+        assert!(
+            !names.contains(&"config_json"),
+            "config_json dropped from connections"
+        );
+        assert!(names.contains(&"credential_ref"), "credential_ref retained");
+
+        // Subtype tables exist with the expected shape.
+        let ssh_cols: Vec<(String,)> =
+            sqlx::query_as("SELECT name FROM pragma_table_info('ssh_connections')")
+                .fetch_all(db.pool())
+                .await
+                .expect("list ssh_connections columns");
+        let ssh_names: Vec<&str> = ssh_cols.iter().map(|(n,)| n.as_str()).collect();
+        assert!(ssh_names.contains(&"connection_id"));
+        assert!(ssh_names.contains(&"config_json"));
+
+        let db_cols: Vec<(String,)> =
+            sqlx::query_as("SELECT name FROM pragma_table_info('database_connections')")
+                .fetch_all(db.pool())
+                .await
+                .expect("list database_connections columns");
+        let db_names: Vec<&str> = db_cols.iter().map(|(n,)| n.as_str()).collect();
+        assert!(db_names.contains(&"connection_id"));
+        assert!(db_names.contains(&"config_json"));
+    }
+
+    #[tokio::test]
+    async fn migrate_migrates_existing_connections_into_subtypes() {
+        // Exercises the post-split shape end-to-end: insert a parent row plus
+        // a subtype row, then read both back. The data-backfill half of
+        // migration 0009 is covered by the migrations themselves running on
+        // a freshly-migrated DB; this test guards the read/write contract.
+        let db = test_db().await;
+        db.migrate().await.expect("migration");
+
+        let now = Utc::now().to_rfc3339();
+        sqlx::query(
+            r#"
+            INSERT INTO workspaces (id, name, is_default, created_at, updated_at, revision, sync_status)
+            VALUES ('ws-conn', 'Conn', 0, ?1, ?1, 1, 'local')
+            "#,
+        )
+        .bind(&now)
+        .execute(db.pool())
+        .await
+        .expect("insert workspace");
+
+        sqlx::query(
+            r#"
+            INSERT INTO connections (id, workspace_id, name, credential_ref, created_at, updated_at, revision, sync_status)
+            VALUES ('c-ssh-2', 'ws-conn', 'ssh-2', NULL, ?1, ?1, 1, 'local')
+            "#,
+        )
+        .bind(&now)
+        .execute(db.pool())
+        .await
+        .expect("insert new-style parent row");
+
+        sqlx::query(
+            r#"INSERT INTO ssh_connections (connection_id, config_json) VALUES ('c-ssh-2', '{"host":"h2"}')"#,
+        )
+        .execute(db.pool())
+        .await
+        .expect("insert ssh subtype row");
+
+        let row: (String,) = sqlx::query_as(
+            "SELECT config_json FROM ssh_connections WHERE connection_id = 'c-ssh-2'",
+        )
+        .fetch_one(db.pool())
+        .await
+        .expect("read subtype row");
+        assert!(row.0.contains("h2"));
+    }
+
+    #[tokio::test]
+    async fn migrate_adds_saved_sql_soft_delete_fields() {
+        let db = test_db().await;
+        db.migrate().await.expect("migration");
+
+        let columns: Vec<(String,)> =
+            sqlx::query_as("SELECT name FROM pragma_table_info('saved_sql')")
+                .fetch_all(db.pool())
+                .await
+                .expect("list columns");
+        let names: Vec<&str> = columns.iter().map(|(name,)| name.as_str()).collect();
+        assert!(names.contains(&"deleted_at"), "deleted_at added");
+        assert!(names.contains(&"revision"), "revision added");
+        assert!(names.contains(&"sync_status"), "sync_status added");
+        assert!(names.contains(&"remote_id"), "remote_id added");
+    }
+
+    #[tokio::test]
+    async fn migrate_drops_legacy_folder_columns() {
+        let db = test_db().await;
+        db.migrate().await.expect("migration");
+
+        let req_cols: Vec<(String,)> =
+            sqlx::query_as("SELECT name FROM pragma_table_info('api_requests')")
+                .fetch_all(db.pool())
+                .await
+                .expect("list api_requests columns");
+        let req_names: Vec<&str> = req_cols.iter().map(|(n,)| n.as_str()).collect();
+        assert!(
+            !req_names.contains(&"folder_path"),
+            "folder_path should be dropped from api_requests"
+        );
+
+        let coll_cols: Vec<(String,)> =
+            sqlx::query_as("SELECT name FROM pragma_table_info('api_collections')")
+                .fetch_all(db.pool())
+                .await
+                .expect("list api_collections columns");
+        let coll_names: Vec<&str> = coll_cols.iter().map(|(n,)| n.as_str()).collect();
+        assert!(
+            !coll_names.contains(&"folders_json"),
+            "folders_json should be dropped from api_collections"
+        );
     }
 
     #[tokio::test]

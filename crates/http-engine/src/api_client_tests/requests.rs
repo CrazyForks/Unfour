@@ -35,11 +35,11 @@ async fn history_detail_is_scoped_to_workspace() {
         INSERT INTO api_history (
           id, workspace_id, name, method, url, request_headers_json, request_query_json,
           request_body, status, duration_ms, response_headers_json, response_body_preview,
-          created_at, updated_at, revision, sync_status
+          created_at, updated_at
         )
         VALUES (
           'history-a', 'workspace-a', 'Health', 'GET', 'https://example.test',
-          '[]', '[]', NULL, 200, 12, '[]', '{}', ?1, ?1, 1, 'local'
+          '[]', '[]', NULL, 200, 12, '[]', '{}', ?1, ?1
         )
         "#,
     )

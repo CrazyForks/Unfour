@@ -262,6 +262,26 @@ impl ApiClientService {
             .filter(|id| !id.is_empty());
 
         if let Some(id) = target_id {
+            // Deactivate other active environments first, then activate the
+            // target. Order matters: the partial unique index
+            // `uq_api_environments_active_per_workspace` enforces a single
+            // active row per workspace at the statement level, so activating
+            // the target while another row is still active would raise
+            // SQLITE_CONSTRAINT before the second statement could run.
+            sqlx::query(
+                r#"
+                UPDATE api_environments
+                SET is_active = 0, updated_at = ?1,
+                    revision = revision + 1, sync_status = 'pending'
+                WHERE workspace_id = ?2 AND id != ?3 AND deleted_at IS NULL AND is_active = 1
+                "#,
+            )
+            .bind(&now)
+            .bind(&workspace_id)
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+
             let result = sqlx::query(
                 r#"
                 UPDATE api_environments
@@ -279,20 +299,6 @@ impl ApiClientService {
                 // tx is dropped without commit -> rolled back.
                 return Err(AppError::NotFound("api environment".to_string()));
             }
-
-            sqlx::query(
-                r#"
-                UPDATE api_environments
-                SET is_active = 0, updated_at = ?1,
-                    revision = revision + 1, sync_status = 'pending'
-                WHERE workspace_id = ?2 AND id != ?3 AND deleted_at IS NULL AND is_active = 1
-                "#,
-            )
-            .bind(&now)
-            .bind(&workspace_id)
-            .bind(id)
-            .execute(&mut *tx)
-            .await?;
         } else {
             sqlx::query(
                 r#"
@@ -414,10 +420,9 @@ impl ApiClientService {
         let items = sqlx::query_as::<_, ApiHistoryItem>(
             r#"
             SELECT
-              id, workspace_id, name, method, url, status, duration_ms, created_at,
-              updated_at, deleted_at, revision, sync_status, remote_id
+              id, workspace_id, name, method, url, status, duration_ms, created_at, updated_at
             FROM api_history
-            WHERE workspace_id = ?1 AND deleted_at IS NULL
+            WHERE workspace_id = ?1
             ORDER BY created_at DESC
             LIMIT ?2
             "#,
@@ -447,9 +452,9 @@ impl ApiClientService {
             SELECT
               id, workspace_id, name, method, url, request_headers_json, request_query_json,
               request_body, status, duration_ms, response_headers_json, response_body_preview,
-              created_at, updated_at, deleted_at, revision, sync_status, remote_id
+              created_at, updated_at
             FROM api_history
-            WHERE workspace_id = ?1 AND id = ?2 AND deleted_at IS NULL
+            WHERE workspace_id = ?1 AND id = ?2
             "#,
         )
         .bind(workspace_id)
@@ -764,7 +769,8 @@ impl ApiClientService {
                 sqlx::query_as::<_, ApiCollectionFolder>(
                     r#"
                     SELECT id, workspace_id, collection_id, parent_folder_id, name,
-                           sort_order, created_at, updated_at, deleted_at
+                           sort_order, created_at, updated_at, deleted_at,
+                           revision, sync_status, remote_id
                     FROM api_collection_folders
                     WHERE workspace_id = ?1 AND collection_id = ?2 AND deleted_at IS NULL
                     ORDER BY COALESCE(parent_folder_id, ''), sort_order, name COLLATE NOCASE
@@ -779,7 +785,8 @@ impl ApiClientService {
                 sqlx::query_as::<_, ApiCollectionFolder>(
                     r#"
                     SELECT id, workspace_id, collection_id, parent_folder_id, name,
-                           sort_order, created_at, updated_at, deleted_at
+                           sort_order, created_at, updated_at, deleted_at,
+                           revision, sync_status, remote_id
                     FROM api_collection_folders
                     WHERE workspace_id = ?1 AND deleted_at IS NULL
                     ORDER BY collection_id, COALESCE(parent_folder_id, ''), sort_order, name COLLATE NOCASE
@@ -832,9 +839,9 @@ impl ApiClientService {
             r#"
             INSERT INTO api_collection_folders (
               id, workspace_id, collection_id, parent_folder_id, name, sort_order,
-              created_at, updated_at
+              created_at, updated_at, revision, sync_status
             )
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7, 1, 'local')
             "#,
         )
         .bind(&id)
@@ -863,7 +870,8 @@ impl ApiClientService {
         let result = sqlx::query(
             r#"
             UPDATE api_collection_folders
-            SET name = ?1, updated_at = ?2
+            SET name = ?1, updated_at = ?2,
+                revision = revision + 1, sync_status = 'pending'
             WHERE workspace_id = ?3 AND id = ?4 AND deleted_at IS NULL
             "#,
         )
@@ -906,7 +914,8 @@ impl ApiClientService {
               WHERE child.workspace_id = ?2 AND child.deleted_at IS NULL
             )
             UPDATE api_collection_folders
-            SET deleted_at = ?1, updated_at = ?1
+            SET deleted_at = ?1, updated_at = ?1,
+                revision = revision + 1, sync_status = 'deleted'
             WHERE id IN (SELECT id FROM folder_tree)
             "#,
         )
@@ -996,7 +1005,8 @@ impl ApiClientService {
         let result = sqlx::query(
             r#"
             UPDATE api_collection_folders
-            SET parent_folder_id = ?1, sort_order = ?2, updated_at = ?3
+            SET parent_folder_id = ?1, sort_order = ?2, updated_at = ?3,
+                revision = revision + 1, sync_status = 'pending'
             WHERE workspace_id = ?4 AND id = ?5 AND deleted_at IS NULL
             "#,
         )
@@ -1025,6 +1035,7 @@ impl ApiClientService {
     ) -> AppResult<Vec<ApiCollectionFolder>> {
         validate_workspace_id(&workspace_id)?;
         let parent_folder_id = normalize_entity_id(parent_folder_id);
+        let now = Utc::now().to_rfc3339();
         let mut tx = self.db.pool().begin().await?;
         self.ensure_collection_exists_tx(&mut tx, &workspace_id, &collection_id)
             .await?;
@@ -1041,11 +1052,13 @@ impl ApiClientService {
             sqlx::query(
                 r#"
                 UPDATE api_collection_folders
-                SET sort_order = ?1
-                WHERE workspace_id = ?2 AND id = ?3 AND deleted_at IS NULL
+                SET sort_order = ?1, updated_at = ?2,
+                    revision = revision + 1, sync_status = 'pending'
+                WHERE workspace_id = ?3 AND id = ?4 AND deleted_at IS NULL
                 "#,
             )
             .bind(i64::try_from(index).unwrap_or(i64::MAX))
+            .bind(&now)
             .bind(&workspace_id)
             .bind(folder_id)
             .execute(&mut *tx)
@@ -1064,7 +1077,8 @@ impl ApiClientService {
         let row = sqlx::query_as::<_, ApiCollectionFolder>(
             r#"
             SELECT id, workspace_id, collection_id, parent_folder_id, name,
-                   sort_order, created_at, updated_at, deleted_at
+                   sort_order, created_at, updated_at, deleted_at,
+                   revision, sync_status, remote_id
             FROM api_collection_folders
             WHERE workspace_id = ?1 AND id = ?2 AND deleted_at IS NULL
             "#,
@@ -1086,7 +1100,8 @@ impl ApiClientService {
         let row = sqlx::query_as::<_, ApiCollectionFolder>(
             r#"
             SELECT id, workspace_id, collection_id, parent_folder_id, name,
-                   sort_order, created_at, updated_at, deleted_at
+                   sort_order, created_at, updated_at, deleted_at,
+                   revision, sync_status, remote_id
             FROM api_collection_folders
             WHERE workspace_id = ?1 AND id = ?2 AND deleted_at IS NULL
             "#,
@@ -1280,7 +1295,8 @@ impl ApiClientService {
         sqlx::query(
             r#"
             UPDATE api_collection_folders
-            SET deleted_at = ?1, updated_at = ?1
+            SET deleted_at = ?1, updated_at = ?1,
+                revision = revision + 1, sync_status = 'deleted'
             WHERE workspace_id = ?2 AND collection_id = ?3 AND deleted_at IS NULL
             "#,
         )
@@ -1593,9 +1609,9 @@ impl ApiClientService {
             INSERT INTO api_history (
               id, workspace_id, name, method, url, request_headers_json, request_query_json,
               request_body, status, duration_ms, response_headers_json, response_body_preview,
-              created_at, updated_at, revision, sync_status
+              created_at, updated_at
             )
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?13, 1, 'local')
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?13)
             "#,
         )
         .bind(&id)

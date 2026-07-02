@@ -72,12 +72,15 @@ async fn ssh_connection_validation_keeps_secrets_out_of_config() {
         .await
         .expect("save private key metadata");
 
-    let stored_config: (String,) =
-        sqlx::query_as("SELECT config_json FROM connections WHERE id = ?1")
-            .bind(private_key.id)
-            .fetch_one(service.db.pool())
-            .await
-            .expect("load stored config");
+    let stored_config: (String,) = sqlx::query_as(
+        "SELECT sub.config_json FROM connections c \
+         INNER JOIN ssh_connections sub ON sub.connection_id = c.id \
+         WHERE c.id = ?1",
+    )
+    .bind(private_key.id)
+    .fetch_one(service.db.pool())
+    .await
+    .expect("load stored config");
     assert!(stored_config.0.contains("id_ed25519"));
     assert!(!stored_config.0.contains("ssh-key-passphrase-1"));
 }
