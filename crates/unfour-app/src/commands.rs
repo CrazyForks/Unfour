@@ -1,5 +1,9 @@
 use crate::AppState;
-use tauri::State;
+use serde::{Deserialize, Serialize};
+use std::future::Future;
+use std::time::Instant;
+use tauri::{AppHandle, State};
+use tauri_plugin_opener::OpenerExt;
 use unfour_core::models::{
     ApiCollection, ApiCollectionFolder, ApiEnvironment, ApiHistoryDetail, ApiHistoryItem,
     ApiRequestInput, ApiResponse, ApiSavedRequest, CredentialCreateInput, CredentialDeleteInput,
@@ -16,9 +20,116 @@ use unfour_core::models::{
 };
 use unfour_core::AppResult;
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiagnosticBundleCommandResult {
+    pub bundle_dir: String,
+    pub manifest_path: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FrontendLogEntry {
+    pub level: String,
+    pub event: String,
+    pub module: String,
+    pub operation: String,
+    pub fields: serde_json::Value,
+}
+
+async fn trace_command<T>(
+    command_name: &'static str,
+    future: impl Future<Output = AppResult<T>>,
+) -> AppResult<T> {
+    let command_id = unfour_diag::new_command_id();
+    let started = Instant::now();
+    unfour_diag::log_command_started(command_name, &command_id);
+    let result = future.await;
+    match &result {
+        Ok(_) => unfour_diag::log_command_completed(
+            command_name,
+            &command_id,
+            started.elapsed().as_millis(),
+        ),
+        Err(error) => unfour_diag::log_command_failed(
+            command_name,
+            &command_id,
+            started.elapsed().as_millis(),
+            unfour_diag::app_error_kind(error),
+        ),
+    }
+    result
+}
+
 #[tauri::command]
 pub async fn system_health(state: State<'_, AppState>) -> AppResult<SystemHealth> {
-    state.command_bus.system_health().await
+    trace_command("system_health", state.command_bus.system_health()).await
+}
+
+#[tauri::command]
+pub async fn open_log_dir(app: AppHandle) -> AppResult<()> {
+    trace_command("open_log_dir", async move {
+        let paths = unfour_paths::initialize_unfour_storage()?;
+        app.opener()
+            .open_path(paths.logs_dir.to_string_lossy().to_string(), None::<&str>)
+            .map_err(|error| {
+                unfour_core::AppError::Config(format!("failed to open log directory: {error}"))
+            })?;
+        Ok(())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn open_diagnostics_dir(app: AppHandle) -> AppResult<()> {
+    trace_command("open_diagnostics_dir", async move {
+        let paths = unfour_paths::initialize_unfour_storage()?;
+        app.opener()
+            .open_path(
+                paths.diagnostics_dir.to_string_lossy().to_string(),
+                None::<&str>,
+            )
+            .map_err(|error| {
+                unfour_core::AppError::Config(format!(
+                    "failed to open diagnostics directory: {error}"
+                ))
+            })?;
+        Ok(())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn export_diagnostics_bundle() -> AppResult<DiagnosticBundleCommandResult> {
+    trace_command("export_diagnostics_bundle", async {
+        let paths = unfour_paths::initialize_unfour_storage()?;
+        let request = unfour_diag::DiagnosticBundleRequest::oss_dev(
+            env!("CARGO_PKG_VERSION").to_string(),
+            paths,
+        );
+        let bundle = unfour_diag::export_diagnostics_bundle(&request)?;
+
+        Ok(DiagnosticBundleCommandResult {
+            bundle_dir: bundle.bundle_dir.to_string_lossy().to_string(),
+            manifest_path: bundle.manifest_path.to_string_lossy().to_string(),
+        })
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn frontend_log(entry: FrontendLogEntry) -> AppResult<()> {
+    let status = if entry.level == "error" { "error" } else { "ok" };
+    unfour_diag::log_operation_event(
+        &entry.event,
+        &entry.module,
+        &entry.operation,
+        status,
+        None,
+        None,
+        entry.fields,
+    );
+    Ok(())
 }
 
 #[tauri::command]
@@ -310,7 +421,7 @@ pub async fn api_send_request(
     input: ApiRequestInput,
     state: State<'_, AppState>,
 ) -> AppResult<ApiResponse> {
-    state.command_bus.send_api_request(input).await
+    trace_command("api_send_request", state.command_bus.send_api_request(input)).await
 }
 
 #[tauri::command]
@@ -398,7 +509,7 @@ pub async fn credential_create(
     input: CredentialCreateInput,
     state: State<'_, AppState>,
 ) -> AppResult<CredentialMetadata> {
-    state.command_bus.create_credential(input).await
+    trace_command("credential_create", state.command_bus.create_credential(input)).await
 }
 
 #[tauri::command]
@@ -406,7 +517,7 @@ pub async fn credential_delete(
     input: CredentialDeleteInput,
     state: State<'_, AppState>,
 ) -> AppResult<()> {
-    state.command_bus.delete_credential(input).await
+    trace_command("credential_delete", state.command_bus.delete_credential(input)).await
 }
 
 #[tauri::command]
@@ -414,7 +525,11 @@ pub async fn credential_inspect(
     input: CredentialInspectInput,
     state: State<'_, AppState>,
 ) -> AppResult<CredentialMetadata> {
-    state.command_bus.inspect_credential(input).await
+    trace_command(
+        "credential_inspect",
+        state.command_bus.inspect_credential(input),
+    )
+    .await
 }
 
 #[tauri::command]
@@ -422,7 +537,7 @@ pub async fn credential_rotate(
     input: CredentialRotateInput,
     state: State<'_, AppState>,
 ) -> AppResult<CredentialMetadata> {
-    state.command_bus.rotate_credential(input).await
+    trace_command("credential_rotate", state.command_bus.rotate_credential(input)).await
 }
 
 #[tauri::command]
@@ -462,10 +577,13 @@ pub async fn database_connection_test(
     connection_id: String,
     state: State<'_, AppState>,
 ) -> AppResult<DatabaseTestResult> {
-    state
-        .command_bus
-        .test_database_connection(workspace_id, connection_id)
-        .await
+    trace_command(
+        "database_connection_test",
+        state
+            .command_bus
+            .test_database_connection(workspace_id, connection_id),
+    )
+    .await
 }
 
 #[tauri::command]
@@ -498,7 +616,11 @@ pub async fn database_query_execute(
     input: DatabaseQueryInput,
     state: State<'_, AppState>,
 ) -> AppResult<DatabaseQueryResult> {
-    state.command_bus.execute_database_query(input).await
+    trace_command(
+        "database_query_execute",
+        state.command_bus.execute_database_query(input),
+    )
+    .await
 }
 
 #[tauri::command]
@@ -614,7 +736,7 @@ pub async fn ssh_session_connect(
     input: SshConnectInput,
     state: State<'_, AppState>,
 ) -> AppResult<SshSessionSummary> {
-    state.command_bus.connect_ssh_session(input).await
+    trace_command("ssh_session_connect", state.command_bus.connect_ssh_session(input)).await
 }
 
 #[tauri::command]
@@ -661,7 +783,7 @@ pub async fn ssh_session_resize(
     input: SshResizeInput,
     state: State<'_, AppState>,
 ) -> AppResult<SshSessionEvent> {
-    state.command_bus.resize_ssh_session(input).await
+    trace_command("ssh_session_resize", state.command_bus.resize_ssh_session(input)).await
 }
 
 #[tauri::command]
@@ -669,7 +791,7 @@ pub async fn ssh_session_close(
     input: SshCloseInput,
     state: State<'_, AppState>,
 ) -> AppResult<SshSessionSummary> {
-    state.command_bus.close_ssh_session(input).await
+    trace_command("ssh_session_close", state.command_bus.close_ssh_session(input)).await
 }
 
 #[tauri::command]

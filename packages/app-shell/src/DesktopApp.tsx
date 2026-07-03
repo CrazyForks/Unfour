@@ -8,10 +8,13 @@ import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CommandPalette, MainWorkspace, useI18n } from "@unfour/ui";
 import {
+  exportDiagnosticsBundle,
   getSystemHealth,
   getWorkspaceLayout,
   getWorkspaceState,
   listDatabaseConnections,
+  openDiagnosticsDir,
+  openLogDir,
   setActiveWorkspace as setActiveWorkspaceCommand,
 } from "@unfour/command-client";
 import { useWorkspaceStore } from "@unfour/workspace-core";
@@ -67,6 +70,10 @@ export function DesktopApp() {
   });
   useWorkspaceInit(workspaceQuery.data?.activeWorkspaceId, workspaceLayoutQuery.data, sidebarDatabaseConnectionsQuery.data);
   useLayoutPersistence(activeWorkspace?.id ?? null);
+  const runCommandPaletteAction = useCallback((action: () => void | Promise<unknown>) => {
+    setCommandPaletteOpen(false);
+    void Promise.resolve(action()).catch(() => undefined);
+  }, []);
   const activateWorkspaceMutation = useMutation({
     mutationFn: setActiveWorkspaceCommand,
     onSuccess: (state) => {
@@ -220,14 +227,29 @@ export function DesktopApp() {
       <CommandPalette
         actions={
           <>
-            <CommandPaletteAction onSelect={() => setActiveTab("api-main")}>
+            <CommandPaletteAction
+              onSelect={() => runCommandPaletteAction(() => setActiveTab("api-main"))}
+            >
               {t("app.commandPalette.openApiClient")}
             </CommandPaletteAction>
-            <CommandPaletteAction onSelect={() => setActiveTab("database-main")}>
+            <CommandPaletteAction
+              onSelect={() => runCommandPaletteAction(() => setActiveTab("database-main"))}
+            >
               {t("app.commandPalette.openDatabase")}
             </CommandPaletteAction>
-            <CommandPaletteAction onSelect={() => setActiveTab("ssh-main")}>
+            <CommandPaletteAction
+              onSelect={() => runCommandPaletteAction(() => setActiveTab("ssh-main"))}
+            >
               {t("app.commandPalette.openSshTerminal")}
+            </CommandPaletteAction>
+            <CommandPaletteAction onSelect={() => runCommandPaletteAction(openLogDir)}>
+              {t("app.commandPalette.openLogDir")}
+            </CommandPaletteAction>
+            <CommandPaletteAction onSelect={() => runCommandPaletteAction(openDiagnosticsDir)}>
+              {t("app.commandPalette.openDiagnosticsDir")}
+            </CommandPaletteAction>
+            <CommandPaletteAction onSelect={() => runCommandPaletteAction(exportDiagnosticsBundle)}>
+              {t("app.commandPalette.exportDiagnosticsBundle")}
             </CommandPaletteAction>
           </>
         }

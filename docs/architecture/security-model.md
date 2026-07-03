@@ -23,17 +23,33 @@ Persist only credential references. Raw secret reads belong behind
 Logs, history, activity details, and MCP results must redact or mask sensitive
 data.
 
-The persistence redaction policy includes these HTTP-style keys:
+The shared redaction policy includes HTTP-style keys and common credential
+field names:
 
 - `authorization`
 - `cookie`
 - `proxy-authorization`
 - `x-api-key`
 - `x-auth-token`
+- `password`
+- `passwd`
+- `token`
+- `access_token`
+- `refresh_token`
+- `secret`
+- `private_key`
+- `api_key`
+- `license_key`
 
 JSON request body redaction applies recursively to sensitive keys before data is
 persisted. The actual HTTP request payload sent to a server is not modified by
 persistence redaction.
+
+Diagnostics also redact sensitive URL query parameters and semicolon-style
+connection-string secrets before writing structured log fields. Diagnostic logs
+must record metadata needed for troubleshooting, such as method, host, status,
+driver, duration, command id, request id, and stable error code, without raw
+payloads or reusable secrets.
 
 MCP results have an additional LLM-facing masking layer. See
 `docs/mcp/tools.md` for the MCP-specific masking and tool safety policy.

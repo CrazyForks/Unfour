@@ -4,8 +4,15 @@
       "open": "打开命令面板",
       "openApiClient": "打开 API 调试器",
       "openDatabase": "打开数据库",
+      "openDiagnosticsDir": "打开诊断目录",
+      "openLogDir": "打开日志目录",
       "openSshTerminal": "打开 SSH 终端",
+      "exportDiagnosticsBundle": "导出诊断包",
       "placeholder": "搜索命令"
+    },
+    "errorBoundary": {
+      "description": "渲染错误已写入本地诊断日志。",
+      "title": "工作台已崩溃"
     },
     "language": {
       "label": "语言",

@@ -5,17 +5,16 @@ unsafe extern "C" {}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let _ = tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "unfour=info,tauri=info".into()),
-        )
-        .try_init();
+    let _logging_guard = initialize_logging();
 
     // Shared plugins, command-bus setup and AppState live in `unfour-app`.
     // This binary owns only the per-edition handler list and Tauri context.
     unfour_app::configure(tauri::Builder::default())
         .invoke_handler(tauri::generate_handler![
+            unfour_app::commands::export_diagnostics_bundle,
+            unfour_app::commands::frontend_log,
+            unfour_app::commands::open_diagnostics_dir,
+            unfour_app::commands::open_log_dir,
             unfour_app::commands::system_health,
             unfour_app::commands::workspace_create,
             unfour_app::commands::workspace_delete,
@@ -90,4 +89,16 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running Unfour");
+}
+
+fn initialize_logging() -> Option<unfour_diag::LoggingGuard> {
+    let paths = unfour_paths::initialize_unfour_storage().ok()?;
+    let mut config = unfour_diag::LoggingConfig::oss_dev(paths.logs_dir);
+    config.version = env!("CARGO_PKG_VERSION").to_string();
+    if !cfg!(debug_assertions) {
+        config.channel = unfour_diag::Channel::Stable;
+        config.package_kind = unfour_diag::PackageKind::Website;
+        config.log_level = "info".to_string();
+    }
+    unfour_diag::init_logging(config).ok()
 }

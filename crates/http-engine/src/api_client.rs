@@ -45,6 +45,13 @@ impl ApiClientService {
         let url = build_url(&resolved.url, &resolved.query)?;
         let timeout =
             Duration::from_millis(input.timeout_ms.unwrap_or(60_000).clamp(1_000, 300_000));
+        let request_id = unfour_diag::new_request_id();
+        let request_fields = serde_json::json!({
+            "request_id": request_id.as_str(),
+            "method": method.as_str(),
+            "host": url.host_str().unwrap_or(""),
+            "path": url.path(),
+        });
 
         let mut builder = self
             .client
@@ -75,7 +82,30 @@ impl ApiClientService {
         }
 
         let started = Instant::now();
-        let response = builder.send().await?;
+        unfour_diag::log_operation_event(
+            "api_request_started",
+            "api_client",
+            "send",
+            "started",
+            None,
+            None,
+            request_fields.clone(),
+        );
+        let response = match builder.send().await {
+            Ok(response) => response,
+            Err(error) => {
+                unfour_diag::log_operation_event(
+                    "api_request_failed",
+                    "api_client",
+                    "send",
+                    "error",
+                    Some(started.elapsed().as_millis()),
+                    Some("HTTP_ERROR"),
+                    request_fields,
+                );
+                return Err(error.into());
+            }
+        };
         let duration_ms = started.elapsed().as_millis();
         let status = response.status();
         let response_headers = response
@@ -87,8 +117,22 @@ impl ApiClientService {
                 enabled: true,
             })
             .collect::<Vec<_>>();
-        let body = response.text().await?;
-        let history_id = self
+        let body = match response.text().await {
+            Ok(body) => body,
+            Err(error) => {
+                unfour_diag::log_operation_event(
+                    "api_request_failed",
+                    "api_client",
+                    "send",
+                    "error",
+                    Some(started.elapsed().as_millis()),
+                    Some("HTTP_ERROR"),
+                    request_fields,
+                );
+                return Err(error.into());
+            }
+        };
+        let history_id = match self
             .insert_history(
                 &resolved,
                 status.as_u16(),
@@ -96,7 +140,43 @@ impl ApiClientService {
                 &response_headers,
                 &body,
             )
-            .await?;
+            .await
+        {
+            Ok(history_id) => history_id,
+            Err(error) => {
+                unfour_diag::log_operation_event(
+                    "api_request_failed",
+                    "api_client",
+                    "send",
+                    "error",
+                    Some(started.elapsed().as_millis()),
+                    Some(unfour_diag::app_error_kind(&error)),
+                    serde_json::json!({
+                        "request_id": request_id.as_str(),
+                        "method": method.as_str(),
+                        "host": url.host_str().unwrap_or(""),
+                        "path": url.path(),
+                        "status_code": status.as_u16(),
+                    }),
+                );
+                return Err(error);
+            }
+        };
+        unfour_diag::log_operation_event(
+            "api_request_completed",
+            "api_client",
+            "send",
+            "ok",
+            Some(duration_ms),
+            None,
+            serde_json::json!({
+                "request_id": request_id.as_str(),
+                "method": method.as_str(),
+                "host": url.host_str().unwrap_or(""),
+                "path": url.path(),
+                "status_code": status.as_u16(),
+            }),
+        );
 
         Ok(ApiResponse {
             history_id,

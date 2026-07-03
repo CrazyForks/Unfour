@@ -12,6 +12,8 @@ pub struct UnfourPaths {
     pub config_dir: PathBuf,
     pub cache_dir: PathBuf,
     pub backups_dir: PathBuf,
+    pub logs_dir: PathBuf,
+    pub diagnostics_dir: PathBuf,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -21,6 +23,8 @@ pub struct StorageDiagnostics {
     pub config_dir: PathBuf,
     pub cache_dir: PathBuf,
     pub backups_dir: PathBuf,
+    pub logs_dir: PathBuf,
+    pub diagnostics_dir: PathBuf,
     pub database_exists: bool,
     pub current_exe: Option<PathBuf>,
     pub current_working_dir: Option<PathBuf>,
@@ -87,6 +91,8 @@ fn resolve_with_roots(roots: &PathRoots) -> io::Result<UnfourPaths> {
         .map(|dir| dir.join(DEFAULT_PRODUCT_DATA_DIR))
         .unwrap_or_else(|| product_data_dir.join("cache"));
     let backups_dir = product_data_dir.join("backups");
+    let logs_dir = product_data_dir.join("logs");
+    let diagnostics_dir = product_data_dir.join("diagnostics");
 
     Ok(UnfourPaths {
         product_data_dir,
@@ -94,6 +100,8 @@ fn resolve_with_roots(roots: &PathRoots) -> io::Result<UnfourPaths> {
         config_dir,
         cache_dir,
         backups_dir,
+        logs_dir,
+        diagnostics_dir,
     })
 }
 
@@ -104,6 +112,8 @@ fn initialize_with_roots(roots: &PathRoots) -> io::Result<UnfourPaths> {
     fs::create_dir_all(&paths.config_dir)?;
     fs::create_dir_all(&paths.cache_dir)?;
     fs::create_dir_all(&paths.backups_dir)?;
+    fs::create_dir_all(&paths.logs_dir)?;
+    fs::create_dir_all(&paths.diagnostics_dir)?;
 
     Ok(paths)
 }
@@ -118,6 +128,8 @@ fn diagnostics_with_roots(roots: &PathRoots) -> io::Result<StorageDiagnostics> {
         config_dir: paths.config_dir,
         cache_dir: paths.cache_dir,
         backups_dir: paths.backups_dir,
+        logs_dir: paths.logs_dir,
+        diagnostics_dir: paths.diagnostics_dir,
         current_exe: std::env::current_exe().ok(),
         current_working_dir: std::env::current_dir().ok(),
     })
@@ -184,7 +196,7 @@ mod tests {
     }
 
     #[test]
-    fn diagnostics_reports_storage_state_without_logs_dir() {
+    fn diagnostics_reports_storage_state() {
         let root = unique_test_root("diagnostics");
         let roots = PathRoots::new(
             root.join("data"),
@@ -199,6 +211,8 @@ mod tests {
             config_dir,
             cache_dir,
             backups_dir,
+            logs_dir,
+            diagnostics_dir,
             database_exists,
             current_exe,
             current_working_dir,
@@ -218,9 +232,48 @@ mod tests {
         );
         assert_eq!(cache_dir, root.join("cache").join(DEFAULT_PRODUCT_DATA_DIR));
         assert_eq!(backups_dir, product_data_dir.join("backups"));
+        assert_eq!(logs_dir, product_data_dir.join("logs"));
+        assert_eq!(diagnostics_dir, product_data_dir.join("diagnostics"));
         assert!(!database_exists);
         let _ = current_exe;
         let _ = current_working_dir;
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn resolve_includes_logs_and_diagnostics_under_product_data_dir() {
+        let root = unique_test_root("diag-dirs");
+        let roots = PathRoots::new(
+            root.join("data"),
+            Some(root.join("config")),
+            Some(root.join("cache")),
+        );
+
+        let paths = resolve_with_roots(&roots).expect("resolve paths");
+
+        assert_eq!(paths.logs_dir, paths.product_data_dir.join("logs"));
+        assert_eq!(
+            paths.diagnostics_dir,
+            paths.product_data_dir.join("diagnostics")
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn initialize_creates_logs_and_diagnostics_directories() {
+        let root = unique_test_root("create-diag-dirs");
+        let roots = PathRoots::new(
+            root.join("data"),
+            Some(root.join("config")),
+            Some(root.join("cache")),
+        );
+
+        let paths = initialize_with_roots(&roots).expect("initialize storage");
+
+        assert!(paths.logs_dir.is_dir());
+        assert!(paths.diagnostics_dir.is_dir());
 
         let _ = std::fs::remove_dir_all(root);
     }

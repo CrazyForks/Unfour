@@ -10,6 +10,7 @@ reqwest = { version = "0.12", default-features = false, features = ["brotli", "c
 serde_json = "1"
 sqlx = { version = "0.8", default-features = false, features = ["chrono", "json", "macros", "mysql", "postgres", "runtime-tokio-rustls", "sqlite", "uuid"] }
 unfour-core = { path = "../unfour-core" }
+unfour-diag = { path = "../unfour-diag" }
 unfour-local-storage = { path = "../local-storage" }
 uuid = { version = "1", features = ["serde", "v4"] }
 

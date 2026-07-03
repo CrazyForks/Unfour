@@ -117,6 +117,8 @@ target platform or is backed by current repository evidence.
   call-chain map.
 - `docs/architecture/data-storage.md` - workspace data, SQLite, credential
   references, and local activity rules.
+- `docs/architecture/diagnostics.md` - local structured logs, redaction,
+  retention, diagnostic bundles, and developer logging guidance.
 - `docs/architecture/security-model.md` - security posture, redaction, host-key
   policy, and dangerous-action rules.
 - `docs/mcp/overview.md` and `docs/mcp/tools.md` - local MCP server behavior.

@@ -1,4 +1,5 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
+import { logCommandFailure } from "./logger";
 import type {
   ApiHistoryDetail,
   ApiHistoryItem,
@@ -14,6 +15,7 @@ import type {
   DatabaseBrowseResult,
   DatabaseConnection,
   DatabaseConnectionInput,
+  DiagnosticBundleResult,
   DbQueryHistoryEntry,
   DatabaseQueryInput,
   DatabaseQueryResult,
@@ -292,10 +294,20 @@ function isTauriRuntime() {
 
 async function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   if (!isTauriRuntime()) {
-    return mockInvoke<T>(command, args);
+    try {
+      return await mockInvoke<T>(command, args);
+    } catch (error) {
+      void logCommandFailure(command, error);
+      throw error;
+    }
   }
 
-  return invoke<T>(command, args);
+  try {
+    return await invoke<T>(command, args);
+  } catch (error) {
+    void logCommandFailure(command, error);
+    throw error;
+  }
 }
 
 async function mockInvoke<T>(
@@ -332,6 +344,17 @@ async function mockInvoke<T>(
     mockState.workspaces = [workspace, ...mockState.workspaces];
     mockState.activeWorkspaceId = workspace.id;
     return workspace as T;
+  }
+
+  if (command === "open_log_dir" || command === "open_diagnostics_dir") {
+    return undefined as T;
+  }
+
+  if (command === "export_diagnostics_bundle") {
+    return {
+      bundleDir: "mock-diagnostics",
+      manifestPath: "mock-diagnostics/manifest.json",
+    } as T;
   }
 
   if (command === "workspace_update_environment") {
@@ -1550,6 +1573,18 @@ async function mockInvoke<T>(
 
 export function getSystemHealth() {
   return call<SystemHealth>("system_health");
+}
+
+export function openLogDir() {
+  return call<void>("open_log_dir");
+}
+
+export function openDiagnosticsDir() {
+  return call<void>("open_diagnostics_dir");
+}
+
+export function exportDiagnosticsBundle() {
+  return call<DiagnosticBundleResult>("export_diagnostics_bundle");
 }
 
 export function getWorkspaceState() {

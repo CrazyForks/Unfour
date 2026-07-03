@@ -40,10 +40,16 @@ Config and cache directories are also resolved by `unfour-paths`:
   `<product_data_dir>/config`;
 - cache: `dirs::cache_dir()/Unfour`, falling back to
   `<product_data_dir>/cache`;
-- backups: `<product_data_dir>/backups`.
+- backups: `<product_data_dir>/backups`;
+- logs: `<product_data_dir>/logs`;
+- diagnostics: `<product_data_dir>/diagnostics`.
 
-Unfour has not introduced a file logging module. Runtime path governance does
-not currently include a logs directory or `tauri-plugin-log`.
+Runtime diagnostics are owned by `crates/unfour-diag`, not by
+`tauri-plugin-log`. File logs use daily `unfour.log*` files under the logs
+directory with a default 7-day retention window. Diagnostic bundles are written
+under the diagnostics directory and may copy recent log files plus a manifest,
+but must not copy the SQLite database or raw credential material. See
+`docs/architecture/diagnostics.md`.
 
 ## SQLite Storage
 

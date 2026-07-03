@@ -97,6 +97,8 @@ and should reuse `packages/ui` primitives where possible.
 | Crate | Responsibility | Forbidden |
 | --- | --- | --- |
 | `crates/unfour-core` | Shared Rust models, error/result types, redaction helpers, reserved AI/sync contracts. | Tauri adapter logic, UI behavior. |
+| `crates/unfour-paths` | Stable runtime path resolution shared by desktop and MCP processes. | Feature execution, UI behavior. |
+| `crates/unfour-diag` | Structured diagnostics, file logging, log retention, correlation IDs, and diagnostic bundle export. | Feature business execution, raw secret persistence. |
 | `crates/local-storage` | SQLite migrations, local database access, and local activity logging. | Raw secret storage. |
 | `crates/secret-store` | Credential reference management backed by OS keychain or test memory store. | SQLite plaintext secret persistence. |
 | `crates/http-engine` | API request execution, environment resolution, saved requests, history, redaction persistence. | UI state, database query execution, SSH sessions. |

@@ -1,6 +1,7 @@
 use chrono::Utc;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 use unfour_core::models::{
     SshCloseInput, SshConnectInput, SshConnection, SshConnectionConfig, SshConnectionInput,
     SshDiagnosticInput, SshDiagnosticResult, SshHostFingerprintInfo, SshHostKeyInput,
@@ -313,11 +314,52 @@ impl SshService {
             .get_connection(&input.workspace_id, &input.connection_id)
             .await?;
         validate_connection_ready_for_session(&connection)?;
+        let started = Instant::now();
+        let fields = serde_json::json!({
+            "auth_method": &connection.auth_kind,
+            "host": &connection.host,
+            "port": connection.port,
+        });
+        unfour_diag::log_operation_event(
+            "ssh_connect_started",
+            "ssh",
+            "connect",
+            "started",
+            None,
+            None,
+            fields.clone(),
+        );
 
         #[cfg(feature = "ssh-native")]
-        let summary = self.connect_native(&connection, &input).await?;
+        let result = self.connect_native(&connection, &input).await;
         #[cfg(not(feature = "ssh-native"))]
-        let summary = self.connect_simulated(&connection, &input).await?;
+        let result = self.connect_simulated(&connection, &input).await;
+        let summary = match result {
+            Ok(summary) => {
+                unfour_diag::log_operation_event(
+                    "ssh_connect_succeeded",
+                    "ssh",
+                    "connect",
+                    "ok",
+                    Some(started.elapsed().as_millis()),
+                    None,
+                    fields,
+                );
+                summary
+            }
+            Err(error) => {
+                unfour_diag::log_operation_event(
+                    "ssh_connect_failed",
+                    "ssh",
+                    "connect",
+                    "error",
+                    Some(started.elapsed().as_millis()),
+                    Some(unfour_diag::app_error_kind(&error)),
+                    fields,
+                );
+                return Err(error);
+            }
+        };
 
         self.terminal_history.save_session(&summary).await?;
         self.terminal_history
@@ -554,6 +596,11 @@ impl SshService {
         validate_workspace_id(&input.workspace_id)?;
         validate_session_id(&input.session_id)?;
         validate_pty_size(input.cols, input.rows)?;
+        let started = Instant::now();
+        let fields = serde_json::json!({
+            "cols": input.cols,
+            "rows": input.rows,
+        });
 
         // Propagate resize to native channel.
         #[cfg(feature = "ssh-native")]
@@ -599,12 +646,31 @@ impl SshService {
             event
         };
         self.persist_session_summary(&input.session_id).await?;
+        unfour_diag::log_operation_event(
+            "ssh_pty_resize",
+            "ssh",
+            "resize",
+            "ok",
+            Some(started.elapsed().as_millis()),
+            None,
+            fields,
+        );
         Ok(event)
     }
 
     pub async fn close_session(&self, input: SshCloseInput) -> AppResult<SshSessionSummary> {
         validate_workspace_id(&input.workspace_id)?;
         validate_session_id(&input.session_id)?;
+        let started = Instant::now();
+        unfour_diag::log_operation_event(
+            "ssh_disconnect_started",
+            "ssh",
+            "close_session",
+            "started",
+            None,
+            None,
+            serde_json::json!({}),
+        );
 
         // Extract native handle and update state under the lock.
         #[cfg(feature = "ssh-native")]
@@ -659,6 +725,15 @@ impl SshService {
         };
         self.flush_session_history(&input.session_id).await?;
         self.terminal_history.update_session(&summary).await?;
+        unfour_diag::log_operation_event(
+            "ssh_disconnected",
+            "ssh",
+            "close_session",
+            "ok",
+            Some(started.elapsed().as_millis()),
+            None,
+            serde_json::json!({ "status": &summary.status }),
+        );
         Ok(summary)
     }
 

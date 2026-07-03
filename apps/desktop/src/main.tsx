@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { I18nProvider, ThemeProvider, initializeTheme } from "@unfour/ui";
 import App from "./App";
+import { DesktopErrorBoundary } from "./DesktopErrorBoundary";
 import "./styles.css";
 
 const queryClient = new QueryClient({
@@ -20,7 +21,9 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <QueryClientProvider client={queryClient}>
       <ThemeProvider defaultTheme={initialTheme}>
         <I18nProvider>
-          <App />
+          <DesktopErrorBoundary>
+            <App />
+          </DesktopErrorBoundary>
         </I18nProvider>
       </ThemeProvider>
     </QueryClientProvider>

@@ -1,5 +1,5 @@
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::SqlitePool;
@@ -43,6 +43,17 @@ impl LocalDb {
 
     pub async fn connect_path(path: impl AsRef<Path>) -> AppResult<Self> {
         let db_path = path.as_ref();
+        let started = Instant::now();
+        let safe_path = unfour_diag::safe_path_display(db_path);
+        unfour_diag::log_operation_event(
+            "sqlite_init_started",
+            "local_storage",
+            "connect_path",
+            "started",
+            None,
+            None,
+            serde_json::json!({ "database_path": safe_path }),
+        );
         if let Some(parent) = db_path.parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -55,9 +66,34 @@ impl LocalDb {
         let pool = SqlitePoolOptions::new()
             .max_connections(8)
             .connect_with(options)
-            .await?;
+            .await;
 
-        Ok(Self { pool })
+        match pool {
+            Ok(pool) => {
+                unfour_diag::log_operation_event(
+                    "sqlite_init_completed",
+                    "local_storage",
+                    "connect_path",
+                    "ok",
+                    Some(started.elapsed().as_millis()),
+                    None,
+                    serde_json::json!({ "database_path": safe_path }),
+                );
+                Ok(Self { pool })
+            }
+            Err(error) => {
+                unfour_diag::log_operation_event(
+                    "sqlite_init_failed",
+                    "local_storage",
+                    "connect_path",
+                    "error",
+                    Some(started.elapsed().as_millis()),
+                    Some("DATABASE_ERROR"),
+                    serde_json::json!({ "database_path": safe_path }),
+                );
+                Err(error.into())
+            }
+        }
     }
 
     pub async fn connect_existing_read_only_path(path: impl AsRef<Path>) -> AppResult<Self> {
@@ -100,11 +136,47 @@ impl LocalDb {
     }
 
     pub async fn migrate(&self) -> AppResult<()> {
-        sqlx::migrate!("./migrations")
+        let started = Instant::now();
+        unfour_diag::log_operation_event(
+            "migration_started",
+            "local_storage",
+            "migrate",
+            "started",
+            None,
+            None,
+            serde_json::json!({}),
+        );
+        let result = sqlx::migrate!("./migrations")
             .run(&self.pool)
             .await
-            .map_err(sqlx::Error::from)?;
-        Ok(())
+            .map_err(sqlx::Error::from);
+
+        match result {
+            Ok(()) => {
+                unfour_diag::log_operation_event(
+                    "migration_completed",
+                    "local_storage",
+                    "migrate",
+                    "ok",
+                    Some(started.elapsed().as_millis()),
+                    None,
+                    serde_json::json!({}),
+                );
+                Ok(())
+            }
+            Err(error) => {
+                unfour_diag::log_operation_event(
+                    "migration_failed",
+                    "local_storage",
+                    "migrate",
+                    "error",
+                    Some(started.elapsed().as_millis()),
+                    Some("DATABASE_ERROR"),
+                    serde_json::json!({}),
+                );
+                Err(error.into())
+            }
+        }
     }
 }
 

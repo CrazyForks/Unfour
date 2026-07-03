@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 use unfour_core::models::CredentialMetadata;
 use unfour_core::{AppError, AppResult};
 use uuid::Uuid;
@@ -57,9 +58,39 @@ impl SecretStore {
             ));
         }
 
+        let started = Instant::now();
+        unfour_diag::log_operation_event(
+            "keychain_save_started",
+            "keychain",
+            "create_credential",
+            "started",
+            None,
+            None,
+            serde_json::json!({ "credential_kind": &kind }),
+        );
         let record_id = Uuid::new_v4().to_string();
         let credential_ref = self.make_ref(&workspace_id, &kind, &record_id);
-        self.write_secret(&credential_ref, &secret).await?;
+        if let Err(error) = self.write_secret(&credential_ref, &secret).await {
+            unfour_diag::log_operation_event(
+                "keychain_save_failed",
+                "keychain",
+                "create_credential",
+                "error",
+                Some(started.elapsed().as_millis()),
+                Some(unfour_diag::app_error_kind(&error)),
+                serde_json::json!({ "credential_kind": &kind }),
+            );
+            return Err(error);
+        }
+        unfour_diag::log_operation_event(
+            "keychain_save_completed",
+            "keychain",
+            "create_credential",
+            "ok",
+            Some(started.elapsed().as_millis()),
+            None,
+            serde_json::json!({ "credential_kind": &kind }),
+        );
 
         Ok(CredentialMetadata {
             workspace_id,
@@ -83,7 +114,43 @@ impl SecretStore {
             ));
         }
 
-        self.load_secret(&credential_ref).await
+        let started = Instant::now();
+        unfour_diag::log_operation_event(
+            "keychain_load_started",
+            "keychain",
+            "read_secret",
+            "started",
+            None,
+            None,
+            serde_json::json!({ "credential_kind": &parsed.kind }),
+        );
+        let result = self.load_secret(&credential_ref).await;
+        match result {
+            Ok(secret) => {
+                unfour_diag::log_operation_event(
+                    "keychain_load_completed",
+                    "keychain",
+                    "read_secret",
+                    "ok",
+                    Some(started.elapsed().as_millis()),
+                    None,
+                    serde_json::json!({ "credential_kind": &parsed.kind }),
+                );
+                Ok(secret)
+            }
+            Err(error) => {
+                unfour_diag::log_operation_event(
+                    "keychain_load_failed",
+                    "keychain",
+                    "read_secret",
+                    "error",
+                    Some(started.elapsed().as_millis()),
+                    Some(unfour_diag::app_error_kind(&error)),
+                    serde_json::json!({ "credential_kind": &parsed.kind }),
+                );
+                Err(error)
+            }
+        }
     }
 
     pub async fn inspect_credential(
@@ -121,7 +188,37 @@ impl SecretStore {
         let metadata = self
             .inspect_credential(workspace_id, credential_ref)
             .await?;
-        self.write_secret(&metadata.credential_ref, &secret).await?;
+        let started = Instant::now();
+        unfour_diag::log_operation_event(
+            "keychain_save_started",
+            "keychain",
+            "rotate_credential",
+            "started",
+            None,
+            None,
+            serde_json::json!({ "credential_kind": &metadata.kind }),
+        );
+        if let Err(error) = self.write_secret(&metadata.credential_ref, &secret).await {
+            unfour_diag::log_operation_event(
+                "keychain_save_failed",
+                "keychain",
+                "rotate_credential",
+                "error",
+                Some(started.elapsed().as_millis()),
+                Some(unfour_diag::app_error_kind(&error)),
+                serde_json::json!({ "credential_kind": &metadata.kind }),
+            );
+            return Err(error);
+        }
+        unfour_diag::log_operation_event(
+            "keychain_save_completed",
+            "keychain",
+            "rotate_credential",
+            "ok",
+            Some(started.elapsed().as_millis()),
+            None,
+            serde_json::json!({ "credential_kind": &metadata.kind }),
+        );
 
         Ok(CredentialMetadata {
             label: "Rotated credential".to_string(),
@@ -142,7 +239,43 @@ impl SecretStore {
             ));
         }
 
-        self.remove_secret(&credential_ref).await
+        let started = Instant::now();
+        unfour_diag::log_operation_event(
+            "keychain_delete_started",
+            "keychain",
+            "delete_credential",
+            "started",
+            None,
+            None,
+            serde_json::json!({ "credential_kind": &parsed.kind }),
+        );
+        let result = self.remove_secret(&credential_ref).await;
+        match result {
+            Ok(()) => {
+                unfour_diag::log_operation_event(
+                    "keychain_delete_completed",
+                    "keychain",
+                    "delete_credential",
+                    "ok",
+                    Some(started.elapsed().as_millis()),
+                    None,
+                    serde_json::json!({ "credential_kind": &parsed.kind }),
+                );
+                Ok(())
+            }
+            Err(error) => {
+                unfour_diag::log_operation_event(
+                    "keychain_delete_failed",
+                    "keychain",
+                    "delete_credential",
+                    "error",
+                    Some(started.elapsed().as_millis()),
+                    Some(unfour_diag::app_error_kind(&error)),
+                    serde_json::json!({ "credential_kind": &parsed.kind }),
+                );
+                Err(error)
+            }
+        }
     }
 
     pub fn capability_summary(&self) -> serde_json::Value {

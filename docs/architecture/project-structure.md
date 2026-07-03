@@ -20,6 +20,8 @@ Unfour/
     workspace-local/         reserved local workspace lifecycle boundary
   crates/
     unfour-core/             shared Rust models, errors, redaction helpers
+    unfour-paths/            shared runtime path resolution
+    unfour-diag/             structured logging and diagnostic bundles
     local-storage/           SQLite persistence and activity log
     http-engine/             API request execution and API persistence
     database-engine/         database connection, schema, and query service
@@ -58,6 +60,8 @@ Unfour/
 | Crate | Role |
 | --- | --- |
 | `unfour-core` | Foundation crate for shared models, `AppError`, redaction, and reserved AI/sync contracts. |
+| `unfour-paths` | Stable runtime path resolution shared by the desktop app and standalone MCP server. |
+| `unfour-diag` | Structured logging, log retention, correlation IDs, and diagnostic bundle export. |
 | `unfour-local-storage` | SQLite setup, migrations, local persistence, and activity log. |
 | `unfour-secret-store` | Credential reference service backed by OS keychain in production and in-memory storage in tests. |
 | `unfour-http-engine` | API execution, environment resolution, saved requests, history, and persistence redaction. |
@@ -93,26 +97,26 @@ Feature packages must not depend on each other or on `packages/app-shell`.
 
 ```text
 unfour-core
-  -> unfour-local-storage
-       -> unfour-http-engine
-       -> unfour-database-engine
-       -> unfour-ssh-engine
-       -> unfour-workspace-engine
-  -> unfour-secret-store
+unfour-paths
+
+unfour-diag -> unfour-core, unfour-paths
+
+unfour-local-storage -> unfour-core, unfour-diag
+unfour-secret-store -> unfour-core, unfour-diag
+unfour-http-engine -> unfour-core, unfour-local-storage, unfour-diag
+unfour-database-engine -> unfour-core, unfour-local-storage, unfour-diag
+unfour-ssh-engine -> unfour-core, unfour-local-storage, unfour-diag
+unfour-workspace-engine -> unfour-core, unfour-local-storage
 
 unfour-command-bus
-  -> unfour-core
-  -> unfour-local-storage
-  -> unfour-secret-store
+  -> unfour-core, unfour-diag, unfour-local-storage, unfour-secret-store
   -> http, database, ssh, workspace engines
 
 unfour-mcp
-  -> unfour-command-bus
-  -> unfour-core
+  -> unfour-command-bus, unfour-core, unfour-diag, unfour-paths
 
 unfour Tauri adapter
-  -> unfour-command-bus
-  -> core engine crates
+  -> unfour-command-bus, unfour-diag, unfour-paths, core engine crates
 ```
 
 ## Frontend-To-Rust Call Chain
@@ -152,4 +156,5 @@ See also:
 
 - `docs/architecture/package-boundaries.md`
 - `docs/architecture/data-storage.md`
+- `docs/architecture/diagnostics.md`
 - `docs/architecture/security-model.md`

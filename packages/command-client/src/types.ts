@@ -533,6 +533,11 @@ export type SystemHealth = {
   syncStrategy: string;
 };
 
+export type DiagnosticBundleResult = {
+  bundleDir: string;
+  manifestPath: string;
+};
+
 export type WorkspaceTab = {
   id: string;
   title: string;

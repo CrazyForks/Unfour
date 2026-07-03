@@ -8,6 +8,7 @@ members = [
   "crates/ssh-engine",
   "crates/workspace-engine",
   "crates/unfour-paths",
+  "crates/unfour-diag",
   "crates/secret-store",
   "crates/unfour-command-bus",
   "crates/unfour-mcp",

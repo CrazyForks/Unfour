@@ -4,8 +4,15 @@
       "open": "Open command palette",
       "openApiClient": "Open API Debugger",
       "openDatabase": "Open Database",
+      "openDiagnosticsDir": "Open Diagnostics Directory",
+      "openLogDir": "Open Log Directory",
       "openSshTerminal": "Open SSH Terminal",
+      "exportDiagnosticsBundle": "Export Diagnostics Bundle",
       "placeholder": "Search commands"
+    },
+    "errorBoundary": {
+      "description": "A render error was recorded in local diagnostics.",
+      "title": "Workbench crashed"
     },
     "language": {
       "label": "Language",

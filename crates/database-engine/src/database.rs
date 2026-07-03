@@ -197,8 +197,19 @@ impl DatabaseService {
         connection_id: String,
     ) -> AppResult<DatabaseTestResult> {
         let connection = self.get_connection(&workspace_id, &connection_id).await?;
+        let started = Instant::now();
+        let fields = serde_json::json!({ "driver": &connection.driver });
+        unfour_diag::log_operation_event(
+            "database_connect_started",
+            "database",
+            "test_connection",
+            "started",
+            None,
+            None,
+            fields.clone(),
+        );
 
-        match connection.driver.as_str() {
+        let result = match connection.driver.as_str() {
             "sqlite" => {
                 let pool = sqlite_pool(&connection).await?;
                 let version: (String,) = sqlx::query_as("SELECT sqlite_version()")
@@ -241,7 +252,29 @@ impl DatabaseService {
                 "database driver is not supported: {}",
                 driver
             ))),
+        };
+
+        match &result {
+            Ok(_) => unfour_diag::log_operation_event(
+                "database_connect_completed",
+                "database",
+                "test_connection",
+                "ok",
+                Some(started.elapsed().as_millis()),
+                None,
+                fields,
+            ),
+            Err(error) => unfour_diag::log_operation_event(
+                "database_connect_failed",
+                "database",
+                "test_connection",
+                "error",
+                Some(started.elapsed().as_millis()),
+                Some(unfour_diag::app_error_kind(error)),
+                fields,
+            ),
         }
+        result
     }
 
     pub async fn schema(
@@ -483,6 +516,22 @@ impl DatabaseService {
         }
 
         let timeout = resolve_timeout(input.timeout_ms);
+        let query_started = Instant::now();
+        let driver = connection.driver.clone();
+        let sql_operation = safety.classification.clone();
+        let query_fields = serde_json::json!({
+            "driver": &driver,
+            "sql_operation": &sql_operation,
+        });
+        unfour_diag::log_operation_event(
+            "query_started",
+            "database",
+            "execute_query",
+            "started",
+            None,
+            None,
+            query_fields.clone(),
+        );
         let run = async {
             match connection.driver.as_str() {
                 "sqlite" => {
@@ -640,13 +689,44 @@ impl DatabaseService {
                 ))),
             }
         };
-        match tokio::time::timeout(timeout, run).await {
+        let result = match tokio::time::timeout(timeout, run).await {
             Ok(result) => result,
             Err(_) => Err(AppError::Timeout(format!(
                 "query exceeded the {} ms timeout",
                 timeout.as_millis()
             ))),
+        };
+
+        match &result {
+            Ok(result) => {
+                unfour_diag::log_operation_event(
+                    "query_completed",
+                    "database",
+                    "execute_query",
+                    "ok",
+                    Some(query_started.elapsed().as_millis()),
+                    None,
+                    serde_json::json!({
+                        "driver": &driver,
+                        "sql_operation": &sql_operation,
+                        "row_count": result.rows.len(),
+                        "affected_rows": result.affected_rows,
+                    }),
+                );
+            }
+            Err(error) => {
+                unfour_diag::log_operation_event(
+                    "query_failed",
+                    "database",
+                    "execute_query",
+                    "error",
+                    Some(query_started.elapsed().as_millis()),
+                    Some(unfour_diag::app_error_kind(error)),
+                    query_fields,
+                );
+            }
         }
+        result
     }
 
     pub async fn record_query_history(&self, input: DbQueryHistoryRecordInput) -> AppResult<()> {

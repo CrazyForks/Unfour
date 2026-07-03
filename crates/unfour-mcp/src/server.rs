@@ -1,5 +1,6 @@
 use std::io::{self, BufRead, Write};
 use std::sync::Arc;
+use std::time::Instant;
 
 use serde_json::{json, Value};
 
@@ -15,9 +16,21 @@ pub struct McpServer {
 
 impl McpServer {
     pub fn new(command_bus: Arc<dyn CommandBusAdapter>) -> Self {
-        Self {
-            tools: ToolRegistry::with_command_bus(command_bus),
-        }
+        let tools = ToolRegistry::with_command_bus(command_bus);
+        let definitions = tools.definitions();
+        unfour_diag::log_operation_event(
+            "mcp_tools_registered",
+            "mcp",
+            "tools_registry",
+            "ok",
+            None,
+            None,
+            json!({
+                "tool_count": definitions.len(),
+                "tool_names": definitions.iter().map(|tool| tool.name).collect::<Vec<_>>(),
+            }),
+        );
+        Self { tools }
     }
 
     pub fn handle_line(&self, line: &str) -> Option<String> {
@@ -106,18 +119,61 @@ impl McpServer {
             .cloned()
             .unwrap_or_else(|| json!({}));
 
-        self.tools
-            .call(name, arguments)
-            .map_err(|error| match error {
-                ToolCallError::UnknownTool(name) => (-32602, format!("Unknown tool: {name}")),
-                ToolCallError::InvalidArguments(message) => (-32602, message),
-                ToolCallError::PolicyBlocked(denial) => {
-                    (-32000, format!("{}: {}", denial.error.code, denial.reason))
-                }
-                ToolCallError::Execution { code, message } => {
-                    (-32000, format!("{code}: {message}"))
-                }
-            })
+        let request_id = unfour_diag::new_request_id();
+        let started = Instant::now();
+        unfour_diag::log_operation_event(
+            "tool_call_started",
+            "mcp",
+            "tools_call",
+            "started",
+            None,
+            None,
+            json!({ "request_id": request_id.as_str(), "tool_name": name }),
+        );
+        let result = self.tools.call(name, arguments);
+        match result {
+            Ok(value) => {
+                unfour_diag::log_operation_event(
+                    "tool_call_completed",
+                    "mcp",
+                    "tools_call",
+                    "ok",
+                    Some(started.elapsed().as_millis()),
+                    None,
+                    json!({ "request_id": request_id.as_str(), "tool_name": name }),
+                );
+                Ok(value)
+            }
+            Err(error) => {
+                let error_kind = match &error {
+                    ToolCallError::UnknownTool(_) => "UNKNOWN_TOOL",
+                    ToolCallError::InvalidArguments(_) => "INVALID_ARGUMENTS",
+                    ToolCallError::PolicyBlocked(_) => "POLICY_BLOCKED",
+                    ToolCallError::Execution { code, .. } => *code,
+                };
+                unfour_diag::log_operation_event(
+                    "tool_call_failed",
+                    "mcp",
+                    "tools_call",
+                    "error",
+                    Some(started.elapsed().as_millis()),
+                    Some(error_kind),
+                    json!({ "request_id": request_id.as_str(), "tool_name": name }),
+                );
+                Err(match error {
+                    ToolCallError::UnknownTool(name) => {
+                        (-32602, format!("Unknown tool: {name}"))
+                    }
+                    ToolCallError::InvalidArguments(message) => (-32602, message),
+                    ToolCallError::PolicyBlocked(denial) => {
+                        (-32000, format!("{}: {}", denial.error.code, denial.reason))
+                    }
+                    ToolCallError::Execution { code, message } => {
+                        (-32000, format!("{code}: {message}"))
+                    }
+                })
+            }
+        }
     }
 }
 
@@ -129,6 +185,15 @@ where
     let command_bus = LocalCommandBusAdapter::default_storage()
         .map_err(|error| io::Error::other(format!("{}: {}", error.code, error.message)))?;
     let server = McpServer::new(command_bus);
+    unfour_diag::log_operation_event(
+        "mcp_server_started",
+        "mcp",
+        "run_stdio",
+        "ok",
+        None,
+        None,
+        json!({ "transport": "stdio" }),
+    );
     run_stdio_with_server(&server, reader, &mut writer)
 }
 

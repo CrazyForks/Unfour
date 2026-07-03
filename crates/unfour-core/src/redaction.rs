@@ -3,7 +3,20 @@ pub const REDACTED_VALUE: &str = "<redacted>";
 pub fn is_sensitive_key(value: &str) -> bool {
     matches!(
         value.trim().to_ascii_lowercase().as_str(),
-        "authorization" | "cookie" | "proxy-authorization" | "x-api-key" | "x-auth-token"
+        "authorization"
+            | "cookie"
+            | "proxy-authorization"
+            | "x-api-key"
+            | "x-auth-token"
+            | "password"
+            | "passwd"
+            | "token"
+            | "access_token"
+            | "refresh_token"
+            | "secret"
+            | "private_key"
+            | "api_key"
+            | "license_key"
     )
 }
 
@@ -116,6 +129,90 @@ pub fn redact_sensitive_lines(value: &str) -> (String, bool) {
     (output, redacted)
 }
 
+pub fn redact_url_query(value: &str) -> String {
+    let Ok(mut url) = reqwest::Url::parse(value) else {
+        return value.to_string();
+    };
+
+    if url.query().is_none() {
+        return value.to_string();
+    }
+
+    let pairs = url
+        .query_pairs()
+        .map(|(key, val)| {
+            if is_sensitive_key(&key) {
+                (key.into_owned(), REDACTED_VALUE.to_string())
+            } else {
+                (key.into_owned(), val.into_owned())
+            }
+        })
+        .collect::<Vec<_>>();
+
+    url.set_query(None);
+    {
+        let mut query_pairs = url.query_pairs_mut();
+        for (key, val) in pairs {
+            query_pairs.append_pair(&key, &val);
+        }
+    }
+    url.to_string()
+}
+
+pub fn redact_connection_string(value: &str) -> String {
+    if reqwest::Url::parse(value).is_ok() {
+        return redact_url_password_for_display(&redact_url_query(value));
+    }
+
+    let mut changed = false;
+    let redacted = value
+        .split(';')
+        .map(|segment| {
+            let Some((key, _val)) = segment.split_once('=') else {
+                return segment.to_string();
+            };
+            if is_sensitive_key(key) {
+                changed = true;
+                format!("{key}={REDACTED_VALUE}")
+            } else {
+                segment.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(";");
+
+    if changed {
+        redacted
+    } else {
+        value.to_string()
+    }
+}
+
+fn redact_url_password_for_display(value: &str) -> String {
+    let Some(authority_start) = value.find("://").map(|index| index + 3) else {
+        return value.to_string();
+    };
+    let Some(at_offset) = value[authority_start..].find('@') else {
+        return value.to_string();
+    };
+    let authority_end = authority_start + at_offset;
+    let authority = &value[authority_start..authority_end];
+    let Some(password_start_offset) = authority.rfind(':').map(|index| index + 1) else {
+        return value.to_string();
+    };
+    if password_start_offset >= authority.len() {
+        return value.to_string();
+    }
+
+    let password_start = authority_start + password_start_offset;
+    format!(
+        "{}{}{}",
+        &value[..password_start],
+        REDACTED_VALUE,
+        &value[authority_end..]
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -125,6 +222,13 @@ mod tests {
         assert!(is_sensitive_key("Authorization"));
         assert!(is_sensitive_key("x-AUTH-token"));
         assert!(is_sensitive_key(" proxy-authorization "));
+        assert!(is_sensitive_key("password"));
+        assert!(is_sensitive_key("passwd"));
+        assert!(is_sensitive_key("token"));
+        assert!(is_sensitive_key("access_token"));
+        assert!(is_sensitive_key("refresh_token"));
+        assert!(is_sensitive_key("private_key"));
+        assert!(is_sensitive_key("license_key"));
         assert!(!is_sensitive_key("x-request-id"));
     }
 
@@ -168,7 +272,7 @@ mod tests {
         let parsed: serde_json::Value = serde_json::from_str(&redacted).unwrap();
         assert_eq!(parsed["user"], "alice");
         assert_eq!(parsed["auth"]["Authorization"], "<redacted>");
-        assert_eq!(parsed["auth"]["token"], "ok");
+        assert_eq!(parsed["auth"]["token"], "<redacted>");
     }
 
     #[test]
@@ -221,5 +325,42 @@ mod tests {
         assert_eq!(parsed["items"][0]["x-api-key"], "<redacted>");
         assert_eq!(parsed["items"][0]["data"], "safe");
         assert_eq!(parsed["meta"]["count"], 1);
+    }
+
+    #[test]
+    fn connection_string_passwords_are_redacted() {
+        let input = "postgres://alice:secret@db.internal/app?sslmode=require&access_token=abc";
+
+        let redacted = redact_connection_string(input);
+
+        assert!(redacted.contains("<redacted>"));
+        assert!(!redacted.contains("secret"));
+        assert!(!redacted.contains("abc"));
+    }
+
+    #[test]
+    fn semicolon_connection_string_passwords_are_redacted() {
+        let input = "Server=db.internal;User Id=alice;Password=secret;Database=app";
+
+        let redacted = redact_connection_string(input);
+
+        assert_eq!(
+            redacted,
+            "Server=db.internal;User Id=alice;Password=<redacted>;Database=app"
+        );
+    }
+
+    #[test]
+    fn url_query_tokens_are_redacted() {
+        let input = "https://api.example.test/v1/users?access_token=abc&page=1&api_key=secret";
+
+        let redacted = redact_url_query(input);
+
+        assert_eq!(
+            redacted,
+            "https://api.example.test/v1/users?access_token=%3Credacted%3E&page=1&api_key=%3Credacted%3E"
+        );
+        assert!(!redacted.contains("abc"));
+        assert!(!redacted.contains("secret"));
     }
 }
