@@ -20,29 +20,26 @@ global application configuration.
 ## Runtime Path Strategy
 
 SQLite runtime paths are resolved by `crates/unfour-paths`, not by Tauri path
-APIs. The stable product data directory is named `Unfour` so the desktop app
-and standalone MCP process share the same local SQLite file, while the Tauri
-identifier `dev.unfour` remains only the bundle/app identifier.
+APIs. All Unfour data lives under `~/.unfour` on every platform so the desktop
+app and standalone MCP process share the same local SQLite file at a stable,
+predictable location, while the Tauri identifier `dev.unfour` remains only the
+bundle/app identifier.
 
-The current stable SQLite path strategy is:
-
-- Windows: `%APPDATA%\Unfour\unfour.sqlite`.
-- macOS/Linux: `dirs::data_dir()/Unfour/unfour.sqlite`.
+The current stable SQLite path is `~/.unfour/unfour.sqlite` on all platforms.
 
 Do not replace this with Tauri `app_data_dir()`: Tauri derives that path from
 `identifier = "dev.unfour"`, which would split data into a different
 `dev.unfour` directory. `dev.unfour` is not treated as a legacy data directory
 by the runtime path resolver.
 
-Config and cache directories are also resolved by `unfour-paths`:
+Config and cache directories are also resolved by `unfour-paths` and all live
+under `~/.unfour`:
 
-- config: `dirs::config_dir()/Unfour`, falling back to
-  `<product_data_dir>/config`;
-- cache: `dirs::cache_dir()/Unfour`, falling back to
-  `<product_data_dir>/cache`;
-- backups: `<product_data_dir>/backups`;
-- logs: `<product_data_dir>/logs`;
-- diagnostics: `<product_data_dir>/diagnostics`.
+- config: `~/.unfour/config`;
+- cache: `~/.unfour/cache`;
+- backups: `~/.unfour/backups`;
+- logs: `~/.unfour/logs`;
+- diagnostics: `~/.unfour/diagnostics`.
 
 Runtime diagnostics are owned by `crates/unfour-diag`, not by
 `tauri-plugin-log`. File logs use daily `unfour.log*` files under the logs

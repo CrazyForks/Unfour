@@ -2,7 +2,7 @@ use std::fs;
 use std::io;
 use std::path::PathBuf;
 
-pub const DEFAULT_PRODUCT_DATA_DIR: &str = "Unfour";
+pub const DEFAULT_PRODUCT_DATA_DIR: &str = ".unfour";
 pub const DEFAULT_DATABASE_FILE: &str = "unfour.sqlite";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -63,18 +63,17 @@ pub fn default_database_path() -> io::Result<PathBuf> {
     Ok(resolve_unfour_paths()?.database_path)
 }
 
+/// All Unfour data lives under `~/.unfour` on every platform.
+/// Using the home directory (not `%APPDATA%` / `XDG_DATA_HOME`) keeps the path
+/// stable, predictable, and consistent with developer-tool conventions.
 fn default_roots() -> io::Result<PathRoots> {
-    let data_dir = dirs::data_dir().ok_or_else(|| {
+    let home = dirs::home_dir().ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::NotFound,
-            "OS data directory is not available",
+            "home directory is not available",
         )
     })?;
-    Ok(PathRoots::new(
-        data_dir,
-        dirs::config_dir(),
-        dirs::cache_dir(),
-    ))
+    Ok(PathRoots::new(home.clone(), Some(home.clone()), Some(home)))
 }
 
 fn resolve_with_roots(roots: &PathRoots) -> io::Result<UnfourPaths> {
