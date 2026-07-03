@@ -29,14 +29,17 @@ SQLite-backed records include:
 - API history (local-only log, no sync fields);
 - connection metadata (parent `connections` table plus `ssh_connections` /
   `database_connections` subtype tables);
-- SSH host-key trust records;
+- workspace-scoped SSH host-key trust records;
 - terminal history;
 - saved SQL (soft-deleted, sync fields reserved);
 - local activity events.
 
-Schema changes live in `crates/local-storage/migrations/`. Persistence code
-belongs in `crates/local-storage` or the owning engine crate, not in frontend
-packages or Tauri command adapters.
+Schema changes live in `crates/local-storage/migrations/`. Because v0.1 has
+not shipped, the historical pre-release migrations are squashed into
+`0001_initial_schema.sql`; future schema changes should add new numbered
+migration files after that. Persistence code belongs in `crates/local-storage`
+or the owning engine crate, not in frontend packages or Tauri command
+adapters.
 
 ## Reserved Sync Fields
 
@@ -61,9 +64,9 @@ they are append-only local trails that are never synced:
 - `api_history` — request log (mirrors `db_query_history`).
 - `db_query_history` — SQL execution log.
 
-`api_collection_folders` was retrofitted with sync fields in migration 0008;
-`saved_sql` was retrofitted with `deleted_at` plus sync fields in migration
-0010 (it was previously hard-deleted).
+`api_collection_folders` and `saved_sql` carry sync metadata in the initial
+schema. `saved_sql` uses soft delete fields so saved snippets can be retained
+without active-list visibility.
 
 Cloud sync is not part of the v0.1 public release readiness criteria. Future
 sync behavior must remain workspace-scoped and must not overwrite secrets
@@ -73,8 +76,8 @@ automatically.
 
 `connections` is the parent row for a workspace-scoped connection. It holds
 identity and sync metadata (`id`, `workspace_id`, `name`, `credential_ref`,
-timestamps, sync fields) but no longer holds `kind` or `config_json`. Those
-moved into per-kind subtype tables (migration 0009):
+timestamps, sync fields), while kind-specific configuration lives in subtype
+tables:
 
 - `ssh_connections(connection_id, config_json)` — 1:1 with `connections.id`,
   `ON DELETE CASCADE`.
@@ -86,17 +89,26 @@ both rows on insert/update. `credential_ref` stays on the parent because it
 is shared identity metadata. Tables that reference a connection by id
 (`saved_sql.connection_id`, `db_query_history.connection_id`,
 `ssh_terminal_history.connection_id`) point at the parent `connections.id`
-and do not need to know which subtype the row belongs to.
+and do not need to know which subtype the row belongs to. The schema enforces
+same-workspace connection references; deleting a connection nulls nullable
+history/snippet references and cascades terminal history rows.
 
 ## Single Active Environment
 
 `api_environments.is_active` is constrained to a single active row per
 workspace by the partial unique index
-`uq_api_environments_active_per_workspace` (migration 0007). The application
-layer in `http-engine` still wraps activate/deactivate in one transaction,
-but the index is the source of truth: it enforces uniqueness at the
-statement level, so the activate flow must deactivate other rows **before**
-activating the target.
+`uq_api_environments_active_per_workspace`. The application layer in
+`http-engine` still wraps activate/deactivate in one transaction, but the
+index is the source of truth: it enforces uniqueness at the statement level,
+so the activate flow must deactivate other rows **before** activating the
+target.
+
+## Default Workspace
+
+`workspace-engine` seeds the first default workspace during command-bus startup
+when none exists. Workspaces created by users are inserted with
+`is_default = 0`; the schema validates `is_default` as a boolean and does not
+attempt to manage multiple default rows.
 
 ## Workspace Environments
 

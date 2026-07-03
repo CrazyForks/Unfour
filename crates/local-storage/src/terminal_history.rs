@@ -359,6 +359,26 @@ mod tests {
             .await
             .expect("insert workspace");
         }
+        for (workspace_id, connection_id) in [
+            ("ws-a", "connection-a"),
+            ("ws-a", "connection-c"),
+            ("ws-b", "connection-b"),
+        ] {
+            sqlx::query(
+                r#"
+                INSERT INTO connections (
+                  id, workspace_id, name, created_at, updated_at, revision, sync_status
+                )
+                VALUES (?1, ?2, ?1, ?3, ?3, 1, 'local')
+                "#,
+            )
+            .bind(connection_id)
+            .bind(workspace_id)
+            .bind(&now)
+            .execute(db.pool())
+            .await
+            .expect("insert connection");
+        }
         TerminalHistoryService::new(db)
     }
 
@@ -502,7 +522,7 @@ mod tests {
     async fn deleting_connection_cleans_up_only_matching_history() {
         let service = service().await;
         let removed = summary("ws-a", "session-a", "connection-a");
-        let retained = summary("ws-a", "session-b", "connection-b");
+        let retained = summary("ws-a", "session-b", "connection-c");
         service.save_session(&removed).await.expect("save removed");
         service
             .save_session(&retained)

@@ -32,6 +32,7 @@ import type {
   SshConnectionInput,
   SshHostFingerprintInfo,
   SshHostKeyInput,
+  SshKnownHostsExportInput,
   SshKnownHostsExportResult,
   SshKnownHostsImportInput,
   SshKnownHostsImportResult,
@@ -90,6 +91,11 @@ const mockSshEvents: SshSessionEvent[] = [];
 const MOCK_TERMINAL_HISTORY_MAX_BYTES = 256 * 1024;
 const mockHostKeyFingerprints: Record<string, SshHostFingerprintInfo> = {};
 const mockCredentials: Record<string, string> = {};
+
+function mockHostKeyFingerprintKey(workspaceId: string, host: string, port: number) {
+  return `${workspaceId}:${host}:${port}`;
+}
+
 let mockEnvironments: ApiEnvironment[] = [
   {
     id: "env-default-mock",
@@ -1326,9 +1332,14 @@ async function mockInvoke<T>(
     });
     trimMockSshHistory(session.sessionId);
     // Simulate TOFU: record a mock fingerprint if not already stored.
-    const hostKey = `${connection.host}:${connection.port}`;
+    const hostKey = mockHostKeyFingerprintKey(
+      connection.workspaceId,
+      connection.host,
+      connection.port,
+    );
     if (!(hostKey in mockHostKeyFingerprints)) {
       mockHostKeyFingerprints[hostKey] = {
+        workspaceId: connection.workspaceId,
         host: connection.host,
         port: connection.port,
         fingerprint: `SHA256:mock-${crypto.randomUUID().slice(0, 12)}`,
@@ -1455,21 +1466,24 @@ async function mockInvoke<T>(
 
   if (command === "ssh_host_key_get") {
     const input = args?.input as SshHostKeyInput;
-    const key = `${input.host}:${input.port}`;
+    const key = mockHostKeyFingerprintKey(input.workspaceId, input.host, input.port);
     const info = mockHostKeyFingerprints[key];
     return (info ?? null) as T;
   }
 
   if (command === "ssh_host_key_reset") {
     const input = args?.input as SshHostKeyInput;
-    const key = `${input.host}:${input.port}`;
+    const key = mockHostKeyFingerprintKey(input.workspaceId, input.host, input.port);
     const existed = key in mockHostKeyFingerprints;
     delete mockHostKeyFingerprints[key];
     return existed as T;
   }
 
   if (command === "ssh_host_key_list") {
-    return Object.values(mockHostKeyFingerprints) as T;
+    const workspaceId = args?.workspaceId as string;
+    return Object.values(mockHostKeyFingerprints).filter(
+      (entry) => entry.workspaceId === workspaceId,
+    ) as T;
   }
 
   if (command === "ssh_known_hosts_import") {
@@ -1499,12 +1513,13 @@ async function mockInvoke<T>(
       } else {
         host = hostField;
       }
-      const key = `${host}:${port}`;
+      const key = mockHostKeyFingerprintKey(input.workspaceId, host, port);
       if (key in mockHostKeyFingerprints) {
         skipped++;
         continue;
       }
       mockHostKeyFingerprints[key] = {
+        workspaceId: input.workspaceId,
         host,
         port,
         fingerprint: `SHA256:mock-${crypto.randomUUID().slice(0, 12)}`,
@@ -1516,7 +1531,10 @@ async function mockInvoke<T>(
   }
 
   if (command === "ssh_known_hosts_export") {
-    const entries = Object.values(mockHostKeyFingerprints);
+    const input = args?.input as SshKnownHostsExportInput;
+    const entries = Object.values(mockHostKeyFingerprints).filter(
+      (entry) => entry.workspaceId === input.workspaceId,
+    );
     const lines = entries.map((e) => {
       const hostPort = e.port === 22 ? e.host : `[${e.host}]:${e.port}`;
       return `# ${hostPort} ${e.fingerprint} (fingerprint only, no key data)`;
@@ -1934,16 +1952,16 @@ export function resetSshHostFingerprint(input: SshHostKeyInput) {
   return call<boolean>("ssh_host_key_reset", { input });
 }
 
-export function listSshHostFingerprints() {
-  return call<SshHostFingerprintInfo[]>("ssh_host_key_list");
+export function listSshHostFingerprints(workspaceId: string) {
+  return call<SshHostFingerprintInfo[]>("ssh_host_key_list", { workspaceId });
 }
 
 export function importSshKnownHosts(input: SshKnownHostsImportInput) {
   return call<SshKnownHostsImportResult>("ssh_known_hosts_import", { input });
 }
 
-export function exportSshKnownHosts() {
-  return call<SshKnownHostsExportResult>("ssh_known_hosts_export");
+export function exportSshKnownHosts(input: SshKnownHostsExportInput) {
+  return call<SshKnownHostsExportResult>("ssh_known_hosts_export", { input });
 }
 
 export type SshTerminalDataPayload = {

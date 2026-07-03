@@ -5,9 +5,11 @@ import { getSshHostFingerprint, resetSshHostFingerprint } from "@unfour/command-
 import { Button, useI18n } from "@unfour/ui";
 
 export function HostKeyFingerprint({
+  workspaceId,
   host,
   port,
 }: {
+  workspaceId: string;
   host: string;
   port: number;
 }) {
@@ -22,7 +24,7 @@ export function HostKeyFingerprint({
     resolvedKey: string;
   }>({ error: null, info: null, requestedKey: "", resolvedKey: "" });
 
-  const currentKey = trimmedHost && validPort ? `${trimmedHost}:${port}` : "";
+  const currentKey = trimmedHost && validPort ? `${workspaceId}:${trimmedHost}:${port}` : "";
   const loading = state.requestedKey !== "" && state.resolvedKey !== state.requestedKey;
 
   // Render-time sync: mark a new fetch request when host/port changes.
@@ -38,7 +40,7 @@ export function HostKeyFingerprint({
       return;
     }
     let cancelled = false;
-    getSshHostFingerprint({ host: trimmedHost, port })
+    getSshHostFingerprint({ workspaceId, host: trimmedHost, port })
       .then((info) => {
         if (!cancelled) setState((prev) => ({ ...prev, info, error: null, resolvedKey: currentKey }));
       })
@@ -54,12 +56,12 @@ export function HostKeyFingerprint({
     return () => {
       cancelled = true;
     };
-  }, [trimmedHost, port, validPort, currentKey]);
+  }, [workspaceId, trimmedHost, port, validPort, currentKey]);
 
   function handleReset() {
     if (!trimmedHost || !validPort) return;
     setState((prev) => ({ ...prev, error: null, info: null, resolvedKey: "" }));
-    resetSshHostFingerprint({ host: trimmedHost, port })
+    resetSshHostFingerprint({ workspaceId, host: trimmedHost, port })
       .then(() =>
         setState((prev) => ({ ...prev, info: null, error: null, resolvedKey: currentKey })),
       )

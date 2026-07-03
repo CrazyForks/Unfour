@@ -21,17 +21,19 @@ impl HostKeyStore {
     /// Record the fingerprint for a host on first connection.
     pub async fn record_fingerprint(
         &self,
+        workspace_id: &str,
         host: &str,
         port: u16,
         fingerprint: &str,
     ) -> AppResult<()> {
-        self.record_fingerprint_full(host, port, fingerprint, None, None)
+        self.record_fingerprint_full(workspace_id, host, port, fingerprint, None, None)
             .await
     }
 
     /// Record the fingerprint with optional key type and public key data.
     pub async fn record_fingerprint_full(
         &self,
+        workspace_id: &str,
         host: &str,
         port: u16,
         fingerprint: &str,
@@ -41,10 +43,13 @@ impl HostKeyStore {
         let now = Utc::now().to_rfc3339();
         sqlx::query(
             r#"
-            INSERT OR REPLACE INTO ssh_host_keys (host, port, fingerprint, key_type, public_key_data, created_at)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+            INSERT OR REPLACE INTO ssh_host_keys (
+              workspace_id, host, port, fingerprint, key_type, public_key_data, created_at
+            )
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
             "#,
         )
+        .bind(workspace_id)
         .bind(host)
         .bind(port as i64)
         .bind(fingerprint)
@@ -57,10 +62,20 @@ impl HostKeyStore {
     }
 
     /// Look up the stored fingerprint for a host, if any.
-    pub async fn get_fingerprint(&self, host: &str, port: u16) -> AppResult<Option<String>> {
+    pub async fn get_fingerprint(
+        &self,
+        workspace_id: &str,
+        host: &str,
+        port: u16,
+    ) -> AppResult<Option<String>> {
         let row = sqlx::query_as::<_, (String,)>(
-            "SELECT fingerprint FROM ssh_host_keys WHERE host = ?1 AND port = ?2",
+            r#"
+            SELECT fingerprint
+            FROM ssh_host_keys
+            WHERE workspace_id = ?1 AND host = ?2 AND port = ?3
+            "#,
         )
+        .bind(workspace_id)
         .bind(host)
         .bind(port as i64)
         .fetch_optional(&self.pool)
@@ -75,13 +90,15 @@ impl HostKeyStore {
     /// - If a fingerprint is stored and does NOT match, return an error.
     pub async fn verify_or_record(
         &self,
+        workspace_id: &str,
         host: &str,
         port: u16,
         fingerprint: &str,
     ) -> AppResult<()> {
-        match self.get_fingerprint(host, port).await? {
+        match self.get_fingerprint(workspace_id, host, port).await? {
             None => {
-                self.record_fingerprint(host, port, fingerprint).await?;
+                self.record_fingerprint(workspace_id, host, port, fingerprint)
+                    .await?;
                 Ok(())
             }
             Some(stored) if stored == fingerprint => Ok(()),
@@ -97,24 +114,41 @@ impl HostKeyStore {
     /// Remove the stored fingerprint for a host:port pair.
     ///
     /// Returns `true` if a record was deleted, `false` if no record existed.
-    pub async fn delete_fingerprint(&self, host: &str, port: u16) -> AppResult<bool> {
-        let result = sqlx::query("DELETE FROM ssh_host_keys WHERE host = ?1 AND port = ?2")
-            .bind(host)
-            .bind(port as i64)
-            .execute(&self.pool)
-            .await?;
+    pub async fn delete_fingerprint(
+        &self,
+        workspace_id: &str,
+        host: &str,
+        port: u16,
+    ) -> AppResult<bool> {
+        let result = sqlx::query(
+            r#"
+            DELETE FROM ssh_host_keys
+            WHERE workspace_id = ?1 AND host = ?2 AND port = ?3
+            "#,
+        )
+        .bind(workspace_id)
+        .bind(host)
+        .bind(port as i64)
+        .execute(&self.pool)
+        .await?;
         Ok(result.rows_affected() > 0)
     }
 
     /// Return the stored fingerprint and the timestamp when it was recorded.
     pub async fn get_fingerprint_info(
         &self,
+        workspace_id: &str,
         host: &str,
         port: u16,
     ) -> AppResult<Option<(String, String)>> {
         let row = sqlx::query_as::<_, (String, String)>(
-            "SELECT fingerprint, created_at FROM ssh_host_keys WHERE host = ?1 AND port = ?2",
+            r#"
+            SELECT fingerprint, created_at
+            FROM ssh_host_keys
+            WHERE workspace_id = ?1 AND host = ?2 AND port = ?3
+            "#,
         )
+        .bind(workspace_id)
         .bind(host)
         .bind(port as i64)
         .fetch_optional(&self.pool)
@@ -123,14 +157,16 @@ impl HostKeyStore {
     }
 
     /// List all stored host-key fingerprints.
-    pub async fn list_all(&self) -> AppResult<Vec<StoredHostKey>> {
+    pub async fn list_all(&self, workspace_id: &str) -> AppResult<Vec<StoredHostKey>> {
         let rows = sqlx::query_as::<_, StoredHostKey>(
             r#"
-            SELECT host, port, fingerprint, key_type, public_key_data, created_at
+            SELECT workspace_id, host, port, fingerprint, key_type, public_key_data, created_at
             FROM ssh_host_keys
+            WHERE workspace_id = ?1
             ORDER BY created_at DESC
             "#,
         )
+        .bind(workspace_id)
         .fetch_all(&self.pool)
         .await?;
         Ok(rows)
@@ -140,7 +176,11 @@ impl HostKeyStore {
     ///
     /// Parses each line, computes the SHA-256 fingerprint from the public key,
     /// and stores entries that are valid and not already present.
-    pub async fn import_known_hosts(&self, content: &str) -> AppResult<SshKnownHostsImportResult> {
+    pub async fn import_known_hosts(
+        &self,
+        workspace_id: &str,
+        content: &str,
+    ) -> AppResult<SshKnownHostsImportResult> {
         let mut imported = 0u32;
         let mut skipped = 0u32;
         let mut errors = Vec::new();
@@ -152,13 +192,16 @@ impl HostKeyStore {
             }
             match parse_known_hosts_line(line) {
                 Some(entry) => {
-                    let existing = self.get_fingerprint(&entry.host, entry.port).await?;
+                    let existing = self
+                        .get_fingerprint(workspace_id, &entry.host, entry.port)
+                        .await?;
                     if existing.is_some() {
                         skipped += 1;
                         continue;
                     }
                     match self
                         .record_fingerprint_full(
+                            workspace_id,
                             &entry.host,
                             entry.port,
                             &entry.fingerprint,
@@ -195,8 +238,8 @@ impl HostKeyStore {
     ///
     /// Entries with stored public key data produce full known_hosts lines.
     /// Entries without public key data are exported as comments.
-    pub async fn export_known_hosts(&self) -> AppResult<(String, u32)> {
-        let entries = self.list_all().await?;
+    pub async fn export_known_hosts(&self, workspace_id: &str) -> AppResult<(String, u32)> {
+        let entries = self.list_all(workspace_id).await?;
         let mut lines = Vec::new();
         let mut count = 0u32;
 
@@ -233,6 +276,7 @@ impl HostKeyStore {
 /// A stored host-key record with all columns.
 #[derive(Clone, sqlx::FromRow)]
 pub struct StoredHostKey {
+    pub workspace_id: String,
     pub host: String,
     pub port: i64,
     pub fingerprint: String,
@@ -358,6 +402,9 @@ mod tests {
     use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
     use unfour_local_storage::LocalDb;
 
+    const WORKSPACE_A: &str = "ws-a";
+    const WORKSPACE_B: &str = "ws-b";
+
     async fn test_store() -> HostKeyStore {
         let options = SqliteConnectOptions::new()
             .filename(":memory:")
@@ -370,6 +417,23 @@ mod tests {
             .expect("connect in-memory");
         let db = LocalDb::from_pool(pool.clone());
         db.migrate().await.expect("run migrations");
+        let now = Utc::now().to_rfc3339();
+        for workspace_id in [WORKSPACE_A, WORKSPACE_B] {
+            sqlx::query(
+                r#"
+                INSERT INTO workspaces (
+                  id, name, is_default, environment_type, mcp_policy,
+                  created_at, updated_at, revision, sync_status
+                )
+                VALUES (?1, ?1, 0, 'dev', 'auto', ?2, ?2, 1, 'local')
+                "#,
+            )
+            .bind(workspace_id)
+            .bind(&now)
+            .execute(db.pool())
+            .await
+            .expect("insert workspace");
+        }
         HostKeyStore::new(pool)
     }
 
@@ -378,12 +442,12 @@ mod tests {
         let store = test_store().await;
 
         store
-            .verify_or_record("example.com", 22, "SHA256:abc123")
+            .verify_or_record(WORKSPACE_A, "example.com", 22, "SHA256:abc123")
             .await
             .expect("first connect should record fingerprint");
 
         let stored = store
-            .get_fingerprint("example.com", 22)
+            .get_fingerprint(WORKSPACE_A, "example.com", 22)
             .await
             .expect("lookup fingerprint");
         assert_eq!(stored.as_deref(), Some("SHA256:abc123"));
@@ -394,12 +458,12 @@ mod tests {
         let store = test_store().await;
 
         store
-            .verify_or_record("example.com", 22, "SHA256:abc123")
+            .verify_or_record(WORKSPACE_A, "example.com", 22, "SHA256:abc123")
             .await
             .expect("first connect");
 
         store
-            .verify_or_record("example.com", 22, "SHA256:abc123")
+            .verify_or_record(WORKSPACE_A, "example.com", 22, "SHA256:abc123")
             .await
             .expect("matching fingerprint should succeed");
     }
@@ -409,12 +473,12 @@ mod tests {
         let store = test_store().await;
 
         store
-            .verify_or_record("example.com", 22, "SHA256:abc123")
+            .verify_or_record(WORKSPACE_A, "example.com", 22, "SHA256:abc123")
             .await
             .expect("first connect");
 
         let result = store
-            .verify_or_record("example.com", 22, "SHA256:different456")
+            .verify_or_record(WORKSPACE_A, "example.com", 22, "SHA256:different456")
             .await;
         assert!(result.is_err(), "mismatched fingerprint must be rejected");
 
@@ -431,17 +495,17 @@ mod tests {
         let store = test_store().await;
 
         store
-            .verify_or_record("host-a.example.com", 22, "SHA256:aaa")
+            .verify_or_record(WORKSPACE_A, "host-a.example.com", 22, "SHA256:aaa")
             .await
             .expect("host a first connect");
 
         store
-            .verify_or_record("host-b.example.com", 22, "SHA256:bbb")
+            .verify_or_record(WORKSPACE_A, "host-b.example.com", 22, "SHA256:bbb")
             .await
             .expect("host b first connect with different fingerprint");
 
         store
-            .verify_or_record("host-a.example.com", 22, "SHA256:aaa")
+            .verify_or_record(WORKSPACE_A, "host-a.example.com", 22, "SHA256:aaa")
             .await
             .expect("host a still matches");
     }
@@ -451,14 +515,45 @@ mod tests {
         let store = test_store().await;
 
         store
-            .verify_or_record("example.com", 22, "SHA256:port22")
+            .verify_or_record(WORKSPACE_A, "example.com", 22, "SHA256:port22")
             .await
             .expect("port 22 first connect");
 
         store
-            .verify_or_record("example.com", 2222, "SHA256:port2222")
+            .verify_or_record(WORKSPACE_A, "example.com", 2222, "SHA256:port2222")
             .await
             .expect("port 2222 first connect with different fingerprint");
+    }
+
+    #[tokio::test]
+    async fn host_key_same_host_port_is_independent_per_workspace() {
+        let store = test_store().await;
+
+        store
+            .verify_or_record(WORKSPACE_A, "example.com", 22, "SHA256:workspace-a")
+            .await
+            .expect("workspace a first connect");
+        store
+            .verify_or_record(WORKSPACE_B, "example.com", 22, "SHA256:workspace-b")
+            .await
+            .expect("workspace b first connect");
+
+        assert_eq!(
+            store
+                .get_fingerprint(WORKSPACE_A, "example.com", 22)
+                .await
+                .expect("workspace a fingerprint")
+                .as_deref(),
+            Some("SHA256:workspace-a")
+        );
+        assert_eq!(
+            store
+                .get_fingerprint(WORKSPACE_B, "example.com", 22)
+                .await
+                .expect("workspace b fingerprint")
+                .as_deref(),
+            Some("SHA256:workspace-b")
+        );
     }
 
     #[tokio::test]
@@ -466,25 +561,25 @@ mod tests {
         let store = test_store().await;
 
         store
-            .verify_or_record("example.com", 22, "SHA256:abc123")
+            .verify_or_record(WORKSPACE_A, "example.com", 22, "SHA256:abc123")
             .await
             .expect("first connect");
 
         let deleted = store
-            .delete_fingerprint("example.com", 22)
+            .delete_fingerprint(WORKSPACE_A, "example.com", 22)
             .await
             .expect("delete fingerprint");
         assert!(deleted, "should have deleted an existing record");
 
         let stored = store
-            .get_fingerprint("example.com", 22)
+            .get_fingerprint(WORKSPACE_A, "example.com", 22)
             .await
             .expect("lookup after delete");
         assert!(stored.is_none(), "fingerprint should be gone");
 
         // Deleting again should return false (nothing to delete).
         let deleted_again = store
-            .delete_fingerprint("example.com", 22)
+            .delete_fingerprint(WORKSPACE_A, "example.com", 22)
             .await
             .expect("delete again");
         assert!(!deleted_again, "no record to delete");
@@ -496,18 +591,18 @@ mod tests {
 
         // No record yet.
         let info = store
-            .get_fingerprint_info("example.com", 22)
+            .get_fingerprint_info(WORKSPACE_A, "example.com", 22)
             .await
             .expect("lookup before any record");
         assert!(info.is_none());
 
         store
-            .verify_or_record("example.com", 22, "SHA256:abc123")
+            .verify_or_record(WORKSPACE_A, "example.com", 22, "SHA256:abc123")
             .await
             .expect("first connect");
 
         let info = store
-            .get_fingerprint_info("example.com", 22)
+            .get_fingerprint_info(WORKSPACE_A, "example.com", 22)
             .await
             .expect("lookup after record");
         let (fingerprint, created_at) = info.expect("should have fingerprint info");
@@ -520,29 +615,29 @@ mod tests {
         let store = test_store().await;
 
         store
-            .verify_or_record("example.com", 22, "SHA256:old_key")
+            .verify_or_record(WORKSPACE_A, "example.com", 22, "SHA256:old_key")
             .await
             .expect("first connect");
 
         // Mismatch would be rejected.
         let result = store
-            .verify_or_record("example.com", 22, "SHA256:new_key")
+            .verify_or_record(WORKSPACE_A, "example.com", 22, "SHA256:new_key")
             .await;
         assert!(result.is_err(), "mismatch must be rejected");
 
         // After reset, a new fingerprint is accepted (TOFU).
         store
-            .delete_fingerprint("example.com", 22)
+            .delete_fingerprint(WORKSPACE_A, "example.com", 22)
             .await
             .expect("reset fingerprint");
 
         store
-            .verify_or_record("example.com", 22, "SHA256:new_key")
+            .verify_or_record(WORKSPACE_A, "example.com", 22, "SHA256:new_key")
             .await
             .expect("new trust after reset");
 
         let stored = store
-            .get_fingerprint("example.com", 22)
+            .get_fingerprint(WORKSPACE_A, "example.com", 22)
             .await
             .expect("lookup");
         assert_eq!(stored.as_deref(), Some("SHA256:new_key"));
@@ -553,15 +648,15 @@ mod tests {
         let store = test_store().await;
 
         store
-            .verify_or_record("host-a", 22, "SHA256:aaa")
+            .verify_or_record(WORKSPACE_A, "host-a", 22, "SHA256:aaa")
             .await
             .expect("record host-a");
         store
-            .verify_or_record("host-b", 2222, "SHA256:bbb")
+            .verify_or_record(WORKSPACE_A, "host-b", 2222, "SHA256:bbb")
             .await
             .expect("record host-b");
 
-        let all = store.list_all().await.expect("list all");
+        let all = store.list_all(WORKSPACE_A).await.expect("list all");
         assert_eq!(all.len(), 2);
         let hosts: Vec<&str> = all.iter().map(|e| e.host.as_str()).collect();
         assert!(hosts.contains(&"host-a"));
@@ -576,7 +671,7 @@ mod tests {
         let content = format!("example.com ssh-rsa {}", key_data);
 
         let result = store
-            .import_known_hosts(&content)
+            .import_known_hosts(WORKSPACE_A, &content)
             .await
             .expect("import known_hosts");
 
@@ -586,7 +681,7 @@ mod tests {
 
         // Verify it was stored.
         let fp = store
-            .get_fingerprint("example.com", 22)
+            .get_fingerprint(WORKSPACE_A, "example.com", 22)
             .await
             .expect("get fingerprint");
         assert!(fp.is_some());
@@ -600,13 +695,13 @@ mod tests {
         let content = format!("example.com ssh-rsa {}", key_data);
 
         let result1 = store
-            .import_known_hosts(&content)
+            .import_known_hosts(WORKSPACE_A, &content)
             .await
             .expect("first import");
         assert_eq!(result1.imported, 1);
 
         let result2 = store
-            .import_known_hosts(&content)
+            .import_known_hosts(WORKSPACE_A, &content)
             .await
             .expect("second import");
         assert_eq!(result2.imported, 0);
@@ -617,7 +712,10 @@ mod tests {
     async fn import_known_hosts_skips_comments_and_blank_lines() {
         let store = test_store().await;
         let content = "# This is a comment\n\n   \n# Another comment\n";
-        let result = store.import_known_hosts(content).await.expect("import");
+        let result = store
+            .import_known_hosts(WORKSPACE_A, content)
+            .await
+            .expect("import");
         assert_eq!(result.imported, 0);
         assert_eq!(result.skipped, 0);
     }
@@ -628,11 +726,14 @@ mod tests {
         let key_data = "AAAAB3NzaC1yc2EAAAADAQABAAABgQC7";
         let content = format!("[myhost.com]:2222 ssh-ed25519 {}", key_data);
 
-        let result = store.import_known_hosts(&content).await.expect("import");
+        let result = store
+            .import_known_hosts(WORKSPACE_A, &content)
+            .await
+            .expect("import");
         assert_eq!(result.imported, 1);
 
         let fp = store
-            .get_fingerprint("myhost.com", 2222)
+            .get_fingerprint(WORKSPACE_A, "myhost.com", 2222)
             .await
             .expect("get fingerprint");
         assert!(fp.is_some());
@@ -644,9 +745,12 @@ mod tests {
         let key_data = "AAAAB3NzaC1yc2EAAAADAQABAAABgQC7";
         let content = format!("example.com ssh-rsa {}", key_data);
 
-        store.import_known_hosts(&content).await.expect("import");
+        store
+            .import_known_hosts(WORKSPACE_A, &content)
+            .await
+            .expect("import");
 
-        let (exported, count) = store.export_known_hosts().await.expect("export");
+        let (exported, count) = store.export_known_hosts(WORKSPACE_A).await.expect("export");
         assert_eq!(count, 1);
         assert!(exported.contains("example.com"));
         assert!(exported.contains("ssh-rsa"));
@@ -658,11 +762,11 @@ mod tests {
         let store = test_store().await;
         // Record without key data (old-style TOFU entry).
         store
-            .record_fingerprint("oldhost.com", 22, "SHA256:old")
+            .record_fingerprint(WORKSPACE_A, "oldhost.com", 22, "SHA256:old")
             .await
             .expect("record");
 
-        let (exported, count) = store.export_known_hosts().await.expect("export");
+        let (exported, count) = store.export_known_hosts(WORKSPACE_A).await.expect("export");
         assert_eq!(count, 0);
         assert!(exported.starts_with('#'));
         assert!(exported.contains("SHA256:old"));

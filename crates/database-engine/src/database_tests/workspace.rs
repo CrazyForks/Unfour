@@ -5,6 +5,11 @@ use std::fs;
 #[tokio::test]
 async fn query_history_is_workspace_scoped_ordered_limited_and_clearable() {
     let (service, workspace_id) = service_with_workspace().await;
+    let path = sqlite_fixture().await;
+    let connection = service
+        .save_connection(sqlite_input(&workspace_id, &path))
+        .await
+        .expect("save connection");
     let other_workspace_id = Uuid::new_v4().to_string();
     let now = Utc::now().to_rfc3339();
     sqlx::query(
@@ -26,7 +31,7 @@ async fn query_history_is_workspace_scoped_ordered_limited_and_clearable() {
         .record_query_history(DbQueryHistoryRecordInput {
             id: "history-old".to_string(),
             workspace_id: workspace_id.clone(),
-            connection_id: Some("connection-1".to_string()),
+            connection_id: Some(connection.id.clone()),
             connection_name: "Local SQLite".to_string(),
             sql: "select 1".to_string(),
             status: "success".to_string(),
@@ -43,7 +48,7 @@ async fn query_history_is_workspace_scoped_ordered_limited_and_clearable() {
         .record_query_history(DbQueryHistoryRecordInput {
             id: "history-new".to_string(),
             workspace_id: workspace_id.clone(),
-            connection_id: Some("connection-1".to_string()),
+            connection_id: Some(connection.id.clone()),
             connection_name: "Local SQLite".to_string(),
             sql: "select 2".to_string(),
             status: "success".to_string(),
@@ -106,24 +111,33 @@ async fn query_history_is_workspace_scoped_ordered_limited_and_clearable() {
         .expect("list other workspace history");
     assert_eq!(other.len(), 1);
     assert_eq!(other[0].id, "history-other");
+    let _ = fs::remove_file(path);
 }
 
 #[tokio::test]
 async fn saved_sql_crud_is_workspace_scoped_and_validated() {
     let (service, workspace_id) = service_with_workspace().await;
+    let path = sqlite_fixture().await;
+    let connection = service
+        .save_connection(sqlite_input(&workspace_id, &path))
+        .await
+        .expect("save connection");
 
     let created = service
         .save_sql(SavedSqlInput {
             id: None,
             workspace_id: workspace_id.clone(),
-            connection_id: Some("conn-1".to_string()),
+            connection_id: Some(connection.id.clone()),
             name: "Recent users".to_string(),
             sql: "SELECT * FROM users".to_string(),
         })
         .await
         .expect("create saved sql");
     assert_eq!(created.name, "Recent users");
-    assert_eq!(created.connection_id.as_deref(), Some("conn-1"));
+    assert_eq!(
+        created.connection_id.as_deref(),
+        Some(connection.id.as_str())
+    );
 
     let updated = service
         .save_sql(SavedSqlInput {
@@ -169,6 +183,7 @@ async fn saved_sql_crud_is_workspace_scoped_and_validated() {
         service.delete_saved_sql(workspace_id, created.id).await,
         Err(AppError::NotFound(_))
     ));
+    let _ = fs::remove_file(path);
 }
 
 #[tokio::test]
@@ -201,6 +216,21 @@ async fn connection_crud_is_workspace_scoped_and_soft_deletes() {
     assert_eq!(updated.name, "Renamed fixture");
     assert_eq!(updated.revision, created.revision + 1);
 
+    let saved_sql = service
+        .save_sql(SavedSqlInput {
+            id: None,
+            workspace_id: workspace_id.clone(),
+            connection_id: Some(created.id.clone()),
+            name: "Connection query".to_string(),
+            sql: "SELECT 1".to_string(),
+        })
+        .await
+        .expect("save connection-bound sql");
+    assert_eq!(
+        saved_sql.connection_id.as_deref(),
+        Some(created.id.as_str())
+    );
+
     let after_delete = service
         .delete_connection(workspace_id.clone(), created.id)
         .await
@@ -208,9 +238,16 @@ async fn connection_crud_is_workspace_scoped_and_soft_deletes() {
     assert!(after_delete.is_empty());
 
     let listed = service
-        .list_connections(workspace_id)
+        .list_connections(workspace_id.clone())
         .await
         .expect("list after delete");
     assert!(listed.is_empty());
+
+    let saved_after_delete = service
+        .list_saved_sql(workspace_id)
+        .await
+        .expect("list saved sql after connection delete");
+    assert_eq!(saved_after_delete.len(), 1);
+    assert!(saved_after_delete[0].connection_id.is_none());
     let _ = fs::remove_file(path);
 }

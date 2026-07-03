@@ -511,7 +511,7 @@ export function TerminalPage({
     const port = selectedConnection.port ?? 22;
 
     // Check if we already trust this host.
-    getSshHostFingerprint({ host, port })
+    getSshHostFingerprint({ workspaceId, host, port })
       .then((info) => {
         if (info) {
           // Already trusted — connect directly.

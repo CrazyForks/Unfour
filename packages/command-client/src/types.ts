@@ -298,11 +298,13 @@ export type SshLogExport = {
 };
 
 export type SshHostKeyInput = {
+  workspaceId: string;
   host: string;
   port: number;
 };
 
 export type SshHostFingerprintInfo = {
+  workspaceId: string;
   host: string;
   port: number;
   fingerprint: string;
@@ -312,6 +314,10 @@ export type SshHostFingerprintInfo = {
 export type SshKnownHostsImportInput = {
   workspaceId: string;
   content: string;
+};
+
+export type SshKnownHostsExportInput = {
+  workspaceId: string;
 };
 
 export type SshKnownHostsImportResult = {

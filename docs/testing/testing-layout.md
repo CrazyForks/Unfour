@@ -208,8 +208,8 @@ When deciding whether to move an existing test:
 4. **Do not move fixtures across packages.** If a fixture is only used by one
    package's tests, it stays in that package even if the tests move out of
    `src/`.
-5. **One PR per layer.** Do not bundle frontend, Rust, and Playwright
-   migrations into one change. Each layer has its own verification command
+5. **One PR per layer.** Do not bundle frontend, Rust, and Playwright test
+   relocations into one change. Each layer has its own verification command
    and review audience.
 
 ## What does NOT move

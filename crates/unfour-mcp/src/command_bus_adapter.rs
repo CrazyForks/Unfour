@@ -320,7 +320,7 @@ mod tests {
         runtime.block_on(async {
             let db_path = app_data_dir.join("unfour.sqlite");
             let db = LocalDb::connect_path(&db_path).await.expect("create db");
-            db.migrate().await.expect("migrate db");
+            db.migrate().await.expect("run migrations");
             let bus = CommandBus::from_db(db).await.expect("create bus");
             let state = bus.list_workspaces().await.expect("list workspaces");
             bus.save_ssh_connection(SshConnectionInput {

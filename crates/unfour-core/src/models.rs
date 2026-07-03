@@ -408,6 +408,7 @@ pub struct SshConnectionConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SshHostKeyInput {
+    pub workspace_id: String,
     pub host: String,
     pub port: u16,
 }
@@ -416,6 +417,7 @@ pub struct SshHostKeyInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SshHostFingerprintInfo {
+    pub workspace_id: String,
     pub host: String,
     pub port: u16,
     pub fingerprint: String,
@@ -428,6 +430,13 @@ pub struct SshHostFingerprintInfo {
 pub struct SshKnownHostsImportInput {
     pub workspace_id: String,
     pub content: String,
+}
+
+/// Input for exporting known_hosts content.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SshKnownHostsExportInput {
+    pub workspace_id: String,
 }
 
 /// Result of a known_hosts import operation.
@@ -476,8 +485,7 @@ pub struct StoredConnection {
     pub id: String,
     pub workspace_id: String,
     pub name: String,
-    /// `config_json` is no longer a column on `connections` after the subtype
-    /// split (migration 0009). It is selected from the per-kind subtype table
+    /// `config_json` is selected from the per-kind subtype table
     /// (`ssh_connections` / `database_connections`) via a JOIN, so this struct
     /// still models a joined row and the helpers below do not change.
     pub config_json: String,

@@ -136,6 +136,23 @@ mod tests {
             .expect("connect in-memory sqlite");
         let db = LocalDb::from_pool(pool);
         db.migrate().await.expect("run migrations");
+        let now = Utc::now().to_rfc3339();
+        for workspace_id in ["ws-1", "ws-2"] {
+            sqlx::query(
+                r#"
+                INSERT INTO workspaces (
+                  id, name, is_default, environment_type, mcp_policy,
+                  created_at, updated_at, revision, sync_status
+                )
+                VALUES (?1, ?1, 0, 'dev', 'auto', ?2, ?2, 1, 'local')
+                "#,
+            )
+            .bind(workspace_id)
+            .bind(&now)
+            .execute(db.pool())
+            .await
+            .expect("insert workspace");
+        }
         ActivityLogService::new(db)
     }
 

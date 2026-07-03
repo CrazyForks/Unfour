@@ -154,6 +154,7 @@ impl DatabaseService {
         validate_workspace_id(&workspace_id)?;
         validate_connection_id(&connection_id)?;
         let now = Utc::now().to_rfc3339();
+        let mut tx = self.db.pool().begin().await?;
 
         let result = sqlx::query(
             r#"
@@ -162,16 +163,31 @@ impl DatabaseService {
             WHERE id = ?2 AND workspace_id = ?3 AND deleted_at IS NULL
             "#,
         )
-        .bind(now)
-        .bind(connection_id)
+        .bind(&now)
+        .bind(&connection_id)
         .bind(&workspace_id)
-        .execute(self.db.pool())
+        .execute(&mut *tx)
         .await?;
 
         if result.rows_affected() == 0 {
             return Err(AppError::NotFound("database connection".to_string()));
         }
 
+        sqlx::query(
+            r#"
+            UPDATE saved_sql
+            SET connection_id = NULL, updated_at = ?1,
+                revision = revision + 1, sync_status = 'pending'
+            WHERE workspace_id = ?2 AND connection_id = ?3 AND deleted_at IS NULL
+            "#,
+        )
+        .bind(&now)
+        .bind(&workspace_id)
+        .bind(&connection_id)
+        .execute(&mut *tx)
+        .await?;
+
+        tx.commit().await?;
         self.list_connections(workspace_id).await
     }
 
@@ -325,8 +341,9 @@ impl DatabaseService {
                 // it is a system schema (the user opened it explicitly). The
                 // unscoped "load everything" path still skips the system schemas
                 // so selecting a connection does not eagerly pull them all in.
-                let mut sql =
-                    String::from("SELECT table_schema, table_name, table_type FROM information_schema.tables");
+                let mut sql = String::from(
+                    "SELECT table_schema, table_name, table_type FROM information_schema.tables",
+                );
                 if catalog.is_some() {
                     sql.push_str(" WHERE table_schema = ?");
                 } else {
@@ -339,10 +356,7 @@ impl DatabaseService {
                 if let Some(cat) = catalog.as_deref() {
                     query = query.bind(cat);
                 }
-                let table_rows = query
-                    .fetch_all(&pool)
-                    .await
-                    .map_err(sanitize_mysql_error)?;
+                let table_rows = query.fetch_all(&pool).await.map_err(sanitize_mysql_error)?;
 
                 let mut tables = Vec::with_capacity(table_rows.len());
                 for row in table_rows {
@@ -470,161 +484,161 @@ impl DatabaseService {
 
         let timeout = resolve_timeout(input.timeout_ms);
         let run = async {
-        match connection.driver.as_str() {
-            "sqlite" => {
-                let pool = sqlite_pool(&connection).await?;
-                let limit = input.limit.unwrap_or(100).clamp(1, 1_000);
-                let started = Instant::now();
+            match connection.driver.as_str() {
+                "sqlite" => {
+                    let pool = sqlite_pool(&connection).await?;
+                    let limit = input.limit.unwrap_or(100).clamp(1, 1_000);
+                    let started = Instant::now();
 
-                if returns_rows(sql) {
-                    let query_sql = sql_with_limit(sql, limit);
-                    let rows = sqlx::query(&query_sql).fetch_all(&pool).await?;
-                    let columns = rows.first().map(sqlite_result_columns).unwrap_or_default();
-                    let values = rows
-                        .iter()
-                        .take(limit as usize)
-                        .map(sqlite_row_values)
-                        .collect::<AppResult<Vec<_>>>()?;
+                    if returns_rows(sql) {
+                        let query_sql = sql_with_limit(sql, limit);
+                        let rows = sqlx::query(&query_sql).fetch_all(&pool).await?;
+                        let columns = rows.first().map(sqlite_result_columns).unwrap_or_default();
+                        let values = rows
+                            .iter()
+                            .take(limit as usize)
+                            .map(sqlite_row_values)
+                            .collect::<AppResult<Vec<_>>>()?;
 
-                    return Ok(DatabaseQueryResult {
-                        columns,
-                        rows: values,
-                        affected_rows: 0,
+                        return Ok(DatabaseQueryResult {
+                            columns,
+                            rows: values,
+                            affected_rows: 0,
+                            duration_ms: started.elapsed().as_millis(),
+                            safety,
+                        });
+                    }
+
+                    let result = sqlx::query(sql).execute(&pool).await?;
+                    Ok(DatabaseQueryResult {
+                        columns: Vec::new(),
+                        rows: Vec::new(),
+                        affected_rows: result.rows_affected(),
                         duration_ms: started.elapsed().as_millis(),
-                        safety,
-                    });
+                        safety: DatabaseQuerySafety {
+                            confirmed: input.confirm_mutation == Some(true),
+                            ..safety
+                        },
+                    })
                 }
+                "postgres" => {
+                    let effective =
+                        Self::effective_connection(&connection, input.catalog.as_deref());
+                    let pool = self.postgres_pool(&effective).await?;
+                    let limit = input.limit.unwrap_or(100).clamp(1, 1_000);
+                    let started = Instant::now();
 
-                let result = sqlx::query(sql).execute(&pool).await?;
-                Ok(DatabaseQueryResult {
-                    columns: Vec::new(),
-                    rows: Vec::new(),
-                    affected_rows: result.rows_affected(),
-                    duration_ms: started.elapsed().as_millis(),
-                    safety: DatabaseQuerySafety {
-                        confirmed: input.confirm_mutation == Some(true),
-                        ..safety
-                    },
-                })
-            }
-            "postgres" => {
-                let effective =
-                    Self::effective_connection(&connection, input.catalog.as_deref());
-                let pool = self.postgres_pool(&effective).await?;
-                let limit = input.limit.unwrap_or(100).clamp(1, 1_000);
-                let started = Instant::now();
+                    // Apply the query context on a dedicated connection so the
+                    // search_path change and the statement share the same session.
+                    let mut conn = pool.acquire().await.map_err(sanitize_pg_error)?;
+                    if let Some(schema) = clean_identifier(input.schema.as_deref())? {
+                        let stmt = format!("SET search_path TO {}", quote_identifier(schema));
+                        sqlx::query(&stmt)
+                            .execute(conn.as_mut())
+                            .await
+                            .map_err(sanitize_pg_error)?;
+                    }
 
-                // Apply the query context on a dedicated connection so the
-                // search_path change and the statement share the same session.
-                let mut conn = pool.acquire().await.map_err(sanitize_pg_error)?;
-                if let Some(schema) = clean_identifier(input.schema.as_deref())? {
-                    let stmt = format!("SET search_path TO {}", quote_identifier(schema));
-                    sqlx::query(&stmt)
+                    if returns_rows(sql) {
+                        let query_sql = sql_with_limit(sql, limit);
+                        let rows = sqlx::query(&query_sql)
+                            .fetch_all(conn.as_mut())
+                            .await
+                            .map_err(sanitize_pg_error)?;
+                        let columns = rows
+                            .first()
+                            .map(postgres_result_columns)
+                            .unwrap_or_default();
+                        let values = rows
+                            .iter()
+                            .take(limit as usize)
+                            .map(postgres_row_values)
+                            .collect::<AppResult<Vec<_>>>()?;
+
+                        return Ok(DatabaseQueryResult {
+                            columns,
+                            rows: values,
+                            affected_rows: 0,
+                            duration_ms: started.elapsed().as_millis(),
+                            safety,
+                        });
+                    }
+
+                    let result = sqlx::query(sql)
                         .execute(conn.as_mut())
                         .await
                         .map_err(sanitize_pg_error)?;
-                }
-
-                if returns_rows(sql) {
-                    let query_sql = sql_with_limit(sql, limit);
-                    let rows = sqlx::query(&query_sql)
-                        .fetch_all(conn.as_mut())
-                        .await
-                        .map_err(sanitize_pg_error)?;
-                    let columns = rows
-                        .first()
-                        .map(postgres_result_columns)
-                        .unwrap_or_default();
-                    let values = rows
-                        .iter()
-                        .take(limit as usize)
-                        .map(postgres_row_values)
-                        .collect::<AppResult<Vec<_>>>()?;
-
-                    return Ok(DatabaseQueryResult {
-                        columns,
-                        rows: values,
-                        affected_rows: 0,
+                    Ok(DatabaseQueryResult {
+                        columns: Vec::new(),
+                        rows: Vec::new(),
+                        affected_rows: result.rows_affected(),
                         duration_ms: started.elapsed().as_millis(),
-                        safety,
-                    });
+                        safety: DatabaseQuerySafety {
+                            confirmed: input.confirm_mutation == Some(true),
+                            ..safety
+                        },
+                    })
                 }
+                "mysql" => {
+                    let effective =
+                        Self::effective_connection(&connection, input.catalog.as_deref());
+                    let pool = self.mysql_pool(&effective).await?;
+                    let limit = input.limit.unwrap_or(100).clamp(1, 1_000);
+                    let started = Instant::now();
 
-                let result = sqlx::query(sql)
-                    .execute(conn.as_mut())
-                    .await
-                    .map_err(sanitize_pg_error)?;
-                Ok(DatabaseQueryResult {
-                    columns: Vec::new(),
-                    rows: Vec::new(),
-                    affected_rows: result.rows_affected(),
-                    duration_ms: started.elapsed().as_millis(),
-                    safety: DatabaseQuerySafety {
-                        confirmed: input.confirm_mutation == Some(true),
-                        ..safety
-                    },
-                })
-            }
-            "mysql" => {
-                let effective =
-                    Self::effective_connection(&connection, input.catalog.as_deref());
-                let pool = self.mysql_pool(&effective).await?;
-                let limit = input.limit.unwrap_or(100).clamp(1, 1_000);
-                let started = Instant::now();
+                    // Apply the query context (active database) on a dedicated
+                    // connection so the USE statement and the query share a session.
+                    let mut conn = pool.acquire().await.map_err(sanitize_mysql_error)?;
+                    if let Some(catalog) = clean_identifier(input.catalog.as_deref())? {
+                        let stmt = format!("USE {}", quote_mysql_identifier(catalog));
+                        sqlx::query(&stmt)
+                            .execute(conn.as_mut())
+                            .await
+                            .map_err(sanitize_mysql_error)?;
+                    }
 
-                // Apply the query context (active database) on a dedicated
-                // connection so the USE statement and the query share a session.
-                let mut conn = pool.acquire().await.map_err(sanitize_mysql_error)?;
-                if let Some(catalog) = clean_identifier(input.catalog.as_deref())? {
-                    let stmt = format!("USE {}", quote_mysql_identifier(catalog));
-                    sqlx::query(&stmt)
+                    if returns_rows(sql) {
+                        let query_sql = sql_with_limit(sql, limit);
+                        let rows = sqlx::query(&query_sql)
+                            .fetch_all(conn.as_mut())
+                            .await
+                            .map_err(sanitize_mysql_error)?;
+                        let columns = rows.first().map(mysql_result_columns).unwrap_or_default();
+                        let values = rows
+                            .iter()
+                            .take(limit as usize)
+                            .map(mysql_row_values)
+                            .collect::<AppResult<Vec<_>>>()?;
+
+                        return Ok(DatabaseQueryResult {
+                            columns,
+                            rows: values,
+                            affected_rows: 0,
+                            duration_ms: started.elapsed().as_millis(),
+                            safety,
+                        });
+                    }
+
+                    let result = sqlx::query(sql)
                         .execute(conn.as_mut())
                         .await
                         .map_err(sanitize_mysql_error)?;
-                }
-
-                if returns_rows(sql) {
-                    let query_sql = sql_with_limit(sql, limit);
-                    let rows = sqlx::query(&query_sql)
-                        .fetch_all(conn.as_mut())
-                        .await
-                        .map_err(sanitize_mysql_error)?;
-                    let columns = rows.first().map(mysql_result_columns).unwrap_or_default();
-                    let values = rows
-                        .iter()
-                        .take(limit as usize)
-                        .map(mysql_row_values)
-                        .collect::<AppResult<Vec<_>>>()?;
-
-                    return Ok(DatabaseQueryResult {
-                        columns,
-                        rows: values,
-                        affected_rows: 0,
+                    Ok(DatabaseQueryResult {
+                        columns: Vec::new(),
+                        rows: Vec::new(),
+                        affected_rows: result.rows_affected(),
                         duration_ms: started.elapsed().as_millis(),
-                        safety,
-                    });
+                        safety: DatabaseQuerySafety {
+                            confirmed: input.confirm_mutation == Some(true),
+                            ..safety
+                        },
+                    })
                 }
-
-                let result = sqlx::query(sql)
-                    .execute(conn.as_mut())
-                    .await
-                    .map_err(sanitize_mysql_error)?;
-                Ok(DatabaseQueryResult {
-                    columns: Vec::new(),
-                    rows: Vec::new(),
-                    affected_rows: result.rows_affected(),
-                    duration_ms: started.elapsed().as_millis(),
-                    safety: DatabaseQuerySafety {
-                        confirmed: input.confirm_mutation == Some(true),
-                        ..safety
-                    },
-                })
+                driver => Err(AppError::Unsupported(format!(
+                    "{} query execution is not yet supported",
+                    display_driver(driver)
+                ))),
             }
-            driver => Err(AppError::Unsupported(format!(
-                "{} query execution is not yet supported",
-                display_driver(driver)
-            ))),
-        }
         };
         match tokio::time::timeout(timeout, run).await {
             Ok(result) => result,
@@ -776,9 +790,15 @@ impl DatabaseService {
         }
         let sql = input.sql.trim().to_string();
         if sql.is_empty() {
-            return Err(AppError::Validation("saved SQL cannot be empty".to_string()));
+            return Err(AppError::Validation(
+                "saved SQL cannot be empty".to_string(),
+            ));
         }
         let connection_id = empty_to_none(input.connection_id);
+        if let Some(connection_id) = &connection_id {
+            self.get_connection(&input.workspace_id, connection_id)
+                .await?;
+        }
         let now = Utc::now().to_rfc3339();
 
         if let Some(id) = input
@@ -906,250 +926,252 @@ impl DatabaseService {
             .await?;
 
         let run = async {
-        match connection.driver.as_str() {
-            "sqlite" => {
-                let pool = sqlite_pool(&connection).await?;
-                ensure_sqlite_table_exists(&pool, table_name).await?;
+            match connection.driver.as_str() {
+                "sqlite" => {
+                    let pool = sqlite_pool(&connection).await?;
+                    ensure_sqlite_table_exists(&pool, table_name).await?;
 
-                let limit = input.limit.unwrap_or(100).clamp(1, 1_000);
-                let offset = input.offset.unwrap_or(0);
+                    let limit = input.limit.unwrap_or(100).clamp(1, 1_000);
+                    let offset = input.offset.unwrap_or(0);
 
-                let column_names = if needs_columns {
-                    sqlite_columns(&pool, table_name)
-                        .await?
-                        .into_iter()
-                        .map(|column| column.name)
-                        .collect::<Vec<_>>()
-                } else {
-                    Vec::new()
-                };
-                let order_sql =
-                    order_by_clause(order_by, descending, &column_names, quote_identifier)?;
-                let active_filter = filter.as_ref().filter(|_| !column_names.is_empty());
-                let where_sql = active_filter
-                    .map(|_| format!(" WHERE {}", sqlite_filter_where(&column_names)))
-                    .unwrap_or_default();
-                let quoted = quote_identifier(table_name);
+                    let column_names = if needs_columns {
+                        sqlite_columns(&pool, table_name)
+                            .await?
+                            .into_iter()
+                            .map(|column| column.name)
+                            .collect::<Vec<_>>()
+                    } else {
+                        Vec::new()
+                    };
+                    let order_sql =
+                        order_by_clause(order_by, descending, &column_names, quote_identifier)?;
+                    let active_filter = filter.as_ref().filter(|_| !column_names.is_empty());
+                    let where_sql = active_filter
+                        .map(|_| format!(" WHERE {}", sqlite_filter_where(&column_names)))
+                        .unwrap_or_default();
+                    let quoted = quote_identifier(table_name);
 
-                let total_rows = if let Some(needle) = active_filter {
-                    let count_sql =
-                        format!("SELECT COUNT(*) AS total_rows FROM {}{}", quoted, where_sql);
-                    let mut count = sqlx::query(&count_sql);
-                    for _ in &column_names {
-                        count = count.bind(format!("%{}%", needle));
+                    let total_rows = if let Some(needle) = active_filter {
+                        let count_sql =
+                            format!("SELECT COUNT(*) AS total_rows FROM {}{}", quoted, where_sql);
+                        let mut count = sqlx::query(&count_sql);
+                        for _ in &column_names {
+                            count = count.bind(format!("%{}%", needle));
+                        }
+                        let row = count.fetch_one(&pool).await?;
+                        row.try_get::<i64, _>("total_rows")?.max(0) as u64
+                    } else {
+                        sqlite_table_row_count(&pool, table_name).await?
+                    };
+
+                    let sql = format!(
+                        "SELECT * FROM {}{}{} LIMIT {} OFFSET {}",
+                        quoted, where_sql, order_sql, limit, offset
+                    );
+                    let started = Instant::now();
+                    let mut query = sqlx::query(&sql);
+                    if let Some(needle) = active_filter {
+                        for _ in &column_names {
+                            query = query.bind(format!("%{}%", needle));
+                        }
                     }
-                    let row = count.fetch_one(&pool).await?;
-                    row.try_get::<i64, _>("total_rows")?.max(0) as u64
-                } else {
-                    sqlite_table_row_count(&pool, table_name).await?
-                };
+                    let rows = query.fetch_all(&pool).await?;
+                    let columns = if let Some(row) = rows.first() {
+                        sqlite_result_columns(row)
+                    } else {
+                        sqlite_table_result_columns(&pool, table_name).await?
+                    };
+                    let values = rows
+                        .iter()
+                        .map(sqlite_row_values)
+                        .collect::<AppResult<Vec<_>>>()?;
 
-                let sql = format!(
-                    "SELECT * FROM {}{}{} LIMIT {} OFFSET {}",
-                    quoted, where_sql, order_sql, limit, offset
-                );
-                let started = Instant::now();
-                let mut query = sqlx::query(&sql);
-                if let Some(needle) = active_filter {
-                    for _ in &column_names {
+                    Ok(browse_result(
+                        table_name, sql, limit, offset, total_rows, columns, values, started,
+                    ))
+                }
+                "postgres" => {
+                    let effective =
+                        Self::effective_connection(&connection, input.catalog.as_deref());
+                    let pool = self.postgres_pool(&effective).await?;
+                    let schema = input
+                        .schema
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty())
+                        .unwrap_or("public");
+                    ensure_postgres_table_exists(&pool, schema, table_name)
+                        .await
+                        .map_err(sanitize_pg_app_error)?;
+
+                    let limit = input.limit.unwrap_or(100).clamp(1, 1_000);
+                    let offset = input.offset.unwrap_or(0);
+
+                    let column_names = if needs_columns {
+                        postgres_columns(&pool, schema, table_name)
+                            .await
+                            .map_err(sanitize_pg_app_error)?
+                            .into_iter()
+                            .map(|column| column.name)
+                            .collect::<Vec<_>>()
+                    } else {
+                        Vec::new()
+                    };
+                    let order_sql =
+                        order_by_clause(order_by, descending, &column_names, quote_identifier)?;
+                    let active_filter = filter.as_ref().filter(|_| !column_names.is_empty());
+                    let where_sql = active_filter
+                        .map(|_| format!(" WHERE {}", postgres_filter_where(&column_names)))
+                        .unwrap_or_default();
+
+                    let total_rows = if let Some(needle) = active_filter {
+                        // The same $1 bind is reused by every column predicate.
+                        let count_sql = format!(
+                            "SELECT COUNT(*) AS total_rows FROM {}{}",
+                            quote_qualified_identifier(schema, table_name),
+                            where_sql
+                        );
+                        let row = sqlx::query(&count_sql)
+                            .bind(format!("%{}%", needle))
+                            .fetch_one(&pool)
+                            .await
+                            .map_err(sanitize_pg_error)?;
+                        row.try_get::<i64, _>("total_rows")
+                            .map_err(sanitize_pg_error)?
+                            .max(0) as u64
+                    } else {
+                        postgres_table_row_count(&pool, schema, table_name)
+                            .await
+                            .map_err(sanitize_pg_app_error)?
+                    };
+
+                    let sql = postgres_browse_sql(
+                        schema, table_name, &where_sql, &order_sql, limit, offset,
+                    );
+                    let started = Instant::now();
+                    let mut query = sqlx::query(&sql);
+                    if let Some(needle) = active_filter {
                         query = query.bind(format!("%{}%", needle));
                     }
+                    let rows = query.fetch_all(&pool).await.map_err(sanitize_pg_error)?;
+                    let columns = if let Some(row) = rows.first() {
+                        postgres_result_columns(row)
+                    } else {
+                        postgres_table_result_columns(&pool, schema, table_name)
+                            .await
+                            .map_err(sanitize_pg_app_error)?
+                    };
+                    let values = rows
+                        .iter()
+                        .map(postgres_row_values)
+                        .collect::<AppResult<Vec<_>>>()?;
+
+                    Ok(browse_result(
+                        table_name, sql, limit, offset, total_rows, columns, values, started,
+                    ))
                 }
-                let rows = query.fetch_all(&pool).await?;
-                let columns = if let Some(row) = rows.first() {
-                    sqlite_result_columns(row)
-                } else {
-                    sqlite_table_result_columns(&pool, table_name).await?
-                };
-                let values = rows
-                    .iter()
-                    .map(sqlite_row_values)
-                    .collect::<AppResult<Vec<_>>>()?;
-
-                Ok(browse_result(
-                    table_name, sql, limit, offset, total_rows, columns, values, started,
-                ))
-            }
-            "postgres" => {
-                let effective =
-                    Self::effective_connection(&connection, input.catalog.as_deref());
-                let pool = self.postgres_pool(&effective).await?;
-                let schema = input
-                    .schema
-                    .as_deref()
-                    .map(str::trim)
-                    .filter(|value| !value.is_empty())
-                    .unwrap_or("public");
-                ensure_postgres_table_exists(&pool, schema, table_name)
-                    .await
-                    .map_err(sanitize_pg_app_error)?;
-
-                let limit = input.limit.unwrap_or(100).clamp(1, 1_000);
-                let offset = input.offset.unwrap_or(0);
-
-                let column_names = if needs_columns {
-                    postgres_columns(&pool, schema, table_name)
+                "mysql" => {
+                    let effective =
+                        Self::effective_connection(&connection, input.catalog.as_deref());
+                    let pool = self.mysql_pool(&effective).await?;
+                    // MySQL addresses tables as `database`.`table`; the catalog is
+                    // that database. Prefer the explicit catalog, then the legacy
+                    // schema field, then the connection's default database.
+                    let schema = input
+                        .catalog
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty())
+                        .or_else(|| {
+                            input
+                                .schema
+                                .as_deref()
+                                .map(str::trim)
+                                .filter(|value| !value.is_empty())
+                        })
+                        .or(connection.database.as_deref())
+                        .ok_or_else(|| {
+                            AppError::Validation("MySQL database name is required".to_string())
+                        })?;
+                    ensure_mysql_table_exists(&pool, schema, table_name)
                         .await
-                        .map_err(sanitize_pg_app_error)?
-                        .into_iter()
-                        .map(|column| column.name)
-                        .collect::<Vec<_>>()
-                } else {
-                    Vec::new()
-                };
-                let order_sql =
-                    order_by_clause(order_by, descending, &column_names, quote_identifier)?;
-                let active_filter = filter.as_ref().filter(|_| !column_names.is_empty());
-                let where_sql = active_filter
-                    .map(|_| format!(" WHERE {}", postgres_filter_where(&column_names)))
-                    .unwrap_or_default();
+                        .map_err(sanitize_mysql_app_error)?;
 
-                let total_rows = if let Some(needle) = active_filter {
-                    // The same $1 bind is reused by every column predicate.
-                    let count_sql = format!(
-                        "SELECT COUNT(*) AS total_rows FROM {}{}",
-                        quote_qualified_identifier(schema, table_name),
-                        where_sql
-                    );
-                    let row = sqlx::query(&count_sql)
-                        .bind(format!("%{}%", needle))
-                        .fetch_one(&pool)
-                        .await
-                        .map_err(sanitize_pg_error)?;
-                    row.try_get::<i64, _>("total_rows")
-                        .map_err(sanitize_pg_error)?
-                        .max(0) as u64
-                } else {
-                    postgres_table_row_count(&pool, schema, table_name)
-                        .await
-                        .map_err(sanitize_pg_app_error)?
-                };
+                    let limit = input.limit.unwrap_or(100).clamp(1, 1_000);
+                    let offset = input.offset.unwrap_or(0);
 
-                let sql =
-                    postgres_browse_sql(schema, table_name, &where_sql, &order_sql, limit, offset);
-                let started = Instant::now();
-                let mut query = sqlx::query(&sql);
-                if let Some(needle) = active_filter {
-                    query = query.bind(format!("%{}%", needle));
-                }
-                let rows = query.fetch_all(&pool).await.map_err(sanitize_pg_error)?;
-                let columns = if let Some(row) = rows.first() {
-                    postgres_result_columns(row)
-                } else {
-                    postgres_table_result_columns(&pool, schema, table_name)
-                        .await
-                        .map_err(sanitize_pg_app_error)?
-                };
-                let values = rows
-                    .iter()
-                    .map(postgres_row_values)
-                    .collect::<AppResult<Vec<_>>>()?;
+                    let column_names = if needs_columns {
+                        mysql_columns(&pool, schema, table_name)
+                            .await
+                            .map_err(sanitize_mysql_app_error)?
+                            .into_iter()
+                            .map(|column| column.name)
+                            .collect::<Vec<_>>()
+                    } else {
+                        Vec::new()
+                    };
+                    let order_sql = order_by_clause(
+                        order_by,
+                        descending,
+                        &column_names,
+                        quote_mysql_identifier,
+                    )?;
+                    let active_filter = filter.as_ref().filter(|_| !column_names.is_empty());
+                    let where_sql = active_filter
+                        .map(|_| format!(" WHERE {}", mysql_filter_where(&column_names)))
+                        .unwrap_or_default();
 
-                Ok(browse_result(
-                    table_name, sql, limit, offset, total_rows, columns, values, started,
-                ))
-            }
-            "mysql" => {
-                let effective =
-                    Self::effective_connection(&connection, input.catalog.as_deref());
-                let pool = self.mysql_pool(&effective).await?;
-                // MySQL addresses tables as `database`.`table`; the catalog is
-                // that database. Prefer the explicit catalog, then the legacy
-                // schema field, then the connection's default database.
-                let schema = input
-                    .catalog
-                    .as_deref()
-                    .map(str::trim)
-                    .filter(|value| !value.is_empty())
-                    .or_else(|| {
-                        input
-                            .schema
-                            .as_deref()
-                            .map(str::trim)
-                            .filter(|value| !value.is_empty())
-                    })
-                    .or(connection.database.as_deref())
-                    .ok_or_else(|| {
-                        AppError::Validation("MySQL database name is required".to_string())
-                    })?;
-                ensure_mysql_table_exists(&pool, schema, table_name)
-                    .await
-                    .map_err(sanitize_mysql_app_error)?;
+                    let total_rows = if let Some(needle) = active_filter {
+                        let count_sql = format!(
+                            "SELECT COUNT(*) AS total_rows FROM {}{}",
+                            quote_mysql_qualified_identifier(schema, table_name),
+                            where_sql
+                        );
+                        let mut count = sqlx::query(&count_sql);
+                        for _ in &column_names {
+                            count = count.bind(format!("%{}%", needle));
+                        }
+                        let row = count.fetch_one(&pool).await.map_err(sanitize_mysql_error)?;
+                        row.try_get::<i64, _>("total_rows")
+                            .map_err(sanitize_mysql_error)?
+                            .max(0) as u64
+                    } else {
+                        mysql_table_row_count(&pool, schema, table_name)
+                            .await
+                            .map_err(sanitize_mysql_app_error)?
+                    };
 
-                let limit = input.limit.unwrap_or(100).clamp(1, 1_000);
-                let offset = input.offset.unwrap_or(0);
-
-                let column_names = if needs_columns {
-                    mysql_columns(&pool, schema, table_name)
-                        .await
-                        .map_err(sanitize_mysql_app_error)?
-                        .into_iter()
-                        .map(|column| column.name)
-                        .collect::<Vec<_>>()
-                } else {
-                    Vec::new()
-                };
-                let order_sql =
-                    order_by_clause(order_by, descending, &column_names, quote_mysql_identifier)?;
-                let active_filter = filter.as_ref().filter(|_| !column_names.is_empty());
-                let where_sql = active_filter
-                    .map(|_| format!(" WHERE {}", mysql_filter_where(&column_names)))
-                    .unwrap_or_default();
-
-                let total_rows = if let Some(needle) = active_filter {
-                    let count_sql = format!(
-                        "SELECT COUNT(*) AS total_rows FROM {}{}",
-                        quote_mysql_qualified_identifier(schema, table_name),
-                        where_sql
-                    );
-                    let mut count = sqlx::query(&count_sql);
-                    for _ in &column_names {
-                        count = count.bind(format!("%{}%", needle));
+                    let sql =
+                        mysql_browse_sql(schema, table_name, &where_sql, &order_sql, limit, offset);
+                    let started = Instant::now();
+                    let mut query = sqlx::query(&sql);
+                    if let Some(needle) = active_filter {
+                        for _ in &column_names {
+                            query = query.bind(format!("%{}%", needle));
+                        }
                     }
-                    let row = count.fetch_one(&pool).await.map_err(sanitize_mysql_error)?;
-                    row.try_get::<i64, _>("total_rows")
-                        .map_err(sanitize_mysql_error)?
-                        .max(0) as u64
-                } else {
-                    mysql_table_row_count(&pool, schema, table_name)
-                        .await
-                        .map_err(sanitize_mysql_app_error)?
-                };
+                    let rows = query.fetch_all(&pool).await.map_err(sanitize_mysql_error)?;
+                    let columns = if let Some(row) = rows.first() {
+                        mysql_result_columns(row)
+                    } else {
+                        mysql_table_result_columns(&pool, schema, table_name)
+                            .await
+                            .map_err(sanitize_mysql_app_error)?
+                    };
+                    let values = rows
+                        .iter()
+                        .map(mysql_row_values)
+                        .collect::<AppResult<Vec<_>>>()?;
 
-                let sql =
-                    mysql_browse_sql(schema, table_name, &where_sql, &order_sql, limit, offset);
-                let started = Instant::now();
-                let mut query = sqlx::query(&sql);
-                if let Some(needle) = active_filter {
-                    for _ in &column_names {
-                        query = query.bind(format!("%{}%", needle));
-                    }
+                    Ok(browse_result(
+                        table_name, sql, limit, offset, total_rows, columns, values, started,
+                    ))
                 }
-                let rows = query
-                    .fetch_all(&pool)
-                    .await
-                    .map_err(sanitize_mysql_error)?;
-                let columns = if let Some(row) = rows.first() {
-                    mysql_result_columns(row)
-                } else {
-                    mysql_table_result_columns(&pool, schema, table_name)
-                        .await
-                        .map_err(sanitize_mysql_app_error)?
-                };
-                let values = rows
-                    .iter()
-                    .map(mysql_row_values)
-                    .collect::<AppResult<Vec<_>>>()?;
-
-                Ok(browse_result(
-                    table_name, sql, limit, offset, total_rows, columns, values, started,
-                ))
+                driver => Err(AppError::Unsupported(format!(
+                    "{} table browsing is not yet supported",
+                    display_driver(driver)
+                ))),
             }
-            driver => Err(AppError::Unsupported(format!(
-                "{} table browsing is not yet supported",
-                display_driver(driver)
-            ))),
-        }
         };
         match tokio::time::timeout(timeout, run).await {
             Ok(result) => result,
@@ -1201,8 +1223,7 @@ impl DatabaseService {
                 })
             }
             "postgres" => {
-                let effective =
-                    Self::effective_connection(&connection, input.catalog.as_deref());
+                let effective = Self::effective_connection(&connection, input.catalog.as_deref());
                 let pool = self.postgres_pool(&effective).await?;
                 let schema = input
                     .schema
@@ -1240,8 +1261,7 @@ impl DatabaseService {
                 })
             }
             "mysql" => {
-                let effective =
-                    Self::effective_connection(&connection, input.catalog.as_deref());
+                let effective = Self::effective_connection(&connection, input.catalog.as_deref());
                 let pool = self.mysql_pool(&effective).await?;
                 // MySQL addresses tables as `database`.`table`; the catalog is
                 // that database. Prefer the explicit catalog, then the legacy
@@ -1347,8 +1367,7 @@ impl DatabaseService {
                 })
             }
             "postgres" => {
-                let effective =
-                    Self::effective_connection(&connection, input.catalog.as_deref());
+                let effective = Self::effective_connection(&connection, input.catalog.as_deref());
                 let pool = self.postgres_pool(&effective).await?;
                 let schema = input
                     .schema
@@ -1377,8 +1396,7 @@ impl DatabaseService {
                 })
             }
             "mysql" => {
-                let effective =
-                    Self::effective_connection(&connection, input.catalog.as_deref());
+                let effective = Self::effective_connection(&connection, input.catalog.as_deref());
                 let pool = self.mysql_pool(&effective).await?;
                 // MySQL addresses tables as `database`.`table`; the catalog is
                 // that database. Prefer the explicit catalog, then the legacy
@@ -1760,9 +1778,8 @@ async fn ensure_postgres_table_exists(
     .fetch_optional(pool)
     .await?;
 
-    row.map(|_| ()).ok_or_else(|| {
-        AppError::NotFound(format!("{schema}.{table_name}"))
-    })
+    row.map(|_| ())
+        .ok_or_else(|| AppError::NotFound(format!("{schema}.{table_name}")))
 }
 
 /// Resolve the object kind ("table" or "view") from information_schema so the
@@ -1997,10 +2014,7 @@ fn mysql_text(row: &sqlx::mysql::MySqlRow, index: usize) -> Result<String, AppEr
 }
 
 /// Nullable counterpart to [`mysql_text`] for columns such as `column_default`.
-fn mysql_text_opt(
-    row: &sqlx::mysql::MySqlRow,
-    index: usize,
-) -> Result<Option<String>, AppError> {
+fn mysql_text_opt(row: &sqlx::mysql::MySqlRow, index: usize) -> Result<Option<String>, AppError> {
     match row.try_get::<Option<String>, _>(index) {
         Ok(value) => Ok(value),
         Err(_) => {
@@ -2173,9 +2187,8 @@ async fn ensure_mysql_table_exists(
     .fetch_optional(pool)
     .await?;
 
-    row.map(|_| ()).ok_or_else(|| {
-        AppError::NotFound(format!("{schema}.{table_name}"))
-    })
+    row.map(|_| ())
+        .ok_or_else(|| AppError::NotFound(format!("{schema}.{table_name}")))
 }
 
 /// Resolve the object kind ("table" or "view") from information_schema so the
@@ -2483,9 +2496,8 @@ async fn ensure_sqlite_table_exists(pool: &sqlx::SqlitePool, table_name: &str) -
     .fetch_optional(pool)
     .await?;
 
-    row.map(|_| ()).ok_or_else(|| {
-        AppError::NotFound(table_name.to_string())
-    })
+    row.map(|_| ())
+        .ok_or_else(|| AppError::NotFound(table_name.to_string()))
 }
 
 async fn sqlite_table_row_count(pool: &sqlx::SqlitePool, table_name: &str) -> AppResult<u64> {

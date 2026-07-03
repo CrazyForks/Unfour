@@ -9,9 +9,10 @@ use unfour_core::models::{
     DatabaseTableStructure, DatabaseTableStructureInput, DatabaseTestResult, DbQueryHistoryEntry,
     DbQueryHistoryRecordInput, KeyValue, SavedSql, SavedSqlInput, SshCloseInput, SshConnectInput,
     SshConnection, SshConnectionInput, SshHostFingerprintInfo, SshHostKeyInput,
-    SshKnownHostsExportResult, SshKnownHostsImportInput, SshKnownHostsImportResult, SshLogExport,
-    SshLogExportInput, SshReconnectCancelInput, SshResizeInput, SshSessionEvent, SshSessionInput,
-    SshSessionSummary, SystemHealth, Workspace, WorkspaceLayout, WorkspaceState,
+    SshKnownHostsExportInput, SshKnownHostsExportResult, SshKnownHostsImportInput,
+    SshKnownHostsImportResult, SshLogExport, SshLogExportInput, SshReconnectCancelInput,
+    SshResizeInput, SshSessionEvent, SshSessionInput, SshSessionSummary, SystemHealth, Workspace,
+    WorkspaceLayout, WorkspaceState,
 };
 use unfour_core::AppResult;
 
@@ -705,9 +706,13 @@ pub async fn ssh_host_key_reset(
 
 #[tauri::command]
 pub async fn ssh_host_key_list(
+    workspace_id: String,
     state: State<'_, AppState>,
 ) -> AppResult<Vec<SshHostFingerprintInfo>> {
-    state.command_bus.list_all_ssh_fingerprints().await
+    state
+        .command_bus
+        .list_all_ssh_fingerprints(workspace_id)
+        .await
 }
 
 #[tauri::command]
@@ -720,7 +725,8 @@ pub async fn ssh_known_hosts_import(
 
 #[tauri::command]
 pub async fn ssh_known_hosts_export(
+    input: SshKnownHostsExportInput,
     state: State<'_, AppState>,
 ) -> AppResult<SshKnownHostsExportResult> {
-    state.command_bus.export_ssh_known_hosts().await
+    state.command_bus.export_ssh_known_hosts(input).await
 }

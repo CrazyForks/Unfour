@@ -9,10 +9,10 @@ use unfour_core::models::{
     DatabaseTableStructure, DatabaseTableStructureInput, DatabaseTestResult, DbQueryHistoryEntry,
     DbQueryHistoryRecordInput, KeyValue, SavedSql, SavedSqlInput, SshCloseInput, SshConnectInput,
     SshConnection, SshConnectionInput, SshDiagnosticInput, SshDiagnosticResult,
-    SshHostFingerprintInfo, SshHostKeyInput, SshKnownHostsExportResult, SshKnownHostsImportInput,
-    SshKnownHostsImportResult, SshLogExport, SshLogExportInput, SshReconnectCancelInput,
-    SshResizeInput, SshSessionEvent, SshSessionInput, SshSessionSummary, SystemHealth, Workspace,
-    WorkspaceLayout, WorkspaceState,
+    SshHostFingerprintInfo, SshHostKeyInput, SshKnownHostsExportInput, SshKnownHostsExportResult,
+    SshKnownHostsImportInput, SshKnownHostsImportResult, SshLogExport, SshLogExportInput,
+    SshReconnectCancelInput, SshResizeInput, SshSessionEvent, SshSessionInput, SshSessionSummary,
+    SystemHealth, Workspace, WorkspaceLayout, WorkspaceState,
 };
 use unfour_core::sync_reserved;
 use unfour_core::AppResult;
@@ -1601,13 +1601,14 @@ impl CommandBus {
     }
 
     pub async fn reset_ssh_host_fingerprint(&self, input: SshHostKeyInput) -> AppResult<bool> {
+        let workspace_id = input.workspace_id.clone();
         let host = input.host.clone();
         let port = input.port;
         let deleted = self.ssh.reset_host_fingerprint(input).await?;
         if deleted {
             self.activity_log
                 .record(
-                    None,
+                    Some(&workspace_id),
                     "ssh.host_key.reset",
                     Some(&format!("{}:{}", host, port)),
                     serde_json::json!({ "host": host, "port": port }),
@@ -1617,18 +1618,22 @@ impl CommandBus {
         Ok(deleted)
     }
 
-    pub async fn list_all_ssh_fingerprints(&self) -> AppResult<Vec<SshHostFingerprintInfo>> {
-        self.ssh.list_all_host_fingerprints().await
+    pub async fn list_all_ssh_fingerprints(
+        &self,
+        workspace_id: String,
+    ) -> AppResult<Vec<SshHostFingerprintInfo>> {
+        self.ssh.list_all_host_fingerprints(workspace_id).await
     }
 
     pub async fn import_ssh_known_hosts(
         &self,
         input: SshKnownHostsImportInput,
     ) -> AppResult<SshKnownHostsImportResult> {
+        let workspace_id = input.workspace_id.clone();
         let result = self.ssh.import_known_hosts(input).await?;
         self.activity_log
             .record(
-                None,
+                Some(&workspace_id),
                 "ssh.known_hosts.import",
                 None,
                 serde_json::json!({
@@ -1641,8 +1646,11 @@ impl CommandBus {
         Ok(result)
     }
 
-    pub async fn export_ssh_known_hosts(&self) -> AppResult<SshKnownHostsExportResult> {
-        self.ssh.export_known_hosts().await
+    pub async fn export_ssh_known_hosts(
+        &self,
+        input: SshKnownHostsExportInput,
+    ) -> AppResult<SshKnownHostsExportResult> {
+        self.ssh.export_known_hosts(input).await
     }
 
     pub fn reserved_status(&self) -> serde_json::Value {
@@ -1706,6 +1714,7 @@ mod tests {
             .expect("create workspace");
         assert_eq!(created.name, "Integration Test WS");
         assert!(!created.id.is_empty());
+        assert!(!created.is_default);
 
         // List should now include the new workspace
         let state = bus.list_workspaces().await.expect("list workspaces");

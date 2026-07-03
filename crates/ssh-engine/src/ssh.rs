@@ -4,9 +4,9 @@ use std::sync::{Arc, Mutex};
 use unfour_core::models::{
     SshCloseInput, SshConnectInput, SshConnection, SshConnectionConfig, SshConnectionInput,
     SshDiagnosticInput, SshDiagnosticResult, SshHostFingerprintInfo, SshHostKeyInput,
-    SshKnownHostsExportResult, SshKnownHostsImportInput, SshKnownHostsImportResult, SshLogExport,
-    SshLogExportInput, SshReconnectCancelInput, SshResizeInput, SshSessionEvent, SshSessionInput,
-    SshSessionSummary, StoredConnection,
+    SshKnownHostsExportInput, SshKnownHostsExportResult, SshKnownHostsImportInput,
+    SshKnownHostsImportResult, SshLogExport, SshLogExportInput, SshReconnectCancelInput,
+    SshResizeInput, SshSessionEvent, SshSessionInput, SshSessionSummary, StoredConnection,
 };
 use unfour_core::redaction::redact_sensitive_lines;
 use unfour_core::{AppError, AppResult};
@@ -105,6 +105,7 @@ impl std::fmt::Debug for NativeSshHandle {
 #[cfg(feature = "ssh-native")]
 struct SshClientHandler {
     host_key_store: HostKeyStore,
+    workspace_id: String,
     host: String,
     port: u16,
 }
@@ -122,7 +123,7 @@ impl russh::client::Handler for SshClientHandler {
             .to_string();
 
         self.host_key_store
-            .verify_or_record(&self.host, self.port, &fingerprint)
+            .verify_or_record(&self.workspace_id, &self.host, self.port, &fingerprint)
             .await
             .map(|()| true)
             .map_err(|e| {
@@ -783,6 +784,7 @@ impl SshService {
         &self,
         input: SshHostKeyInput,
     ) -> AppResult<Option<SshHostFingerprintInfo>> {
+        validate_workspace_id(&input.workspace_id)?;
         let host = input.host.trim().to_string();
         if host.is_empty() {
             return Err(AppError::Validation("host cannot be empty".to_string()));
@@ -793,10 +795,11 @@ impl SshService {
 
         let host_key_store = HostKeyStore::new(self.db.pool().clone());
         match host_key_store
-            .get_fingerprint_info(&host, input.port)
+            .get_fingerprint_info(&input.workspace_id, &host, input.port)
             .await?
         {
             Some((fingerprint, created_at)) => Ok(Some(SshHostFingerprintInfo {
+                workspace_id: input.workspace_id,
                 host,
                 port: input.port,
                 fingerprint,
@@ -809,6 +812,7 @@ impl SshService {
     /// Remove the stored fingerprint for a host:port pair, allowing the next
     /// connection to establish a new trust (TOFU reset).
     pub async fn reset_host_fingerprint(&self, input: SshHostKeyInput) -> AppResult<bool> {
+        validate_workspace_id(&input.workspace_id)?;
         let host = input.host.trim().to_string();
         if host.is_empty() {
             return Err(AppError::Validation("host cannot be empty".to_string()));
@@ -818,16 +822,23 @@ impl SshService {
         }
 
         let host_key_store = HostKeyStore::new(self.db.pool().clone());
-        host_key_store.delete_fingerprint(&host, input.port).await
+        host_key_store
+            .delete_fingerprint(&input.workspace_id, &host, input.port)
+            .await
     }
 
-    /// List all stored host-key fingerprints.
-    pub async fn list_all_host_fingerprints(&self) -> AppResult<Vec<SshHostFingerprintInfo>> {
+    /// List all stored host-key fingerprints in a workspace.
+    pub async fn list_all_host_fingerprints(
+        &self,
+        workspace_id: String,
+    ) -> AppResult<Vec<SshHostFingerprintInfo>> {
+        validate_workspace_id(&workspace_id)?;
         let host_key_store = HostKeyStore::new(self.db.pool().clone());
-        let entries = host_key_store.list_all().await?;
+        let entries = host_key_store.list_all(&workspace_id).await?;
         Ok(entries
             .into_iter()
             .map(|entry| SshHostFingerprintInfo {
+                workspace_id: entry.workspace_id,
                 host: entry.host,
                 port: entry.port.clamp(0, u16::MAX as i64) as u16,
                 fingerprint: entry.fingerprint,
@@ -848,13 +859,21 @@ impl SshService {
             ));
         }
         let host_key_store = HostKeyStore::new(self.db.pool().clone());
-        host_key_store.import_known_hosts(&input.content).await
+        host_key_store
+            .import_known_hosts(&input.workspace_id, &input.content)
+            .await
     }
 
     /// Export stored fingerprints to OpenSSH known_hosts format.
-    pub async fn export_known_hosts(&self) -> AppResult<SshKnownHostsExportResult> {
+    pub async fn export_known_hosts(
+        &self,
+        input: SshKnownHostsExportInput,
+    ) -> AppResult<SshKnownHostsExportResult> {
+        validate_workspace_id(&input.workspace_id)?;
         let host_key_store = HostKeyStore::new(self.db.pool().clone());
-        let (content, entry_count) = host_key_store.export_known_hosts().await?;
+        let (content, entry_count) = host_key_store
+            .export_known_hosts(&input.workspace_id)
+            .await?;
         Ok(SshKnownHostsExportResult {
             content,
             entry_count,
@@ -1152,6 +1171,7 @@ impl SshService {
         let config = Arc::new(native_client_config());
         let handler = SshClientHandler {
             host_key_store: HostKeyStore::new(self.db.pool().clone()),
+            workspace_id: connection.workspace_id.clone(),
             host: connection.host.clone(),
             port: connection.port,
         };
@@ -1217,6 +1237,7 @@ impl SshService {
         let config = Arc::new(native_client_config());
         let handler = SshClientHandler {
             host_key_store: HostKeyStore::new(self.db.pool().clone()),
+            workspace_id: connection.workspace_id.clone(),
             host: connection.host.clone(),
             port: connection.port,
         };
