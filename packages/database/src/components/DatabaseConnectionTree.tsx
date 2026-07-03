@@ -1,5 +1,5 @@
-import { Columns3, Copy, Database, Eye, Pencil, Play, PlusCircle, RefreshCw, Square, Table2, Trash2 } from "lucide-react";
-import type { DatabaseConnection, DatabaseSchema, DatabaseTable } from "@unfour/command-client";
+import { Columns3, Copy, Database, Eye, FileText, Pencil, Play, PlusCircle, RefreshCw, Square, Table2, Trash2 } from "lucide-react";
+import type { DatabaseConnection, DatabaseSchema, DatabaseTable, SavedSql } from "@unfour/command-client";
 import {
   Badge,
   ConnectionStatus,
@@ -20,11 +20,13 @@ export function DatabaseConnectionTree({
   loadingKeys,
   loadErrors,
   onConnect,
-  onDesignTable,
   onDeleteConnection,
+  onDeleteSavedSql,
+  onDesignTable,
   onDisconnect,
   onEditConnection,
   onNewQuery,
+  onOpenSavedSql,
   onPreviewTable,
   onRefreshSchema,
   onSelectConnection,
@@ -32,6 +34,7 @@ export function DatabaseConnectionTree({
   onToggleCatalog,
   onToggleConnection,
   onUseSql,
+  savedSqlByConnection,
   schemaCache,
   selectedConnectionId,
   selectedTableId,
@@ -45,11 +48,13 @@ export function DatabaseConnectionTree({
   /** Error messages keyed the same way, surfaced inline in the tree. */
   loadErrors?: Record<string, string>;
   onConnect?: (connection: DatabaseConnection) => void;
-  onDesignTable?: (connectionId: string, table: DatabaseTable) => void;
   onDeleteConnection?: (connection: DatabaseConnection) => void;
+  onDeleteSavedSql?: (item: SavedSql) => void;
+  onDesignTable?: (connectionId: string, table: DatabaseTable) => void;
   onDisconnect?: (connection: DatabaseConnection) => void;
   onEditConnection?: (connection: DatabaseConnection) => void;
   onNewQuery?: (connection?: DatabaseConnection) => void;
+  onOpenSavedSql?: (item: SavedSql) => void;
   onPreviewTable?: (connectionId: string, table: DatabaseTable) => void;
   onRefreshSchema?: (connection: DatabaseConnection) => void;
   onSelectConnection: (connection: DatabaseConnection) => void;
@@ -59,6 +64,8 @@ export function DatabaseConnectionTree({
   /** Fired when a connection node is expanded, so its databases can load. */
   onToggleConnection?: (connection: DatabaseConnection) => void;
   onUseSql?: (connectionId: string, sql: string, table?: DatabaseTable) => void;
+  /** Saved SQL snippets grouped by their owning connection id. */
+  savedSqlByConnection?: Record<string, SavedSql[]>;
   /** Loaded schemas keyed `${connectionId}::${catalog}` (catalog "" for SQLite). */
   schemaCache?: Record<string, DatabaseSchema>;
   selectedConnectionId: string | null;
@@ -71,9 +78,11 @@ export function DatabaseConnectionTree({
   }
 
   // Maps a table node id to the table and its owning connection; a catalog node
-  // id to {connectionId, catalog}. Used to route selection and lazy loading.
+  // id to {connectionId, catalog}; a saved-sql node id to its SavedSql record.
+  // Used to route selection and lazy loading.
   const tableLookup = new Map<string, { connectionId: string; table: DatabaseTable }>();
   const catalogLookup = new Map<string, { connectionId: string; catalog: string }>();
+  const savedSqlLookup = new Map<string, SavedSql>();
   const defaultExpandedIds = new Set<string>();
   const selectedConnection = connections.find((connection) => connection.id === selectedConnectionId) ?? null;
 
@@ -116,14 +125,18 @@ export function DatabaseConnectionTree({
               defaultExpandedIds,
               loadErrors,
               loadingKeys,
+              onDeleteSavedSql,
               onDesignTable,
+              onOpenSavedSql,
               onPreviewTable,
               onRefreshSchema,
               onUseSql,
+              savedSql: savedSqlByConnection?.[connection.id],
               schemaCache,
               status,
               t,
               tableLookup,
+              savedSqlLookup,
             })
           : undefined,
       icon: <Database size={13} />,
@@ -152,6 +165,12 @@ export function DatabaseConnectionTree({
       defaultExpandedIds={[...defaultExpandedIds]}
       items={items}
       onActivate={(item) => {
+        // Double-click a saved SQL snippet -> open it in a query tab.
+        const savedSql = savedSqlLookup.get(item.id);
+        if (savedSql) {
+          onOpenSavedSql?.(savedSql);
+          return;
+        }
         // Double-click a table -> preview data (Navicat convention)
         const tableEntry = tableLookup.get(item.id);
         if (tableEntry) {
@@ -165,6 +184,10 @@ export function DatabaseConnectionTree({
         }
       }}
       onSelect={(item) => {
+        // Single click a saved SQL snippet -> select only (no auto-open).
+        if (savedSqlLookup.has(item.id)) {
+          return;
+        }
         // Single click a table -> select only (lightweight highlight, no Tab switch)
         const entry = tableLookup.get(item.id);
         if (entry) {
@@ -203,14 +226,18 @@ function buildConnectionChildren({
   defaultExpandedIds,
   loadErrors,
   loadingKeys,
+  onDeleteSavedSql,
   onDesignTable,
+  onOpenSavedSql,
   onPreviewTable,
   onRefreshSchema,
   onUseSql,
+  savedSql,
   schemaCache,
   status,
   t,
   tableLookup,
+  savedSqlLookup,
 }: {
   catalogLookup: Map<string, { connectionId: string; catalog: string }>;
   catalogNames?: string[];
@@ -218,14 +245,18 @@ function buildConnectionChildren({
   defaultExpandedIds: Set<string>;
   loadErrors?: Record<string, string>;
   loadingKeys?: string[];
+  onDeleteSavedSql?: (item: SavedSql) => void;
   onDesignTable?: (connectionId: string, table: DatabaseTable) => void;
+  onOpenSavedSql?: (item: SavedSql) => void;
   onPreviewTable?: (connectionId: string, table: DatabaseTable) => void;
   onRefreshSchema?: (connection: DatabaseConnection) => void;
   onUseSql?: (connectionId: string, sql: string, table?: DatabaseTable) => void;
+  savedSql?: SavedSql[];
   schemaCache?: Record<string, DatabaseSchema>;
   status: DatabaseConnectionStatus;
   t: ReturnType<typeof useI18n>["t"];
   tableLookup: Map<string, { connectionId: string; table: DatabaseTable }>;
+  savedSqlLookup: Map<string, SavedSql>;
 }): TreeViewItem[] | undefined {
   if (status === "disconnected") {
     return [
@@ -250,13 +281,25 @@ function buildConnectionChildren({
   const isLoading = (key: string) => loadingKeys?.includes(key) ?? false;
   const errorOf = (key: string) => loadErrors?.[key];
 
+  // Saved SQL snippets are a connection-level asset (not per-catalog), so the
+  // group sits beside the catalog list / schema contents. Built once and
+  // appended to whichever children array the driver path produces.
+  const savedSqlGroup = buildSavedSqlGroup({
+    connection,
+    onDeleteSavedSql,
+    onOpenSavedSql,
+    savedSql,
+    savedSqlLookup,
+    t,
+  });
+
   // SQLite: a single file with no catalog level. Its objects load under the
   // connection node directly (catalog key "").
   if (connection.driver === "sqlite") {
     const key = `${connection.id}::`;
     const schema = schemaCache?.[key];
     if (schema) {
-      return renderCatalogContents({
+      const contents = renderCatalogContents({
         connection,
         defaultExpandedIds,
         onDesignTable,
@@ -268,6 +311,7 @@ function buildConnectionChildren({
         tableLookup,
         tables: schema.tables,
       });
+      return savedSqlGroup ? [...contents, savedSqlGroup] : contents;
     }
     return [statusChild(key, isLoading(key), errorOf(key), t)];
   }
@@ -289,7 +333,7 @@ function buildConnectionChildren({
 
   const connectedCatalog = connection.database?.trim() || null;
 
-  return catalogNames.map((name) => {
+  const catalogNodes = catalogNames.map((name) => {
     const catalogNodeId = `${connection.id}:catalog:${name}`;
     catalogLookup.set(catalogNodeId, { connectionId: connection.id, catalog: name });
     const key = `${connection.id}::${name}`;
@@ -327,6 +371,101 @@ function buildConnectionChildren({
       title: name,
     };
   });
+
+  return savedSqlGroup ? [...catalogNodes, savedSqlGroup] : catalogNodes;
+}
+
+// Build the "Saved Queries" group node shown beside the catalog/schema tree.
+// Returns null when no callback is wired (the host page does not support
+// opening saved SQL) so the tree simply omits the group instead of showing a
+// dead branch.
+function buildSavedSqlGroup({
+  connection,
+  onDeleteSavedSql,
+  onOpenSavedSql,
+  savedSql,
+  savedSqlLookup,
+  t,
+}: {
+  connection: DatabaseConnection;
+  onDeleteSavedSql?: (item: SavedSql) => void;
+  onOpenSavedSql?: (item: SavedSql) => void;
+  savedSql?: SavedSql[];
+  savedSqlLookup: Map<string, SavedSql>;
+  t: ReturnType<typeof useI18n>["t"];
+}): TreeViewItem | null {
+  if (!onOpenSavedSql && !onDeleteSavedSql) {
+    return null;
+  }
+  const items = savedSql ?? [];
+  const groupId = `${connection.id}:saved-sql`;
+  const children = items.length
+    ? items.map((item) => {
+        const id = `${connection.id}:saved-sql:${item.id}`;
+        savedSqlLookup.set(id, item);
+        return {
+          contextMenu: (
+            <SavedSqlContextMenu
+              item={item}
+              onDelete={onDeleteSavedSql}
+              onOpen={onOpenSavedSql}
+              t={t}
+            />
+          ),
+          icon: <FileText size={13} />,
+          id,
+          label: item.name,
+          title: item.sql,
+        };
+      })
+    : [
+        {
+          disabled: true,
+          id: `${groupId}:empty`,
+          label: t("database.saved.empty"),
+        },
+      ];
+
+  return {
+    children,
+    icon: <FileText size={13} />,
+    id: groupId,
+    label: t("database.tree.savedQueriesGroup"),
+    meta: <Badge tone="neutral">{items.length}</Badge>,
+  };
+}
+
+function SavedSqlContextMenu({
+  item,
+  onDelete,
+  onOpen,
+  t,
+}: {
+  item: SavedSql;
+  onDelete?: (item: SavedSql) => void;
+  onOpen?: (item: SavedSql) => void;
+  t: ReturnType<typeof useI18n>["t"];
+}) {
+  return (
+    <>
+      {onOpen && (
+        <ContextMenuItem onSelect={() => onOpen(item)}>
+          <Play size={13} />
+          {t("database.tree.openSavedSql")}
+        </ContextMenuItem>
+      )}
+      <ContextMenuItem onSelect={() => void navigator.clipboard?.writeText(item.sql)}>
+        <Copy size={13} />
+        {t("database.tree.copySavedSql")}
+      </ContextMenuItem>
+      {onDelete && (
+        <ContextMenuItem onSelect={() => onDelete(item)} tone="danger">
+          <Trash2 size={13} />
+          {t("database.tree.deleteSavedSql")}
+        </ContextMenuItem>
+      )}
+    </>
+  );
 }
 
 // A disabled child reflecting the load state of a lazily-fetched node: an error
@@ -559,7 +698,9 @@ function TableContextMenu({
           {t("database.tree.generateSelect")}
         </ContextMenuItem>
       )}
-      {onUseSql && (
+      {/* Views are read-only: hide "Generate INSERT" to avoid offering an
+          action that will fail at execution time. Tables keep the full menu. */}
+      {onUseSql && table.kind !== "view" && (
         <ContextMenuItem onSelect={() => onUseSql(connection.id, generateInsertSql(connection.driver, table), table)}>
           {t("database.tree.generateInsert")}
         </ContextMenuItem>

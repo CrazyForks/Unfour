@@ -19,6 +19,7 @@ import type {
   DatabaseSchema,
   DatabaseTable,
   DatabaseTestResult,
+  SavedSql,
 } from "@unfour/command-client";
 import { useWorkspaceStore } from "@unfour/workspace-core";
 import {
@@ -46,6 +47,7 @@ import { useDatabaseConnections } from "./hooks/useDatabaseConnections";
 import { databaseTableTabId, useDatabaseTabs } from "./hooks/useDatabaseTabs";
 import { useDatabaseCatalogs } from "./hooks/useDatabaseCatalogs";
 import { useQueryHistory } from "./hooks/useQueryHistory";
+import { useSavedSql } from "./hooks/useSavedSql";
 import { useSchemaTree } from "./hooks/useSchemaTree";
 import { useSqlExecution } from "./hooks/useSqlExecution";
 import { useTableData } from "./hooks/useTableData";
@@ -119,11 +121,24 @@ export function DatabasePage({
 
   const connectionsQuery = useDatabaseConnections(workspaceId);
   const queryHistoryQuery = useQueryHistory(workspaceId, MAX_HISTORY_ENTRIES);
+  const savedSqlQuery = useSavedSql(workspaceId);
   const connections = useMemo(() => connectionsQuery.data ?? [], [connectionsQuery.data]);
   const selectedConnection = useMemo(
     () => connections.find((item) => item.id === selectedConnectionId) ?? null,
     [connections, selectedConnectionId],
   );
+  // Group saved SQL by its owning connection id so the sidebar tree can render
+  // each connection's snippets under a dedicated "Saved Queries" branch.
+  const savedSqlByConnection = useMemo(() => {
+    const map: Record<string, SavedSql[]> = {};
+    for (const item of savedSqlQuery.saved) {
+      if (!item.connectionId) {
+        continue;
+      }
+      (map[item.connectionId] ??= []).push(item);
+    }
+    return map;
+  }, [savedSqlQuery.saved]);
   const prevSelectedConnectionIdRef = useRef(selectedConnectionId);
   const activeTab = databaseTabs.activeTab;
   const activeQueryTab = activeTab?.kind === "query" ? activeTab : null;
@@ -1052,6 +1067,28 @@ export function DatabasePage({
     setSelectedTable(null);
   }
 
+  // Open a saved SQL snippet from the sidebar tree into a fresh query tab.
+  // Mirrors loadHistoryEntry: the connection id is honored only when the
+  // owning connection still exists, otherwise the snippet opens without one.
+  function openSavedSql(item: SavedSql) {
+    const connectionId =
+      item.connectionId && connections.some((connection) => connection.id === item.connectionId)
+        ? item.connectionId
+        : null;
+    databaseTabs.openQueryTab({
+      connectionId,
+      sql: item.sql,
+    });
+    if (connectionId) {
+      setSelectedDatabaseConnection(connectionId);
+    }
+    setSelectedTable(null);
+  }
+
+  function deleteSavedSql(item: SavedSql) {
+    void savedSqlQuery.remove(item.id);
+  }
+
   // Load generated SQL (e.g. from a table context-menu action) into a fresh editor tab.
   function loadSqlIntoEditor(connectionId: string, generatedSql: string, table?: DatabaseTable) {
     databaseTabs.openQueryTab({
@@ -1168,11 +1205,13 @@ export function DatabasePage({
   const sidebarActionsRef = useRef<{
     connect: (connection: DatabaseConnection) => void;
     delete: (connection: DatabaseConnection) => void;
+    deleteSavedSql: (item: SavedSql) => void;
     designTable: (connectionId: string, table: DatabaseTable) => void;
     disconnect: (connection: DatabaseConnection) => void;
     edit: (connection: DatabaseConnection) => void;
     newConnection: () => void;
     newQuery: (connection?: DatabaseConnection) => void;
+    openSavedSql: (item: SavedSql) => void;
     previewTable: (connectionId: string, table: DatabaseTable) => void;
     refresh: () => void;
     refreshSchema: (connection: DatabaseConnection) => void;
@@ -1185,11 +1224,13 @@ export function DatabasePage({
   sidebarActionsRef.current = {
     connect: connectConnection,
     delete: setDeleteConfirm,
+    deleteSavedSql,
     designTable,
     disconnect: disconnectConnection,
     edit: handleEditConnection,
     newConnection: handleNewConnection,
     newQuery: (connection) => startNewQuery(connection?.id),
+    openSavedSql,
     previewTable: (connectionId, table) =>
       browseTablePage(connectionId, table, 0, DEFAULT_PREVIEW_PAGE_SIZE),
     refresh: refreshConnectionsAndSchema,
@@ -1207,10 +1248,12 @@ export function DatabasePage({
     onDesignTable: (connectionId: string, table: DatabaseTable) =>
       sidebarActionsRef.current?.designTable(connectionId, table),
     onDeleteConnection: (connection: DatabaseConnection) => sidebarActionsRef.current?.delete(connection),
+      onDeleteSavedSql: (item: SavedSql) => sidebarActionsRef.current?.deleteSavedSql(item),
       onDisconnect: (connection: DatabaseConnection) => sidebarActionsRef.current?.disconnect(connection),
       onEditConnection: (connection: DatabaseConnection) => sidebarActionsRef.current?.edit(connection),
       onNewConnection: () => sidebarActionsRef.current?.newConnection(),
       onNewQuery: (connection?: DatabaseConnection) => sidebarActionsRef.current?.newQuery(connection),
+      onOpenSavedSql: (item: SavedSql) => sidebarActionsRef.current?.openSavedSql(item),
       onPreviewTable: (connectionId: string, table: DatabaseTable) =>
         sidebarActionsRef.current?.previewTable(connectionId, table),
       onRefresh: () => sidebarActionsRef.current?.refresh(),
@@ -1236,6 +1279,7 @@ export function DatabasePage({
         connections={connections}
         loadErrors={treeErrors}
         loadingKeys={treeLoadingKeys}
+        savedSqlByConnection={savedSqlByConnection}
         schemaCache={treeSchemaCache}
         selectedConnectionId={selectedConnectionId}
         selectedTableId={selectedTableId}
@@ -1246,6 +1290,7 @@ export function DatabasePage({
       catalogNamesByConn,
       connectionStates,
       connections,
+      savedSqlByConnection,
       selectedConnectionId,
       selectedTableId,
       sidebarHandlers,

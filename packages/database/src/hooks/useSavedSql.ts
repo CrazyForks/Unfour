@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   deleteSavedSql,
@@ -31,8 +32,17 @@ export function useSavedSql(workspaceId: string) {
     },
   });
 
+  // Keep `saved` referentially stable: react-query preserves query.data across
+  // renders when the data is unchanged, but `query.data ?? []` would allocate a
+  // fresh empty array on every render while loading. Consumers that feed this
+  // value into useMemo/useEffect dependencies (e.g. the sidebar tree builder,
+  // which is pushed up to the shell via onShellSidebarChange) would otherwise
+  // loop forever. Memoizing on query.data keeps the same reference until the
+  // query result actually changes.
+  const saved = useMemo(() => query.data ?? [], [query.data]);
+
   return {
-    saved: query.data ?? [],
+    saved,
     error: query.error ?? saveMutation.error ?? deleteMutation.error,
     isLoading: query.isLoading,
     save: (input: SavedSqlInput) => saveMutation.mutateAsync(input),

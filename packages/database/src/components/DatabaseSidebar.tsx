@@ -3,6 +3,7 @@ import type {
   DatabaseConnection,
   DatabaseSchema,
   DatabaseTable,
+  SavedSql,
 } from "@unfour/command-client";
 import { Badge, IconButton, useI18n } from "@unfour/ui";
 import { DatabaseConnectionTree } from "./DatabaseConnectionTree";
@@ -22,10 +23,12 @@ export function DatabaseSidebar({
   loadingKeys,
   onConnect,
   onDeleteConnection,
+  onDeleteSavedSql,
   onDisconnect,
   onEditConnection,
   onNewConnection,
   onNewQuery,
+  onOpenSavedSql,
   onPreviewTable,
   onRefresh,
   onRefreshSchema,
@@ -34,6 +37,7 @@ export function DatabaseSidebar({
   onToggleCatalog,
   onToggleConnection,
   onUseSql,
+  savedSqlByConnection,
   schemaCache,
   selectedConnectionId,
   selectedTableId,
@@ -45,10 +49,12 @@ export function DatabaseSidebar({
   loadingKeys?: string[];
   onConnect: (connection: DatabaseConnection) => void;
   onDeleteConnection: (connection: DatabaseConnection) => void;
+  onDeleteSavedSql?: (item: SavedSql) => void;
   onDisconnect: (connection: DatabaseConnection) => void;
   onEditConnection: (connection: DatabaseConnection) => void;
   onNewConnection: () => void;
   onNewQuery: (connection?: DatabaseConnection) => void;
+  onOpenSavedSql?: (item: SavedSql) => void;
   onPreviewTable: (connectionId: string, table: DatabaseTable) => void;
   onRefresh: () => void;
   onRefreshSchema: (connection: DatabaseConnection) => void;
@@ -57,6 +63,7 @@ export function DatabaseSidebar({
   onToggleCatalog: (connectionId: string, catalog: string) => void;
   onToggleConnection: (connection: DatabaseConnection) => void;
   onUseSql: (connectionId: string, sql: string, table?: DatabaseTable) => void;
+  savedSqlByConnection?: Record<string, SavedSql[]>;
   schemaCache?: Record<string, DatabaseSchema>;
   selectedConnectionId: string | null;
   selectedTableId?: string | null;
@@ -89,9 +96,11 @@ export function DatabaseSidebar({
           loadingKeys={loadingKeys}
           onConnect={onConnect}
           onDeleteConnection={onDeleteConnection}
+          onDeleteSavedSql={onDeleteSavedSql}
           onDisconnect={onDisconnect}
           onEditConnection={onEditConnection}
           onNewQuery={onNewQuery}
+          onOpenSavedSql={onOpenSavedSql}
           onPreviewTable={onPreviewTable}
           onRefreshSchema={onRefreshSchema}
           onSelectConnection={onSelectConnection}
@@ -99,6 +108,7 @@ export function DatabaseSidebar({
           onToggleCatalog={onToggleCatalog}
           onToggleConnection={onToggleConnection}
           onUseSql={onUseSql}
+          savedSqlByConnection={savedSqlByConnection}
           schemaCache={schemaCache}
           selectedConnectionId={selectedConnectionId}
           selectedTableId={selectedTableId}

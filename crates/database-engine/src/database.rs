@@ -1222,11 +1222,17 @@ impl DatabaseService {
                 let foreign_keys = postgres_foreign_keys(&pool, schema, table_name)
                     .await
                     .map_err(sanitize_pg_app_error)?;
+                // Resolve the actual object kind (table vs view) from
+                // information_schema so views report as "view" instead of the
+                // hard-coded "table" the previous implementation returned.
+                let kind = postgres_table_kind(&pool, schema, table_name)
+                    .await
+                    .map_err(sanitize_pg_app_error)?;
                 Ok(DatabaseTableStructure {
                     catalog: connection.database.clone(),
                     schema: Some(schema.to_string()),
                     name: table_name.to_string(),
-                    kind: "table".to_string(),
+                    kind,
                     columns,
                     indexes,
                     foreign_keys,
@@ -1271,11 +1277,17 @@ impl DatabaseService {
                 let ddl = mysql_ddl(&pool, schema, table_name)
                     .await
                     .map_err(sanitize_mysql_app_error)?;
+                // Resolve the actual object kind (table vs view) from
+                // information_schema so views report as "view" instead of the
+                // hard-coded "table" the previous implementation returned.
+                let kind = mysql_table_kind(&pool, schema, table_name)
+                    .await
+                    .map_err(sanitize_mysql_app_error)?;
                 Ok(DatabaseTableStructure {
                     catalog: Some(schema.to_string()),
                     schema: None,
                     name: table_name.to_string(),
-                    kind: "table".to_string(),
+                    kind,
                     columns,
                     indexes,
                     foreign_keys,
@@ -1753,6 +1765,38 @@ async fn ensure_postgres_table_exists(
     })
 }
 
+/// Resolve the object kind ("table" or "view") from information_schema so the
+/// structure panel reports views correctly instead of always returning
+/// "table". Falls back to "table" when the row is missing (the caller has
+/// already verified existence via `ensure_postgres_table_exists`).
+async fn postgres_table_kind(
+    pool: &sqlx::PgPool,
+    schema: &str,
+    table_name: &str,
+) -> Result<String, AppError> {
+    let row: Option<(String,)> = sqlx::query_as(
+        r#"
+        SELECT table_type
+        FROM information_schema.tables
+        WHERE table_schema = $1 AND table_name = $2
+        LIMIT 1
+        "#,
+    )
+    .bind(schema)
+    .bind(table_name)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row
+        .map(|(table_type,)| {
+            if table_type == "VIEW" {
+                "view".to_string()
+            } else {
+                "table".to_string()
+            }
+        })
+        .unwrap_or_else(|| "table".to_string()))
+}
+
 async fn postgres_table_row_count(
     pool: &sqlx::PgPool,
     schema: &str,
@@ -2132,6 +2176,41 @@ async fn ensure_mysql_table_exists(
     row.map(|_| ()).ok_or_else(|| {
         AppError::NotFound(format!("{schema}.{table_name}"))
     })
+}
+
+/// Resolve the object kind ("table" or "view") from information_schema so the
+/// structure panel reports views correctly instead of always returning
+/// "table". Reads the `table_type` column positionally and tolerates the
+/// binary charset MySQL reports for information_schema text columns. Falls
+/// back to "table" when the row is missing (the caller has already verified
+/// existence via `ensure_mysql_table_exists`).
+async fn mysql_table_kind(
+    pool: &sqlx::MySqlPool,
+    schema: &str,
+    table_name: &str,
+) -> Result<String, AppError> {
+    let row = sqlx::query(
+        r#"
+        SELECT table_type
+        FROM information_schema.tables
+        WHERE table_schema = ? AND table_name = ?
+        LIMIT 1
+        "#,
+    )
+    .bind(schema)
+    .bind(table_name)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row
+        .map(|row| {
+            let table_type = mysql_text(&row, 0).unwrap_or_default();
+            if table_type.eq_ignore_ascii_case("VIEW") {
+                "view".to_string()
+            } else {
+                "table".to_string()
+            }
+        })
+        .unwrap_or_else(|| "table".to_string()))
 }
 
 async fn mysql_table_row_count(
