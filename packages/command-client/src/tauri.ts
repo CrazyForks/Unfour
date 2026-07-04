@@ -934,6 +934,7 @@ async function mockInvoke<T>(
       port: input.port ?? null,
       database: input.database ?? null,
       username: input.username ?? null,
+      sslMode: input.sslMode ?? null,
       sqlitePath: input.sqlitePath ?? null,
       credentialRef: input.credentialRef ?? null,
       readOnly: input.readOnly ?? false,

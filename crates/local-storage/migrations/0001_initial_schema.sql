@@ -36,10 +36,14 @@ CREATE TABLE IF NOT EXISTS workspace_settings (
 CREATE TABLE IF NOT EXISTS connections (
   id TEXT PRIMARY KEY,
   workspace_id TEXT NOT NULL,
+  connection_type TEXT NOT NULL CHECK (connection_type IN ('database', 'ssh')),
   name TEXT NOT NULL,
+  host TEXT,
+  port INTEGER CHECK (port IS NULL OR (port BETWEEN 1 AND 65535)),
   credential_ref TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
+  last_connected_at TEXT,
   deleted_at TEXT,
   revision INTEGER NOT NULL DEFAULT 1,
   sync_status TEXT NOT NULL DEFAULT 'local',
@@ -50,13 +54,22 @@ CREATE TABLE IF NOT EXISTS connections (
 
 CREATE TABLE IF NOT EXISTS ssh_connections (
   connection_id TEXT PRIMARY KEY,
-  config_json TEXT NOT NULL,
+  username TEXT NOT NULL,
+  auth_method TEXT NOT NULL CHECK (auth_method IN ('password', 'private-key', 'none')),
+  config_json TEXT NOT NULL DEFAULT '{}',
   FOREIGN KEY(connection_id) REFERENCES connections(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS database_connections (
   connection_id TEXT PRIMARY KEY,
-  config_json TEXT NOT NULL,
+  driver TEXT NOT NULL CHECK (driver IN ('sqlite', 'postgres', 'mysql')),
+  database_name TEXT,
+  username TEXT,
+  ssl_mode TEXT CHECK (
+    ssl_mode IS NULL OR ssl_mode IN ('disable', 'prefer', 'require', 'verify-ca', 'verify-full')
+  ),
+  read_only INTEGER NOT NULL DEFAULT 0 CHECK (read_only IN (0, 1)),
+  config_json TEXT NOT NULL DEFAULT '{}',
   FOREIGN KEY(connection_id) REFERENCES connections(id) ON DELETE CASCADE
 );
 
@@ -346,6 +359,9 @@ ON api_collections(workspace_id, deleted_at);
 
 CREATE INDEX IF NOT EXISTS idx_connections_workspace
 ON connections(workspace_id, deleted_at);
+
+CREATE INDEX IF NOT EXISTS idx_connections_workspace_type
+ON connections(workspace_id, connection_type, deleted_at);
 
 CREATE INDEX IF NOT EXISTS idx_database_connections_connection
 ON database_connections(connection_id);

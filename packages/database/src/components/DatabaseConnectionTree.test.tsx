@@ -16,6 +16,7 @@ const sqliteConnection: DatabaseConnection = {
   port: null,
   database: null,
   username: null,
+  sslMode: null,
   sqlitePath: "D:\\data\\app.sqlite",
   credentialRef: null,
   readOnly: false,

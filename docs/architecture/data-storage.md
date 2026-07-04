@@ -105,14 +105,21 @@ automatically.
 ## Connection Subtype Tables
 
 `connections` is the parent row for a workspace-scoped connection. It holds
-identity and sync metadata (`id`, `workspace_id`, `name`, `credential_ref`,
-timestamps, sync fields), while kind-specific configuration lives in subtype
-tables:
+shared lifecycle and display metadata (`id`, `workspace_id`,
+`connection_type`, `name`, `host`, `port`, `credential_ref`, timestamps,
+`last_connected_at`, sync fields). Kind-specific core metadata lives in subtype
+tables, while `config_json` is reserved for advanced or driver-specific
+metadata:
 
-- `ssh_connections(connection_id, config_json)` — 1:1 with `connections.id`,
-  `ON DELETE CASCADE`.
-- `database_connections(connection_id, config_json)` — 1:1 with
-  `connections.id`, `ON DELETE CASCADE`.
+- `ssh_connections(connection_id, username, auth_method, config_json)` — 1:1
+  with `connections.id`, `ON DELETE CASCADE`. `config_json` stores advanced
+  SSH metadata such as private-key path or future terminal/tunnel options, not
+  passwords or passphrases.
+- `database_connections(connection_id, driver, database_name, username,
+  ssl_mode, read_only, config_json)` — 1:1 with `connections.id`,
+  `ON DELETE CASCADE`. `config_json` stores advanced database metadata such as
+  SQLite path, optional timeouts, default schema, or driver-specific options,
+  not database passwords or credential material.
 
 Engine services JOIN the parent with their subtype table on read and write
 both rows on insert/update. `credential_ref` stays on the parent because it

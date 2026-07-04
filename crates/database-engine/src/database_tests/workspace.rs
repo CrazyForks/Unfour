@@ -251,3 +251,163 @@ async fn connection_crud_is_workspace_scoped_and_soft_deletes() {
     assert!(saved_after_delete[0].connection_id.is_none());
     let _ = fs::remove_file(path);
 }
+
+#[tokio::test]
+async fn connection_storage_columns_and_advanced_config_round_trip() {
+    let (service, workspace_id) = service_with_workspace().await;
+    let path = sqlite_fixture().await;
+    let replacement_path = sqlite_fixture().await;
+    let replacement_path_string = replacement_path.to_string_lossy().to_string();
+
+    let created = service
+        .save_connection(DatabaseConnectionInput {
+            id: None,
+            workspace_id: workspace_id.clone(),
+            name: "Structured PG".to_string(),
+            driver: "postgres".to_string(),
+            host: Some(" pg.internal ".to_string()),
+            port: Some(5433),
+            database: Some(" app ".to_string()),
+            username: Some(" deploy ".to_string()),
+            ssl_mode: Some("REQUIRE".to_string()),
+            sqlite_path: None,
+            credential_ref: Some("unfour:ws:database-password:abc".to_string()),
+            read_only: true,
+        })
+        .await
+        .expect("save postgres connection");
+
+    assert_eq!(created.host.as_deref(), Some("pg.internal"));
+    assert_eq!(created.database.as_deref(), Some("app"));
+    assert_eq!(created.username.as_deref(), Some("deploy"));
+    assert_eq!(created.ssl_mode.as_deref(), Some("require"));
+    assert!(created.read_only);
+
+    let stored: (
+        String,
+        Option<String>,
+        Option<i64>,
+        String,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        bool,
+        String,
+        Option<String>,
+    ) = sqlx::query_as(
+        r#"
+        SELECT
+          c.connection_type, c.host, c.port, sub.driver, sub.database_name,
+          sub.username, sub.ssl_mode, sub.read_only, sub.config_json, c.credential_ref
+        FROM connections c
+        INNER JOIN database_connections sub ON sub.connection_id = c.id
+        WHERE c.id = ?1
+        "#,
+    )
+    .bind(&created.id)
+    .fetch_one(service.db.pool())
+    .await
+    .expect("load persisted database connection");
+    assert_eq!(stored.0, "database");
+    assert_eq!(stored.1.as_deref(), Some("pg.internal"));
+    assert_eq!(stored.2, Some(5433));
+    assert_eq!(stored.3, "postgres");
+    assert_eq!(stored.4.as_deref(), Some("app"));
+    assert_eq!(stored.5.as_deref(), Some("deploy"));
+    assert_eq!(stored.6.as_deref(), Some("require"));
+    assert!(stored.7);
+    assert_eq!(stored.8, "{}");
+    assert_eq!(stored.9.as_deref(), Some("unfour:ws:database-password:abc"));
+    assert!(!stored.8.contains("database-password"));
+    assert!(!stored.8.contains("deploy"));
+
+    let updated = service
+        .save_connection(DatabaseConnectionInput {
+            id: Some(created.id.clone()),
+            workspace_id: workspace_id.clone(),
+            name: "Structured SQLite".to_string(),
+            driver: "sqlite".to_string(),
+            host: None,
+            port: None,
+            database: None,
+            username: None,
+            ssl_mode: None,
+            sqlite_path: Some(replacement_path_string.clone()),
+            credential_ref: None,
+            read_only: false,
+        })
+        .await
+        .expect("update to sqlite connection");
+    assert_eq!(updated.driver, "sqlite");
+    assert_eq!(
+        updated.sqlite_path.as_deref(),
+        Some(replacement_path_string.as_str())
+    );
+    assert!(updated.host.is_none());
+    assert!(updated.credential_ref.is_none());
+
+    let updated_stored: (Option<String>, Option<i64>, String, String, Option<String>) =
+        sqlx::query_as(
+            r#"
+            SELECT c.host, c.port, sub.driver, sub.config_json, c.credential_ref
+            FROM connections c
+            INNER JOIN database_connections sub ON sub.connection_id = c.id
+            WHERE c.id = ?1
+            "#,
+        )
+        .bind(&created.id)
+        .fetch_one(service.db.pool())
+        .await
+        .expect("load updated persisted database connection");
+    assert!(updated_stored.0.is_none());
+    assert!(updated_stored.1.is_none());
+    assert_eq!(updated_stored.2, "sqlite");
+    assert!(updated_stored.3.contains("sqlitePath"));
+    assert!(updated_stored.4.is_none());
+
+    let _ = fs::remove_file(path);
+    let _ = fs::remove_file(replacement_path);
+}
+
+#[tokio::test]
+async fn connection_config_json_missing_optional_fields_uses_defaults() {
+    let (service, workspace_id) = service_with_workspace().await;
+    let now = Utc::now().to_rfc3339();
+
+    sqlx::query(
+        r#"
+        INSERT INTO connections (
+          id, workspace_id, connection_type, name, host, port,
+          created_at, updated_at, revision, sync_status
+        )
+        VALUES ('manual-db', ?1, 'database', 'Manual DB', 'db.internal', 5432, ?2, ?2, 1, 'local')
+        "#,
+    )
+    .bind(&workspace_id)
+    .bind(&now)
+    .execute(service.db.pool())
+    .await
+    .expect("insert manual parent row");
+    sqlx::query(
+        r#"
+        INSERT INTO database_connections (
+          connection_id, driver, database_name, username, ssl_mode, read_only, config_json
+        )
+        VALUES ('manual-db', 'postgres', 'app', 'deploy', NULL, 0, '{}')
+        "#,
+    )
+    .execute(service.db.pool())
+    .await
+    .expect("insert manual database subtype row");
+
+    let listed = service
+        .list_connections(workspace_id)
+        .await
+        .expect("list manual connection");
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].id, "manual-db");
+    assert_eq!(listed[0].driver, "postgres");
+    assert_eq!(listed[0].database.as_deref(), Some("app"));
+    assert!(listed[0].sqlite_path.is_none());
+    assert!(!listed[0].read_only);
+}

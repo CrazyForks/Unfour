@@ -1832,6 +1832,7 @@ mod tests {
             port: Some(5432),
             database: Some("app".to_string()),
             username: Some("developer".to_string()),
+            ssl_mode: None,
             sqlite_path: None,
             credential_ref: Some("database-secret".to_string()),
             read_only: false,

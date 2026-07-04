@@ -72,17 +72,45 @@ async fn ssh_connection_validation_keeps_secrets_out_of_config() {
         .await
         .expect("save private key metadata");
 
-    let stored_config: (String,) = sqlx::query_as(
-        "SELECT sub.config_json FROM connections c \
+    let stored_config: (String, i64, String, String, String, Option<String>) = sqlx::query_as(
+        "SELECT c.host, c.port, sub.username, sub.auth_method, sub.config_json, c.credential_ref \
+         FROM connections c \
          INNER JOIN ssh_connections sub ON sub.connection_id = c.id \
          WHERE c.id = ?1",
     )
-    .bind(private_key.id)
+    .bind(&private_key.id)
     .fetch_one(service.db.pool())
     .await
     .expect("load stored config");
-    assert!(stored_config.0.contains("id_ed25519"));
-    assert!(!stored_config.0.contains("ssh-key-passphrase-1"));
+    assert_eq!(stored_config.0, "example.internal");
+    assert_eq!(stored_config.1, 22);
+    assert_eq!(stored_config.2, "deploy");
+    assert_eq!(stored_config.3, "private-key");
+    assert!(stored_config.4.contains("id_ed25519"));
+    assert!(!stored_config.4.contains("ssh-key-passphrase-1"));
+    assert_eq!(stored_config.5.as_deref(), Some("ssh-key-passphrase-1"));
+
+    let password_with_secret = service
+        .save_connection(SshConnectionInput {
+            credential_ref: None,
+            secret: Some("plain-text-password".to_string()),
+            ..password_input(&workspace_id)
+        })
+        .await
+        .expect("save password credential through secret store");
+
+    let password_config: (String, Option<String>) = sqlx::query_as(
+        "SELECT sub.config_json, c.credential_ref \
+         FROM connections c \
+         INNER JOIN ssh_connections sub ON sub.connection_id = c.id \
+         WHERE c.id = ?1",
+    )
+    .bind(password_with_secret.id)
+    .fetch_one(service.db.pool())
+    .await
+    .expect("load stored password config");
+    assert!(!password_config.0.contains("plain-text-password"));
+    assert!(password_config.1.is_some());
 }
 
 #[cfg(not(feature = "ssh-native"))]

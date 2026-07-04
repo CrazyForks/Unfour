@@ -7,7 +7,7 @@ use unfour_core::models::{
     SshDiagnosticInput, SshDiagnosticResult, SshHostFingerprintInfo, SshHostKeyInput,
     SshKnownHostsExportInput, SshKnownHostsExportResult, SshKnownHostsImportInput,
     SshKnownHostsImportResult, SshLogExport, SshLogExportInput, SshReconnectCancelInput,
-    SshResizeInput, SshSessionEvent, SshSessionInput, SshSessionSummary, StoredConnection,
+    SshResizeInput, SshSessionEvent, SshSessionInput, SshSessionSummary,
 };
 use unfour_core::redaction::redact_sensitive_lines;
 use unfour_core::{AppError, AppResult};
@@ -35,6 +35,34 @@ pub struct SshService {
     sessions: Arc<Mutex<HashMap<String, SshSessionState>>>,
     #[cfg(feature = "ssh-native")]
     on_terminal_output: Arc<Mutex<Option<TerminalOutputCallback>>>,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct StoredSshConnection {
+    id: String,
+    workspace_id: String,
+    name: String,
+    host: String,
+    port: i64,
+    username: String,
+    auth_method: String,
+    config_json: String,
+    credential_ref: Option<String>,
+    created_at: String,
+    updated_at: String,
+    deleted_at: Option<String>,
+    revision: i64,
+    sync_status: String,
+    remote_id: Option<String>,
+}
+
+#[derive(Debug)]
+struct SshConnectionStorageInput {
+    host: String,
+    port: u16,
+    username: String,
+    auth_method: String,
+    config: SshConnectionConfig,
 }
 
 #[derive(Debug)]
@@ -166,14 +194,15 @@ impl SshService {
     pub async fn list_connections(&self, workspace_id: String) -> AppResult<Vec<SshConnection>> {
         validate_workspace_id(&workspace_id)?;
 
-        let rows = sqlx::query_as::<_, StoredConnection>(
+        let rows = sqlx::query_as::<_, StoredSshConnection>(
             r#"
             SELECT
-              c.id, c.workspace_id, c.name, sub.config_json, c.credential_ref,
+              c.id, c.workspace_id, c.name, c.host, c.port,
+              sub.username, sub.auth_method, sub.config_json, c.credential_ref,
               c.created_at, c.updated_at, c.deleted_at, c.revision, c.sync_status, c.remote_id
             FROM connections c
             INNER JOIN ssh_connections sub ON sub.connection_id = c.id
-            WHERE c.workspace_id = ?1 AND c.deleted_at IS NULL
+            WHERE c.workspace_id = ?1 AND c.connection_type = 'ssh' AND c.deleted_at IS NULL
             ORDER BY c.updated_at DESC
             "#,
         )
@@ -187,17 +216,17 @@ impl SshService {
     pub async fn save_connection(&self, input: SshConnectionInput) -> AppResult<SshConnection> {
         validate_workspace_id(&input.workspace_id)?;
         let name = normalize_name(&input.name)?;
-        let config = input_to_config(&input)?;
+        let storage = input_to_storage(&input)?;
         let credential_ref = self
             .resolve_credential_ref(
                 &input.workspace_id,
-                &config.auth_kind,
+                &storage.auth_method,
                 empty_to_none(input.credential_ref.clone()),
                 input.secret.clone(),
             )
             .await?;
         let now = Utc::now().to_rfc3339();
-        let config_json = serde_json::to_string(&config)?;
+        let config_json = ssh_config_to_json(&storage.config)?;
 
         if let Some(id) = input
             .id
@@ -208,14 +237,16 @@ impl SshService {
             let result = sqlx::query(
                 r#"
                 UPDATE connections
-                SET name = ?1, credential_ref = ?2,
-                    updated_at = ?3, revision = revision + 1, sync_status = 'pending'
-                WHERE id = ?4 AND workspace_id = ?5 AND deleted_at IS NULL
+                SET name = ?1, host = ?2, port = ?3, credential_ref = ?4,
+                    updated_at = ?5, revision = revision + 1, sync_status = 'pending'
+                WHERE id = ?6 AND workspace_id = ?7 AND connection_type = 'ssh' AND deleted_at IS NULL
                 "#,
             )
             .bind(name)
+            .bind(&storage.host)
+            .bind(i64::from(storage.port))
             .bind(credential_ref)
-            .bind(now)
+            .bind(&now)
             .bind(id)
             .bind(&input.workspace_id)
             .execute(self.db.pool())
@@ -228,10 +259,12 @@ impl SshService {
             sqlx::query(
                 r#"
                 UPDATE ssh_connections
-                SET config_json = ?1
-                WHERE connection_id = ?2
+                SET username = ?1, auth_method = ?2, config_json = ?3
+                WHERE connection_id = ?4
                 "#,
             )
+            .bind(&storage.username)
+            .bind(&storage.auth_method)
             .bind(&config_json)
             .bind(id)
             .execute(self.db.pool())
@@ -244,15 +277,17 @@ impl SshService {
         sqlx::query(
             r#"
             INSERT INTO connections (
-              id, workspace_id, name, credential_ref,
+              id, workspace_id, connection_type, name, host, port, credential_ref,
               created_at, updated_at, revision, sync_status
             )
-            VALUES (?1, ?2, ?3, ?4, ?5, ?5, 1, 'local')
+            VALUES (?1, ?2, 'ssh', ?3, ?4, ?5, ?6, ?7, ?7, 1, 'local')
             "#,
         )
         .bind(&id)
         .bind(&input.workspace_id)
         .bind(name)
+        .bind(&storage.host)
+        .bind(i64::from(storage.port))
         .bind(credential_ref)
         .bind(now)
         .execute(self.db.pool())
@@ -260,11 +295,13 @@ impl SshService {
 
         sqlx::query(
             r#"
-            INSERT INTO ssh_connections (connection_id, config_json)
-            VALUES (?1, ?2)
+            INSERT INTO ssh_connections (connection_id, username, auth_method, config_json)
+            VALUES (?1, ?2, ?3, ?4)
             "#,
         )
         .bind(&id)
+        .bind(&storage.username)
+        .bind(&storage.auth_method)
         .bind(&config_json)
         .execute(self.db.pool())
         .await?;
@@ -285,7 +322,8 @@ impl SshService {
             r#"
             UPDATE connections
             SET deleted_at = ?1, updated_at = ?1, revision = revision + 1, sync_status = 'deleted'
-            WHERE id = ?2 AND workspace_id = ?3 AND deleted_at IS NULL
+            WHERE id = ?2 AND workspace_id = ?3
+              AND connection_type = 'ssh' AND deleted_at IS NULL
             "#,
         )
         .bind(now)
@@ -1034,14 +1072,16 @@ impl SshService {
         validate_workspace_id(workspace_id)?;
         validate_connection_id(id)?;
 
-        let row = sqlx::query_as::<_, StoredConnection>(
+        let row = sqlx::query_as::<_, StoredSshConnection>(
             r#"
             SELECT
-              c.id, c.workspace_id, c.name, sub.config_json, c.credential_ref,
+              c.id, c.workspace_id, c.name, c.host, c.port,
+              sub.username, sub.auth_method, sub.config_json, c.credential_ref,
               c.created_at, c.updated_at, c.deleted_at, c.revision, c.sync_status, c.remote_id
             FROM connections c
             INNER JOIN ssh_connections sub ON sub.connection_id = c.id
-            WHERE c.id = ?1 AND c.workspace_id = ?2 AND c.deleted_at IS NULL
+            WHERE c.id = ?1 AND c.workspace_id = ?2
+              AND c.connection_type = 'ssh' AND c.deleted_at IS NULL
             "#,
         )
         .bind(id)
@@ -1838,16 +1878,17 @@ fn terminal_output_from_channel_message(message: &russh::ChannelMsg) -> Option<S
         _ => None,
     }
 }
-fn stored_to_ssh_connection(row: StoredConnection) -> AppResult<SshConnection> {
-    let config = serde_json::from_str::<SshConnectionConfig>(&row.config_json)?;
+fn stored_to_ssh_connection(row: StoredSshConnection) -> AppResult<SshConnection> {
+    let config = parse_ssh_config(&row.id, &row.config_json)?;
+    let port = decode_ssh_port(row.port)?;
     Ok(SshConnection {
         id: row.id,
         workspace_id: row.workspace_id,
         name: row.name,
-        host: config.host,
-        port: config.port,
-        username: config.username,
-        auth_kind: config.auth_kind,
+        host: row.host,
+        port,
+        username: row.username,
+        auth_kind: row.auth_method,
         key_path: config.key_path,
         credential_ref: row.credential_ref,
         created_at: row.created_at,
@@ -1859,11 +1900,11 @@ fn stored_to_ssh_connection(row: StoredConnection) -> AppResult<SshConnection> {
     })
 }
 
-fn input_to_config(input: &SshConnectionInput) -> AppResult<SshConnectionConfig> {
+fn input_to_storage(input: &SshConnectionInput) -> AppResult<SshConnectionStorageInput> {
     let host = normalize_required(&input.host, "ssh host")?;
     let username = normalize_required(&input.username, "ssh username")?;
-    let auth_kind = input.auth_kind.trim().to_ascii_lowercase();
-    if !matches!(auth_kind.as_str(), "password" | "private-key" | "none") {
+    let auth_method = input.auth_kind.trim().to_ascii_lowercase();
+    if !matches!(auth_method.as_str(), "password" | "private-key" | "none") {
         return Err(AppError::Validation(format!(
             "unsupported ssh auth kind: {}",
             input.auth_kind
@@ -1876,19 +1917,41 @@ fn input_to_config(input: &SshConnectionInput) -> AppResult<SshConnectionConfig>
     }
 
     let key_path = empty_to_none(input.key_path.clone());
-    if auth_kind == "private-key" && key_path.is_none() {
+    if auth_method == "private-key" && key_path.is_none() {
         return Err(AppError::Validation(
             "private-key ssh auth requires a key path".to_string(),
         ));
     }
 
-    Ok(SshConnectionConfig {
+    Ok(SshConnectionStorageInput {
         host,
         port,
         username,
-        auth_kind,
-        key_path,
+        auth_method,
+        config: SshConnectionConfig { key_path },
     })
+}
+
+fn ssh_config_to_json(config: &SshConnectionConfig) -> AppResult<String> {
+    serde_json::to_string(config).map_err(AppError::from)
+}
+
+fn parse_ssh_config(connection_id: &str, config_json: &str) -> AppResult<SshConnectionConfig> {
+    serde_json::from_str::<SshConnectionConfig>(config_json).map_err(|error| {
+        AppError::Config(format!(
+            "invalid ssh_connections.config_json for connection {connection_id}: {error}"
+        ))
+    })
+}
+
+fn decode_ssh_port(port: i64) -> AppResult<u16> {
+    if (1..=u16::MAX as i64).contains(&port) {
+        Ok(port as u16)
+    } else {
+        Err(AppError::Config(format!(
+            "ssh connection port out of range: {port}"
+        )))
+    }
 }
 
 fn validate_connection_ready_for_session(connection: &SshConnection) -> AppResult<()> {

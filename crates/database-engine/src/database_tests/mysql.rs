@@ -8,14 +8,14 @@ use super::support::{mysql_input, service_with_workspace};
 #[test]
 fn mysql_config_maps_host_port_database_username() {
     let input = mysql_input("ws", Some("unfour:ws:database-password:abc".to_string()));
-    let config = input_to_config(&input).expect("config");
+    let storage = input_to_storage(&input).expect("storage");
 
-    assert_eq!(config.driver, "mysql");
-    assert_eq!(config.host.as_deref(), Some("127.0.0.1"));
-    assert_eq!(config.port, Some(9));
-    assert_eq!(config.database.as_deref(), Some("app"));
-    assert_eq!(config.username.as_deref(), Some("testuser"));
-    assert!(config.sqlite_path.is_none());
+    assert_eq!(storage.driver, "mysql");
+    assert_eq!(storage.host.as_deref(), Some("127.0.0.1"));
+    assert_eq!(storage.port, Some(9));
+    assert_eq!(storage.database_name.as_deref(), Some("app"));
+    assert_eq!(storage.username.as_deref(), Some("testuser"));
+    assert!(storage.config.sqlite_path.is_none());
 }
 
 #[tokio::test]

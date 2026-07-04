@@ -11,7 +11,7 @@ use unfour_core::models::{
     DatabaseQueryInput, DatabaseQueryResult, DatabaseQuerySafety, DatabaseResultColumn,
     DatabaseRowMutationInput, DatabaseRowMutationResult, DatabaseSchema, DatabaseTable,
     DatabaseTableColumn, DatabaseTableStructure, DatabaseTableStructureInput, DatabaseTestResult,
-    DbQueryHistoryEntry, DbQueryHistoryRecordInput, SavedSql, SavedSqlInput, StoredConnection,
+    DbQueryHistoryEntry, DbQueryHistoryRecordInput, SavedSql, SavedSqlInput,
 };
 use unfour_core::{AppError, AppResult};
 use unfour_local_storage::LocalDb;
@@ -22,6 +22,40 @@ use uuid::Uuid;
 pub struct DatabaseService {
     db: LocalDb,
     secret_store: Option<SecretStore>,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct StoredDatabaseConnection {
+    id: String,
+    workspace_id: String,
+    name: String,
+    host: Option<String>,
+    port: Option<i64>,
+    driver: String,
+    database_name: Option<String>,
+    username: Option<String>,
+    ssl_mode: Option<String>,
+    read_only: bool,
+    config_json: String,
+    credential_ref: Option<String>,
+    created_at: String,
+    updated_at: String,
+    deleted_at: Option<String>,
+    revision: i64,
+    sync_status: String,
+    remote_id: Option<String>,
+}
+
+#[derive(Debug)]
+struct DatabaseConnectionStorageInput {
+    driver: String,
+    host: Option<String>,
+    port: Option<u16>,
+    database_name: Option<String>,
+    username: Option<String>,
+    ssl_mode: Option<String>,
+    read_only: bool,
+    config: DatabaseConnectionConfig,
 }
 
 impl DatabaseService {
@@ -43,14 +77,16 @@ impl DatabaseService {
     ) -> AppResult<Vec<DatabaseConnection>> {
         validate_workspace_id(&workspace_id)?;
 
-        let rows = sqlx::query_as::<_, StoredConnection>(
+        let rows = sqlx::query_as::<_, StoredDatabaseConnection>(
             r#"
             SELECT
-              c.id, c.workspace_id, c.name, sub.config_json, c.credential_ref,
+              c.id, c.workspace_id, c.name, c.host, c.port,
+              sub.driver, sub.database_name, sub.username, sub.ssl_mode,
+              sub.read_only, sub.config_json, c.credential_ref,
               c.created_at, c.updated_at, c.deleted_at, c.revision, c.sync_status, c.remote_id
             FROM connections c
             INNER JOIN database_connections sub ON sub.connection_id = c.id
-            WHERE c.workspace_id = ?1 AND c.deleted_at IS NULL
+            WHERE c.workspace_id = ?1 AND c.connection_type = 'database' AND c.deleted_at IS NULL
             ORDER BY c.updated_at DESC
             "#,
         )
@@ -68,10 +104,16 @@ impl DatabaseService {
         input: DatabaseConnectionInput,
     ) -> AppResult<DatabaseConnection> {
         validate_workspace_id(&input.workspace_id)?;
-        let config = input_to_config(&input)?;
+        let storage = input_to_storage(&input)?;
         let name = normalize_name(&input.name)?;
         let now = Utc::now().to_rfc3339();
-        let config_json = serde_json::to_string(&config)?;
+        let config_json = database_config_to_json(&storage.config)?;
+        let host = storage.host.clone();
+        let port = storage.port.map(i64::from);
+        let database_name = storage.database_name.clone();
+        let username = storage.username.clone();
+        let ssl_mode = storage.ssl_mode.clone();
+        let credential_ref = empty_to_none(input.credential_ref);
 
         if let Some(id) = input
             .id
@@ -82,14 +124,16 @@ impl DatabaseService {
             let result = sqlx::query(
                 r#"
                 UPDATE connections
-                SET name = ?1, credential_ref = ?2,
-                    updated_at = ?3, revision = revision + 1, sync_status = 'pending'
-                WHERE id = ?4 AND workspace_id = ?5 AND deleted_at IS NULL
+                SET name = ?1, host = ?2, port = ?3, credential_ref = ?4,
+                    updated_at = ?5, revision = revision + 1, sync_status = 'pending'
+                WHERE id = ?6 AND workspace_id = ?7 AND connection_type = 'database' AND deleted_at IS NULL
                 "#,
             )
             .bind(name)
-            .bind(empty_to_none(input.credential_ref))
-            .bind(now)
+            .bind(host)
+            .bind(port)
+            .bind(credential_ref)
+            .bind(&now)
             .bind(id)
             .bind(&input.workspace_id)
             .execute(self.db.pool())
@@ -102,10 +146,16 @@ impl DatabaseService {
             sqlx::query(
                 r#"
                 UPDATE database_connections
-                SET config_json = ?1
-                WHERE connection_id = ?2
+                SET driver = ?1, database_name = ?2, username = ?3,
+                    ssl_mode = ?4, read_only = ?5, config_json = ?6
+                WHERE connection_id = ?7
                 "#,
             )
+            .bind(&storage.driver)
+            .bind(database_name)
+            .bind(username)
+            .bind(ssl_mode)
+            .bind(storage.read_only)
             .bind(&config_json)
             .bind(id)
             .execute(self.db.pool())
@@ -118,27 +168,36 @@ impl DatabaseService {
         sqlx::query(
             r#"
             INSERT INTO connections (
-              id, workspace_id, name, credential_ref,
+              id, workspace_id, connection_type, name, host, port, credential_ref,
               created_at, updated_at, revision, sync_status
             )
-            VALUES (?1, ?2, ?3, ?4, ?5, ?5, 1, 'local')
+            VALUES (?1, ?2, 'database', ?3, ?4, ?5, ?6, ?7, ?7, 1, 'local')
             "#,
         )
         .bind(&id)
         .bind(&input.workspace_id)
         .bind(name)
-        .bind(empty_to_none(input.credential_ref))
+        .bind(host)
+        .bind(port)
+        .bind(credential_ref)
         .bind(now)
         .execute(self.db.pool())
         .await?;
 
         sqlx::query(
             r#"
-            INSERT INTO database_connections (connection_id, config_json)
-            VALUES (?1, ?2)
+            INSERT INTO database_connections (
+              connection_id, driver, database_name, username, ssl_mode, read_only, config_json
+            )
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
             "#,
         )
         .bind(&id)
+        .bind(&storage.driver)
+        .bind(storage.database_name)
+        .bind(storage.username)
+        .bind(storage.ssl_mode)
+        .bind(storage.read_only)
         .bind(&config_json)
         .execute(self.db.pool())
         .await?;
@@ -160,7 +219,8 @@ impl DatabaseService {
             r#"
             UPDATE connections
             SET deleted_at = ?1, updated_at = ?1, revision = revision + 1, sync_status = 'deleted'
-            WHERE id = ?2 AND workspace_id = ?3 AND deleted_at IS NULL
+            WHERE id = ?2 AND workspace_id = ?3
+              AND connection_type = 'database' AND deleted_at IS NULL
             "#,
         )
         .bind(&now)
@@ -1559,14 +1619,17 @@ impl DatabaseService {
         validate_workspace_id(workspace_id)?;
         validate_connection_id(connection_id)?;
 
-        let row = sqlx::query_as::<_, StoredConnection>(
+        let row = sqlx::query_as::<_, StoredDatabaseConnection>(
             r#"
             SELECT
-              c.id, c.workspace_id, c.name, sub.config_json, c.credential_ref,
+              c.id, c.workspace_id, c.name, c.host, c.port,
+              sub.driver, sub.database_name, sub.username, sub.ssl_mode,
+              sub.read_only, sub.config_json, c.credential_ref,
               c.created_at, c.updated_at, c.deleted_at, c.revision, c.sync_status, c.remote_id
             FROM connections c
             INNER JOIN database_connections sub ON sub.connection_id = c.id
-            WHERE c.id = ?1 AND c.workspace_id = ?2 AND c.deleted_at IS NULL
+            WHERE c.id = ?1 AND c.workspace_id = ?2
+              AND c.connection_type = 'database' AND c.deleted_at IS NULL
             "#,
         )
         .bind(connection_id)
@@ -2686,20 +2749,22 @@ async fn sqlite_pool(connection: &DatabaseConnection) -> AppResult<sqlx::SqliteP
 // Shared helpers
 // ---------------------------------------------------------------------------
 
-fn stored_to_database_connection(row: StoredConnection) -> AppResult<DatabaseConnection> {
-    let config = serde_json::from_str::<DatabaseConnectionConfig>(&row.config_json)?;
+fn stored_to_database_connection(row: StoredDatabaseConnection) -> AppResult<DatabaseConnection> {
+    let config = parse_database_config(&row.id, &row.config_json)?;
+    let port = decode_port(row.port, "database connection port")?;
     Ok(DatabaseConnection {
         id: row.id,
         workspace_id: row.workspace_id,
         name: row.name,
-        driver: config.driver,
-        host: config.host,
-        port: config.port,
-        database: config.database,
-        username: config.username,
+        driver: row.driver,
+        host: row.host,
+        port,
+        database: row.database_name,
+        username: row.username,
+        ssl_mode: row.ssl_mode,
         sqlite_path: config.sqlite_path,
         credential_ref: row.credential_ref,
-        read_only: config.read_only,
+        read_only: row.read_only,
         created_at: row.created_at,
         updated_at: row.updated_at,
         deleted_at: row.deleted_at,
@@ -2709,7 +2774,7 @@ fn stored_to_database_connection(row: StoredConnection) -> AppResult<DatabaseCon
     })
 }
 
-fn input_to_config(input: &DatabaseConnectionInput) -> AppResult<DatabaseConnectionConfig> {
+fn input_to_storage(input: &DatabaseConnectionInput) -> AppResult<DatabaseConnectionStorageInput> {
     let driver = input.driver.trim().to_ascii_lowercase();
     if !matches!(driver.as_str(), "sqlite" | "postgres" | "mysql") {
         return Err(AppError::Validation(format!(
@@ -2726,26 +2791,78 @@ fn input_to_config(input: &DatabaseConnectionInput) -> AppResult<DatabaseConnect
             .filter(|value| !value.is_empty())
             .ok_or_else(|| AppError::Validation("SQLite path is required".to_string()))?;
 
-        return Ok(DatabaseConnectionConfig {
+        return Ok(DatabaseConnectionStorageInput {
             driver,
             host: None,
             port: None,
-            database: None,
+            database_name: None,
             username: None,
-            sqlite_path: Some(sqlite_path.to_string()),
             read_only: input.read_only,
+            ssl_mode: None,
+            config: DatabaseConnectionConfig {
+                sqlite_path: Some(sqlite_path.to_string()),
+                connect_timeout_ms: None,
+                statement_timeout_ms: None,
+                default_schema: None,
+            },
         });
     }
 
-    Ok(DatabaseConnectionConfig {
+    Ok(DatabaseConnectionStorageInput {
         driver,
         host: empty_to_none(input.host.clone()),
         port: input.port,
-        database: empty_to_none(input.database.clone()),
+        database_name: empty_to_none(input.database.clone()),
         username: empty_to_none(input.username.clone()),
-        sqlite_path: None,
         read_only: input.read_only,
+        ssl_mode: normalize_ssl_mode(input.ssl_mode.clone())?,
+        config: DatabaseConnectionConfig {
+            sqlite_path: None,
+            connect_timeout_ms: None,
+            statement_timeout_ms: None,
+            default_schema: None,
+        },
     })
+}
+
+fn database_config_to_json(config: &DatabaseConnectionConfig) -> AppResult<String> {
+    serde_json::to_string(config).map_err(AppError::from)
+}
+
+fn parse_database_config(
+    connection_id: &str,
+    config_json: &str,
+) -> AppResult<DatabaseConnectionConfig> {
+    serde_json::from_str::<DatabaseConnectionConfig>(config_json).map_err(|error| {
+        AppError::Config(format!(
+            "invalid database_connections.config_json for connection {connection_id}: {error}"
+        ))
+    })
+}
+
+fn normalize_ssl_mode(value: Option<String>) -> AppResult<Option<String>> {
+    let Some(value) = empty_to_none(value) else {
+        return Ok(None);
+    };
+    let normalized = value.to_ascii_lowercase();
+    if matches!(
+        normalized.as_str(),
+        "disable" | "prefer" | "require" | "verify-ca" | "verify-full"
+    ) {
+        Ok(Some(normalized))
+    } else {
+        Err(AppError::Validation(format!(
+            "unsupported database ssl mode: {value}"
+        )))
+    }
+}
+
+fn decode_port(value: Option<i64>, label: &str) -> AppResult<Option<u16>> {
+    match value {
+        None => Ok(None),
+        Some(port) if (1..=u16::MAX as i64).contains(&port) => Ok(Some(port as u16)),
+        Some(port) => Err(AppError::Config(format!("{label} out of range: {port}"))),
+    }
 }
 
 fn normalize_name(name: &str) -> AppResult<String> {

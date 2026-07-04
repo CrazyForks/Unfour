@@ -16,18 +16,19 @@ fn postgres_config_maps_host_port_database_username() {
         port: Some(5433),
         database: Some("mydb".to_string()),
         username: Some("admin".to_string()),
+        ssl_mode: None,
         sqlite_path: None,
         credential_ref: Some("unfour:ws:database-password:abc".to_string()),
         read_only: false,
     };
 
-    let config = input_to_config(&input).expect("config");
-    assert_eq!(config.driver, "postgres");
-    assert_eq!(config.host.as_deref(), Some("pg.example.com"));
-    assert_eq!(config.port, Some(5433));
-    assert_eq!(config.database.as_deref(), Some("mydb"));
-    assert_eq!(config.username.as_deref(), Some("admin"));
-    assert!(config.sqlite_path.is_none());
+    let storage = input_to_storage(&input).expect("storage");
+    assert_eq!(storage.driver, "postgres");
+    assert_eq!(storage.host.as_deref(), Some("pg.example.com"));
+    assert_eq!(storage.port, Some(5433));
+    assert_eq!(storage.database_name.as_deref(), Some("mydb"));
+    assert_eq!(storage.username.as_deref(), Some("admin"));
+    assert!(storage.config.sqlite_path.is_none());
 }
 
 #[test]
@@ -75,6 +76,7 @@ async fn postgres_password_not_leaked_in_connection_error() {
             port: Some(5432),
             database: Some("testdb".to_string()),
             username: Some("testuser".to_string()),
+            ssl_mode: None,
             sqlite_path: None,
             credential_ref: None,
             read_only: false,
@@ -105,6 +107,7 @@ async fn postgres_connection_without_credential_ref_uses_no_password() {
         port: Some(5432),
         database: Some("testdb".to_string()),
         username: Some("dev".to_string()),
+        ssl_mode: None,
         sqlite_path: None,
         credential_ref: None,
         read_only: false,
@@ -170,6 +173,7 @@ async fn postgres_connection_with_credential_ref_loads_password() {
         port: Some(5432),
         database: Some("testdb".to_string()),
         username: Some("dev".to_string()),
+        ssl_mode: None,
         sqlite_path: None,
         credential_ref: Some(credential_ref.credential_ref),
         read_only: false,

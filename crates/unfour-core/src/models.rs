@@ -191,6 +191,8 @@ pub struct DatabaseConnectionInput {
     pub port: Option<u16>,
     pub database: Option<String>,
     pub username: Option<String>,
+    #[serde(default)]
+    pub ssl_mode: Option<String>,
     pub sqlite_path: Option<String>,
     pub credential_ref: Option<String>,
     /// When true, the connection rejects any data- or schema-modifying SQL and
@@ -397,10 +399,9 @@ pub struct SshLogExport {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SshConnectionConfig {
-    pub host: String,
-    pub port: u16,
-    pub username: String,
-    pub auth_kind: String,
+    /// Advanced/private-key-only SSH metadata. Common endpoint and auth method
+    /// fields live in `connections` / `ssh_connections` columns.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub key_path: Option<String>,
 }
 
@@ -467,6 +468,8 @@ pub struct DatabaseConnection {
     pub port: Option<u16>,
     pub database: Option<String>,
     pub username: Option<String>,
+    #[serde(default)]
+    pub ssl_mode: Option<String>,
     pub sqlite_path: Option<String>,
     pub credential_ref: Option<String>,
     #[serde(default)]
@@ -485,9 +488,9 @@ pub struct StoredConnection {
     pub id: String,
     pub workspace_id: String,
     pub name: String,
-    /// `config_json` is selected from the per-kind subtype table
-    /// (`ssh_connections` / `database_connections`) via a JOIN, so this struct
-    /// still models a joined row and the helpers below do not change.
+    /// Legacy joined-row shape for storage paths that only need parent
+    /// metadata plus advanced JSON. New connection engines should prefer
+    /// subtype-specific row structs for structured subtype columns.
     pub config_json: String,
     pub credential_ref: Option<String>,
     pub created_at: String,
@@ -501,16 +504,16 @@ pub struct StoredConnection {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DatabaseConnectionConfig {
-    pub driver: String,
-    pub host: Option<String>,
-    pub port: Option<u16>,
-    pub database: Option<String>,
-    pub username: Option<String>,
+    /// SQLite is driver-specific enough to remain in advanced JSON while the
+    /// subtype row carries common database metadata as columns.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sqlite_path: Option<String>,
-    /// Persisted in `config_json`; `serde(default)` keeps connections saved
-    /// before this field deserializable as read-write.
-    #[serde(default)]
-    pub read_only: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub connect_timeout_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub statement_timeout_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_schema: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

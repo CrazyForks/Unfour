@@ -367,9 +367,10 @@ mod tests {
             sqlx::query(
                 r#"
                 INSERT INTO connections (
-                  id, workspace_id, name, created_at, updated_at, revision, sync_status
+                  id, workspace_id, connection_type, name, host, port,
+                  created_at, updated_at, revision, sync_status
                 )
-                VALUES (?1, ?2, ?1, ?3, ?3, 1, 'local')
+                VALUES (?1, ?2, 'ssh', ?1, 'localhost', 22, ?3, ?3, 1, 'local')
                 "#,
             )
             .bind(connection_id)

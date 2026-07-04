@@ -263,6 +263,7 @@ export function DatabasePage({
         port: selectedConnection.port,
         database: selectedConnection.database,
         username: selectedConnection.username,
+        sslMode: selectedConnection.sslMode,
         sqlitePath: selectedConnection.sqlitePath,
         credentialRef: selectedConnection.credentialRef,
         readOnly: selectedConnection.readOnly,
@@ -616,6 +617,7 @@ export function DatabasePage({
         host: form.host?.trim() || null,
         database: form.database?.trim() || null,
         username: form.username?.trim() || null,
+        sslMode: form.sslMode ?? null,
       },
       secret: password,
     });
@@ -1505,6 +1507,7 @@ function DatabaseConnectionDialog({
                   onUpdate({
                     driver: event.target.value as DatabaseConnectionInput["driver"],
                     sqlitePath: event.target.value === "sqlite" ? form.sqlitePath : null,
+                    sslMode: event.target.value === "sqlite" ? null : form.sslMode,
                     credentialRef: event.target.value === "sqlite" ? null : form.credentialRef,
                   })
                 }

@@ -845,6 +845,7 @@ mod tests {
                 port: Some(5432),
                 database: Some("app_dev".to_string()),
                 username: Some("admin".to_string()),
+                ssl_mode: None,
                 sqlite_path: None,
                 credential_ref: Some("secret-ref-123".to_string()),
                 read_only: false,

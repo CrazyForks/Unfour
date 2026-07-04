@@ -380,9 +380,9 @@ mod tests {
         sqlx::query(
             r#"
             INSERT INTO connections (
-              id, workspace_id, name, created_at, updated_at, revision, sync_status
+              id, workspace_id, connection_type, name, created_at, updated_at, revision, sync_status
             )
-            VALUES ('conn-1', 'ws-sql', 'DB', ?1, ?1, 1, 'local')
+            VALUES ('conn-1', 'ws-sql', 'database', 'DB', ?1, ?1, 1, 'local')
             "#,
         )
         .bind(&now)
@@ -390,7 +390,10 @@ mod tests {
         .await
         .expect("insert connection");
         sqlx::query(
-            r#"INSERT INTO database_connections (connection_id, config_json) VALUES ('conn-1', '{}')"#,
+            r#"
+            INSERT INTO database_connections (connection_id, driver, config_json)
+            VALUES ('conn-1', 'sqlite', '{}')
+            "#,
         )
         .execute(db.pool())
         .await
@@ -606,6 +609,16 @@ mod tests {
             !names.contains(&"config_json"),
             "config_json dropped from connections"
         );
+        assert!(
+            names.contains(&"connection_type"),
+            "connection_type added to connections"
+        );
+        assert!(names.contains(&"host"), "host added to connections");
+        assert!(names.contains(&"port"), "port added to connections");
+        assert!(
+            names.contains(&"last_connected_at"),
+            "last_connected_at added to connections"
+        );
         assert!(names.contains(&"credential_ref"), "credential_ref retained");
 
         // Subtype tables exist with the expected shape.
@@ -616,6 +629,8 @@ mod tests {
                 .expect("list ssh_connections columns");
         let ssh_names: Vec<&str> = ssh_cols.iter().map(|(n,)| n.as_str()).collect();
         assert!(ssh_names.contains(&"connection_id"));
+        assert!(ssh_names.contains(&"username"));
+        assert!(ssh_names.contains(&"auth_method"));
         assert!(ssh_names.contains(&"config_json"));
 
         let db_cols: Vec<(String,)> =
@@ -625,6 +640,11 @@ mod tests {
                 .expect("list database_connections columns");
         let db_names: Vec<&str> = db_cols.iter().map(|(n,)| n.as_str()).collect();
         assert!(db_names.contains(&"connection_id"));
+        assert!(db_names.contains(&"driver"));
+        assert!(db_names.contains(&"database_name"));
+        assert!(db_names.contains(&"username"));
+        assert!(db_names.contains(&"ssl_mode"));
+        assert!(db_names.contains(&"read_only"));
         assert!(db_names.contains(&"config_json"));
     }
 
@@ -649,8 +669,11 @@ mod tests {
 
         sqlx::query(
             r#"
-            INSERT INTO connections (id, workspace_id, name, credential_ref, created_at, updated_at, revision, sync_status)
-            VALUES ('c-ssh-2', 'ws-conn', 'ssh-2', NULL, ?1, ?1, 1, 'local')
+            INSERT INTO connections (
+              id, workspace_id, connection_type, name, host, port, credential_ref,
+              created_at, updated_at, revision, sync_status
+            )
+            VALUES ('c-ssh-2', 'ws-conn', 'ssh', 'ssh-2', 'h2', 22, NULL, ?1, ?1, 1, 'local')
             "#,
         )
         .bind(&now)
@@ -659,19 +682,27 @@ mod tests {
         .expect("insert new-style parent row");
 
         sqlx::query(
-            r#"INSERT INTO ssh_connections (connection_id, config_json) VALUES ('c-ssh-2', '{"host":"h2"}')"#,
+            r#"
+            INSERT INTO ssh_connections (connection_id, username, auth_method, config_json)
+            VALUES ('c-ssh-2', 'deploy', 'password', '{}')
+            "#,
         )
         .execute(db.pool())
         .await
         .expect("insert ssh subtype row");
 
-        let row: (String,) = sqlx::query_as(
-            "SELECT config_json FROM ssh_connections WHERE connection_id = 'c-ssh-2'",
+        let row: (String, String, String) = sqlx::query_as(
+            "SELECT c.host, sub.username, sub.auth_method \
+             FROM connections c \
+             INNER JOIN ssh_connections sub ON sub.connection_id = c.id \
+             WHERE c.id = 'c-ssh-2'",
         )
         .fetch_one(db.pool())
         .await
-        .expect("read subtype row");
-        assert!(row.0.contains("h2"));
+        .expect("read joined subtype row");
+        assert_eq!(row.0, "h2");
+        assert_eq!(row.1, "deploy");
+        assert_eq!(row.2, "password");
     }
 
     #[tokio::test]

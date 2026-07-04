@@ -156,6 +156,7 @@ export type DatabaseConnectionInput = {
   port?: number | null;
   database?: string | null;
   username?: string | null;
+  sslMode?: "disable" | "prefer" | "require" | "verify-ca" | "verify-full" | null;
   sqlitePath?: string | null;
   credentialRef?: string | null;
   readOnly?: boolean;
@@ -340,6 +341,7 @@ export type DatabaseConnection = {
   port: number | null;
   database: string | null;
   username: string | null;
+  sslMode: "disable" | "prefer" | "require" | "verify-ca" | "verify-full" | null;
   sqlitePath: string | null;
   credentialRef: string | null;
   readOnly: boolean;
