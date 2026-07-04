@@ -57,6 +57,7 @@ text to execute.
 | `unfour.api.list_history` | `{ "workspaceId": "optional", "limit": "optional" }` | Lists recent API request/response history. Default limit is 50; max is 200. |
 | `unfour.api.get_history` | `{ "historyId": "required", "workspaceId": "optional" }` | Returns one history entry with request/response details masked. |
 | `unfour.api.list_environments` | `{ "workspaceId": "optional" }` | Lists API environments and variables. Sensitive values are masked. |
+| `unfour.db.create_connection` | `{ "workspaceId": "optional", "name": "required", "driver": "required", "host": "optional", "port": "optional", "database": "optional", "username": "optional", "sslMode": "optional", "sqlitePath": "optional", "credentialRef": "optional", "password": "optional", "credentialLabel": "optional", "readOnly": "optional" }` | Creates a saved database connection. If `password` is supplied, it is written to the OS credential store and only the resulting credential reference is persisted. |
 | `unfour.db.list_connections` | `{ "workspaceId": "optional" }` | Lists saved database connections as safe summaries. |
 | `unfour.db.list_tables` | `{ "connectionId": "required", "workspaceId": "optional", "limit": "optional" }` | Lists tables and views for a saved connection. Default limit is 200; max is 500. |
 | `unfour.db.describe_table` | `{ "connectionId": "required", "tableName": "required", "schema": "optional", "workspaceId": "optional" }` | Describes a table's columns without reading table data. |
@@ -124,8 +125,14 @@ Example confirmation-required result:
 
 ## Database Tools
 
-Database tools require saved `connectionId` values. Ad-hoc connection strings
-are not accepted.
+Database tools operate on saved connection records. `unfour.db.create_connection`
+creates those records through the command bus; it accepts structured connection
+fields rather than ad-hoc connection strings, and it never returns passwords or
+credential references. When `password` is provided, the command bus stores it in
+the OS credential store and persists only a credential reference.
+
+Most database tools require saved `connectionId` values. Ad-hoc connection
+strings are not accepted.
 
 `unfour.db.query_readonly` and `unfour.db.explain` allow only read-only SQL
 keywords:

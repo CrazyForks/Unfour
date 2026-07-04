@@ -504,7 +504,7 @@ mod tests {
         assert_eq!(responses.len(), 3);
         assert_eq!(
             responses[1]["result"]["tools"].as_array().unwrap().len(),
-            32
+            33
         );
         // `run_stdio` opens the real app-data store, so assert only on stable,
         // data-independent fields rather than a specific workspace id.

@@ -4,9 +4,10 @@ use std::sync::Arc;
 use tokio::runtime::{Builder, Runtime};
 use unfour_command_bus::{CommandBus, ReadCommand, ReadCommandResult};
 use unfour_core::models::{
-    ApiCollection, ApiRequestInput, ApiResponse, ApiSavedRequest, DatabaseConnection,
-    DatabaseQueryInput, DatabaseQueryResult, DatabaseSchema, DatabaseTestResult, SshConnection,
-    SshDiagnosticInput, SshDiagnosticResult, SystemHealth,
+    ApiCollection, ApiRequestInput, ApiResponse, ApiSavedRequest, CredentialCreateInput,
+    CredentialMetadata, DatabaseConnection, DatabaseConnectionInput, DatabaseQueryInput,
+    DatabaseQueryResult, DatabaseSchema, DatabaseTestResult, SshConnection, SshDiagnosticInput,
+    SshDiagnosticResult, SystemHealth,
 };
 use unfour_core::AppError;
 
@@ -103,6 +104,26 @@ pub trait CommandBusAdapter: Send + Sync {
         &self,
         workspace_id: &str,
     ) -> Result<Vec<DatabaseConnection>, CommandBusAdapterError>;
+
+    fn save_db_connection(
+        &self,
+        _input: DatabaseConnectionInput,
+    ) -> Result<DatabaseConnection, CommandBusAdapterError> {
+        Err(CommandBusAdapterError {
+            code: "COMMAND_BUS_OPERATION_UNSUPPORTED",
+            message: "This command-bus adapter does not support database connection saves.",
+        })
+    }
+
+    fn create_credential(
+        &self,
+        _input: CredentialCreateInput,
+    ) -> Result<CredentialMetadata, CommandBusAdapterError> {
+        Err(CommandBusAdapterError {
+            code: "COMMAND_BUS_OPERATION_UNSUPPORTED",
+            message: "This command-bus adapter does not support credential creation.",
+        })
+    }
 
     fn get_db_schema(
         &self,
@@ -385,6 +406,34 @@ impl CommandBusAdapter for LocalCommandBusAdapter {
             })
     }
 
+    fn save_db_connection(
+        &self,
+        input: DatabaseConnectionInput,
+    ) -> Result<DatabaseConnection, CommandBusAdapterError> {
+        self.runtime
+            .block_on(self.bus.save_database_connection(input))
+            .map_err(|e| {
+                CommandBusAdapterError::from_app_error(
+                    "The command-bus database connection save failed.",
+                    &e,
+                )
+            })
+    }
+
+    fn create_credential(
+        &self,
+        input: CredentialCreateInput,
+    ) -> Result<CredentialMetadata, CommandBusAdapterError> {
+        self.runtime
+            .block_on(self.bus.create_credential(input))
+            .map_err(|e| {
+                CommandBusAdapterError::from_app_error(
+                    "The command-bus credential create operation failed.",
+                    &e,
+                )
+            })
+    }
+
     fn get_db_schema(
         &self,
         workspace_id: &str,
@@ -454,7 +503,10 @@ impl CommandBusAdapter for LocalCommandBusAdapter {
         self.runtime
             .block_on(self.bus.run_ssh_diagnostic(input))
             .map_err(|e| {
-                CommandBusAdapterError::from_app_error("The command-bus SSH diagnostic failed.", &e)
+                CommandBusAdapterError::from_ssh_app_error(
+                    "The command-bus SSH diagnostic failed.",
+                    &e,
+                )
             })
     }
 
@@ -479,7 +531,10 @@ impl CommandBusAdapter for LocalCommandBusAdapter {
         self.runtime
             .block_on(self.bus.run_ssh_command(input))
             .map_err(|e| {
-                CommandBusAdapterError::from_app_error("The command-bus SSH command failed.", &e)
+                CommandBusAdapterError::from_ssh_app_error(
+                    "The command-bus SSH command failed.",
+                    &e,
+                )
             })
     }
 }
@@ -491,6 +546,23 @@ impl CommandBusAdapterError {
     /// The `AppError` `Display` text is intentionally not propagated because it
     /// may embed hosts, DSNs, or other sensitive detail.
     fn from_app_error(message: &'static str, error: &AppError) -> Self {
+        Self {
+            code: error.code(),
+            message,
+        }
+    }
+
+    fn from_ssh_app_error(message: &'static str, error: &AppError) -> Self {
+        let message = match error {
+            AppError::Validation(reason) if reason.contains("control characters") => {
+                "SSH command validation failed: control characters/newlines are not allowed."
+            }
+            AppError::Validation(reason) if reason.contains("4096") => {
+                "SSH command validation failed: command exceeds 4096 characters."
+            }
+            AppError::Validation(_) => "SSH command validation failed before execution.",
+            _ => message,
+        };
         Self {
             code: error.code(),
             message,
@@ -509,9 +581,10 @@ impl CommandBusAdapterError {
 mod tests {
     use unfour_command_bus::{ConnectionType, ReadCommand, ReadCommandResult};
 
-    use super::LocalCommandBusAdapter;
+    use super::{CommandBusAdapterError, LocalCommandBusAdapter};
     use unfour_command_bus::CommandBus;
     use unfour_core::models::SshConnectionInput;
+    use unfour_core::AppError;
     use unfour_local_storage::LocalDb;
 
     #[test]
@@ -616,6 +689,18 @@ mod tests {
         assert_eq!(
             LocalCommandBusAdapter::default_database_path().expect("adapter database path"),
             unfour_command_bus::default_database_path().expect("command bus database path")
+        );
+    }
+
+    #[test]
+    fn ssh_validation_error_mentions_control_characters() {
+        assert_eq!(
+            CommandBusAdapterError::from_ssh_app_error(
+                "The command-bus SSH command failed.",
+                &AppError::Validation("ssh command cannot contain control characters".to_string()),
+            )
+            .message,
+            "SSH command validation failed: control characters/newlines are not allowed."
         );
     }
 }

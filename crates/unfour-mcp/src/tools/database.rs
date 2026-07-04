@@ -9,6 +9,9 @@ use super::{
     ToolCallError, ToolDefinition,
 };
 
+#[path = "database_create.rs"]
+mod database_create;
+
 const DEFAULT_QUERY_LIMIT: u32 = 100;
 const MAX_QUERY_LIMIT: u32 = 1000;
 const DEFAULT_TABLE_LIMIT: u32 = 200;
@@ -17,6 +20,7 @@ const MAX_QUERY_RESULT_BYTES: usize = 20 * 1024;
 
 pub(super) fn registered_tools() -> Vec<RegisteredTool> {
     vec![
+        database_create::registered_tool(),
         RegisteredTool {
             definition: ToolDefinition {
                 name: "unfour.db.list_connections",

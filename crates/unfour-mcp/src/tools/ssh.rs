@@ -17,6 +17,7 @@ use ssh_risk::{
 };
 
 const MAX_DIAGNOSTIC_TIMEOUT_MS: u64 = 60_000;
+const MAX_ONE_SHOT_COMMAND_CHARS: usize = 4096;
 const DEFAULT_FILE_LIMIT: u64 = 20 * 1024;
 const MAX_FILE_LIMIT: u64 = 128 * 1024;
 
@@ -423,7 +424,7 @@ fn ssh_write_file(
     )?;
     let connection_id = parse_required_string(&arguments, "connectionId", "unfour.ssh.write_file")?;
     let path = parse_required_string(&arguments, "path", "unfour.ssh.write_file")?;
-    let content = parse_required_string(&arguments, "content", "unfour.ssh.write_file")?;
+    let content = parse_required_raw_string(&arguments, "content", "unfour.ssh.write_file", true)?;
     let mode = parse_optional_string(&arguments, "mode")?.unwrap_or_else(|| "overwrite".into());
     let workspace = resolve_workspace(command_bus, &arguments)?;
     let timeout_ms = parse_optional_timeout(&arguments)?;
@@ -443,26 +444,17 @@ fn ssh_write_file(
         )?;
     }
 
-    let redirect = match mode.as_str() {
-        "append" => ">>",
-        "create" | "overwrite" => ">",
+    let python_mode = match mode.as_str() {
+        "append" => "ab",
+        "create" => "xb",
+        "overwrite" => "wb",
         _ => {
             return Err(ToolCallError::InvalidArguments(
                 "argument `mode` must be one of: overwrite, append, create".to_string(),
             ))
         }
     };
-    let marker = heredoc_marker(&content);
-    let noclobber = if mode == "create" { "set -C; " } else { "" };
-    let command = format!(
-        "{}cat {} {} <<'{}'\n{}\n{}",
-        noclobber,
-        redirect,
-        shell_quote(&path),
-        marker,
-        content,
-        marker
-    );
+    let command = python_write_file_command(&path, content.as_bytes(), python_mode)?;
     let result = command_bus
         .run_ssh_command(SshDiagnosticInput {
             workspace_id: workspace.workspace_id,
@@ -508,8 +500,8 @@ fn ssh_patch_file(
     )?;
     let connection_id = parse_required_string(&arguments, "connectionId", "unfour.ssh.patch_file")?;
     let path = parse_required_string(&arguments, "path", "unfour.ssh.patch_file")?;
-    let search = parse_required_string(&arguments, "search", "unfour.ssh.patch_file")?;
-    let replace = parse_required_string(&arguments, "replace", "unfour.ssh.patch_file")?;
+    let search = parse_required_raw_string(&arguments, "search", "unfour.ssh.patch_file", false)?;
+    let replace = parse_required_raw_string(&arguments, "replace", "unfour.ssh.patch_file", true)?;
     let workspace = resolve_workspace(command_bus, &arguments)?;
     let timeout_ms = parse_optional_timeout(&arguments)?;
     let multi_match_payload = json!({
@@ -542,15 +534,12 @@ fn ssh_patch_file(
         )?;
     }
 
-    let script = format!(
-        "from pathlib import Path\np = Path({})\ntext = p.read_text()\nsearch = {}\nreplace = {}\nallow_multiple = {}\ncount = text.count(search)\nprint('__UNFOUR_MATCH_COUNT__', count)\nif count == 0 or (count > 1 and not allow_multiple):\n    raise SystemExit(3)\nreplacements = count if allow_multiple else 1\np.write_text(text.replace(search, replace, replacements))\nprint('__UNFOUR_PATCHED__', replacements)\n",
-        python_string(&path),
-        python_string(&search),
-        python_string(&replace),
-        if allow_multiple_matches { "True" } else { "False" }
-    );
-    let marker = heredoc_marker(&script);
-    let command = format!("python3 - <<'{}'\n{}\n{}", marker, script, marker);
+    let command = python_patch_file_command(
+        &path,
+        &search,
+        &replace,
+        if allow_multiple_matches { "1" } else { "0" },
+    )?;
     let result = command_bus
         .run_ssh_command(SshDiagnosticInput {
             workspace_id: workspace.workspace_id,
@@ -713,16 +702,56 @@ fn ssh_command_result(result: unfour_core::models::SshDiagnosticResult, source: 
     })
 }
 
-fn heredoc_marker(content: &str) -> String {
-    let mut marker = format!("UNFOUR_MCP_EOF_{}", fnv1a_hex8(content));
-    while content.contains(&marker) {
-        marker.push('X');
-    }
-    marker
+fn python_write_file_command(
+    path: &str,
+    content: &[u8],
+    python_mode: &str,
+) -> Result<String, ToolCallError> {
+    let script = "from pathlib import Path; import sys; data=bytes.fromhex(sys.argv[3]); f=Path(sys.argv[1]).open(sys.argv[2]); f.write(data); f.close()";
+    ensure_one_shot_command_length(format!(
+        "python3 -c {} -- {} {} {}",
+        shell_quote(script),
+        shell_quote(path),
+        shell_quote(python_mode),
+        shell_quote(&hex_encode(content))
+    ))
 }
 
-fn python_string(value: &str) -> String {
-    serde_json::to_string(value).unwrap_or_else(|_| "''".to_string())
+fn python_patch_file_command(
+    path: &str,
+    search: &str,
+    replace: &str,
+    allow_multiple: &str,
+) -> Result<String, ToolCallError> {
+    let script = "import sys; from pathlib import Path; p=Path(sys.argv[1]); text=p.read_text(); search=bytes.fromhex(sys.argv[2]).decode(); replace=bytes.fromhex(sys.argv[3]).decode(); allow=sys.argv[4]=='1'; count=text.count(search); print('__UNFOUR_MATCH_COUNT__', count); sys.exit(3) if count == 0 or (count > 1 and not allow) else None; replacements=count if allow else 1; p.write_text(text.replace(search, replace, replacements)); print('__UNFOUR_PATCHED__', replacements)";
+    ensure_one_shot_command_length(format!(
+        "python3 -c {} -- {} {} {} {}",
+        shell_quote(script),
+        shell_quote(path),
+        shell_quote(&hex_encode(search.as_bytes())),
+        shell_quote(&hex_encode(replace.as_bytes())),
+        shell_quote(allow_multiple)
+    ))
+}
+
+fn ensure_one_shot_command_length(command: String) -> Result<String, ToolCallError> {
+    if command.chars().count() > MAX_ONE_SHOT_COMMAND_CHARS {
+        return Err(ToolCallError::Execution {
+            code: "SSH_COMMAND_TOO_LARGE",
+            message: "The generated SSH command exceeds the one-shot command length limit.",
+        });
+    }
+    Ok(command)
+}
+
+fn hex_encode(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut encoded = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        encoded.push(HEX[(byte >> 4) as usize] as char);
+        encoded.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    encoded
 }
 
 fn parse_match_count(stdout: &str) -> Option<u64> {
@@ -757,15 +786,6 @@ fn parse_find_entries(stdout: &str) -> Vec<Value> {
             }))
         })
         .collect()
-}
-
-fn fnv1a_hex8(value: &str) -> String {
-    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
-    for byte in value.as_bytes() {
-        hash ^= u64::from(*byte);
-        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
-    }
-    format!("{:08x}", hash & 0xffff_ffff)
 }
 
 fn resolve_workspace_id(
@@ -814,6 +834,25 @@ fn parse_required_string(
 ) -> Result<String, ToolCallError> {
     match arguments.get(key) {
         Some(Value::String(s)) if !s.trim().is_empty() => Ok(s.trim().to_string()),
+        Some(Value::String(_)) => Err(ToolCallError::InvalidArguments(format!(
+            "{} argument `{}` cannot be empty",
+            tool_name, key
+        ))),
+        _ => Err(ToolCallError::InvalidArguments(format!(
+            "{} requires argument `{}`",
+            tool_name, key
+        ))),
+    }
+}
+
+fn parse_required_raw_string(
+    arguments: &Map<String, Value>,
+    key: &str,
+    tool_name: &str,
+    allow_empty: bool,
+) -> Result<String, ToolCallError> {
+    match arguments.get(key) {
+        Some(Value::String(s)) if allow_empty || !s.is_empty() => Ok(s.clone()),
         Some(Value::String(_)) => Err(ToolCallError::InvalidArguments(format!(
             "{} argument `{}` cannot be empty",
             tool_name, key

@@ -40,6 +40,7 @@ pub(super) enum McpCapability {
     ApiRead,
     ApiSend,
     ApiMutate,
+    DbConnectionMutate,
     DbSchemaRead,
     DbDataRead,
     DbDataWrite,
@@ -57,6 +58,7 @@ impl McpCapability {
             Self::ApiRead => "api:read",
             Self::ApiSend => "api:send",
             Self::ApiMutate => "api:mutate",
+            Self::DbConnectionMutate => "db:connection:mutate",
             Self::DbSchemaRead => "db:schema:read",
             Self::DbDataRead => "db:data:read",
             Self::DbDataWrite => "db:data:write",
@@ -179,6 +181,7 @@ pub(super) fn classify_mcp_action(
         | "unfour.db.list_tables"
         | "unfour.db.describe_table"
         | "unfour.db.test_connection" => (McpCapability::DbSchemaRead, McpRisk::Read),
+        "unfour.db.create_connection" => (McpCapability::DbConnectionMutate, McpRisk::Write),
         "unfour.db.query_readonly" => (McpCapability::DbDataRead, McpRisk::Read),
         "unfour.db.explain" => (McpCapability::DbDataRead, McpRisk::Read),
         "unfour.db.execute" => {

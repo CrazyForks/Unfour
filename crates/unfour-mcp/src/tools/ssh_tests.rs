@@ -55,8 +55,16 @@ impl CommandBusAdapter for SshStubCommandBus {
         &self,
         input: SshDiagnosticInput,
     ) -> Result<SshDiagnosticResult, CommandBusAdapterError> {
+        if input.command.chars().any(char::is_control) {
+            return Err(CommandBusAdapterError {
+                code: "VALIDATION_ERROR",
+                message: "control characters detected",
+            });
+        }
+
         if input.command.contains("__UNFOUR_MATCH_COUNT__") {
-            let allow_multiple = input.command.contains("allow_multiple = True");
+            let allow_multiple =
+                input.command.contains("allow_multiple = True") || input.command.ends_with(" '1'");
             return Ok(SshDiagnosticResult {
                 connection_id: input.connection_id,
                 command: input.command,
@@ -307,6 +315,29 @@ fn patch_file_multi_match_requires_confirmation_then_replaces_all() {
         confirmed["structuredContent"]["diffSummary"]["replacements"],
         2
     );
+}
+
+#[test]
+fn write_file_accepts_multiline_content_without_multiline_shell_command() {
+    let content = "services:\n  db:\n    image: postgres:15\n";
+    let result = registry()
+        .call(
+            "unfour.ssh.write_file",
+            json!({
+                "connectionId": "conn-1",
+                "path": "/srv/app/docker-compose.yml",
+                "content": content
+            }),
+        )
+        .expect("multiline content should be encoded into a control-free command");
+
+    assert_eq!(result["isError"], false);
+    assert_eq!(
+        result["structuredContent"]["path"],
+        "/srv/app/docker-compose.yml"
+    );
+    assert_eq!(result["structuredContent"]["mode"], "overwrite");
+    assert_eq!(result["structuredContent"]["bytes"], content.len());
 }
 
 #[test]

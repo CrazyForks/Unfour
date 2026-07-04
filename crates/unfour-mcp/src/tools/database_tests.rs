@@ -6,7 +6,8 @@ use unfour_command_bus::{
     WorkspaceListResult, WorkspaceSummary,
 };
 use unfour_core::models::{
-    ApiResponse, DatabaseConnection, DatabaseQueryInput, DatabaseQueryResult, DatabaseQuerySafety,
+    ApiResponse, CredentialCreateInput, CredentialMetadata, DatabaseConnection,
+    DatabaseConnectionInput, DatabaseQueryInput, DatabaseQueryResult, DatabaseQuerySafety,
     DatabaseResultColumn, DatabaseSchema, DatabaseTable, DatabaseTableColumn, DatabaseTestResult,
 };
 
@@ -105,6 +106,44 @@ impl CommandBusAdapter for DbStubCommandBus {
             sync_status: "local".to_string(),
             remote_id: None,
         }])
+    }
+
+    fn create_credential(
+        &self,
+        input: CredentialCreateInput,
+    ) -> Result<CredentialMetadata, CommandBusAdapterError> {
+        Ok(CredentialMetadata {
+            workspace_id: input.workspace_id,
+            kind: input.kind,
+            label: input.label,
+            credential_ref: "unfour:workspace-1:database-password:cred-1".to_string(),
+        })
+    }
+
+    fn save_db_connection(
+        &self,
+        input: DatabaseConnectionInput,
+    ) -> Result<DatabaseConnection, CommandBusAdapterError> {
+        Ok(DatabaseConnection {
+            id: "created-db-1".to_string(),
+            workspace_id: input.workspace_id,
+            name: input.name,
+            driver: input.driver,
+            host: input.host,
+            port: input.port,
+            database: input.database,
+            username: input.username,
+            ssl_mode: input.ssl_mode,
+            sqlite_path: input.sqlite_path,
+            credential_ref: input.credential_ref,
+            read_only: input.read_only,
+            created_at: "2026-01-01T00:00:00Z".to_string(),
+            updated_at: "2026-01-01T00:00:00Z".to_string(),
+            deleted_at: None,
+            revision: 1,
+            sync_status: "local".to_string(),
+            remote_id: None,
+        })
     }
 
     fn get_db_schema(
@@ -379,6 +418,79 @@ impl CommandBusAdapter for ProdDbStubCommandBus {
 }
 
 // --- list_connections tests ---
+
+#[test]
+fn create_connection_stores_password_as_credential_and_returns_safe_summary() {
+    let result = registry()
+        .call(
+            "unfour.db.create_connection",
+            json!({
+                "name": "Remote PG15",
+                "driver": "postgres",
+                "host": "192.168.57.128",
+                "port": 5432,
+                "database": "unfour",
+                "username": "unfour",
+                "password": "test-db-password",
+                "sslMode": "disable"
+            }),
+        )
+        .expect("create connection should succeed");
+
+    assert_eq!(result["isError"], false);
+    let content = &result["structuredContent"];
+    assert_eq!(content["credentialStored"], true);
+    assert_eq!(content["credentialSource"], "created");
+    assert_eq!(content["connection"]["id"], "created-db-1");
+    assert_eq!(content["connection"]["name"], "Remote PG15");
+    assert_eq!(content["connection"]["databaseType"], "postgres");
+    assert_eq!(content["connection"]["host"], "192.168.57.128");
+    assert_eq!(content["connection"]["port"], 5432);
+    assert_eq!(content["connection"]["database"], "unfour");
+
+    let serialized = serde_json::to_string(content).unwrap();
+    assert!(!serialized.contains("test-db-password"));
+    assert!(!serialized.contains("credentialRef"));
+    assert!(!serialized.contains("database-password:cred-1"));
+}
+
+#[test]
+fn create_connection_rejects_password_and_credential_ref_together() {
+    let result = registry().call(
+        "unfour.db.create_connection",
+        json!({
+            "name": "Remote PG15",
+            "driver": "postgres",
+            "credentialRef": "unfour:workspace-1:database-password:cred-1",
+            "password": "test-db-password"
+        }),
+    );
+    assert!(result.is_err());
+}
+
+#[test]
+fn create_connection_prod_workspace_is_blocked_by_policy() {
+    let registry = super::super::ToolRegistry::with_command_bus(Arc::new(ProdDbStubCommandBus));
+    let result = registry
+        .call(
+            "unfour.db.create_connection",
+            json!({
+                "name": "Remote PG15",
+                "driver": "postgres",
+                "host": "192.168.57.128",
+                "port": 5432
+            }),
+        )
+        .expect("policy denial should be structured");
+
+    assert_eq!(result["isError"], true);
+    assert_eq!(result["structuredContent"]["ok"], false);
+    assert_eq!(
+        result["structuredContent"]["error"]["code"],
+        "WORKSPACE_POLICY_BLOCKED"
+    );
+    assert_eq!(result["structuredContent"]["environment"], "prod");
+}
 
 #[test]
 fn list_connections_returns_safe_summary() {

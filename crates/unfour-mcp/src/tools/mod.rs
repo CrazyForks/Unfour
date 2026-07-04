@@ -563,7 +563,7 @@ mod tests {
     fn tool_schemas_are_available() {
         let definitions = ToolRegistry::with_command_bus(Arc::new(StubCommandBus)).definitions();
 
-        assert_eq!(definitions.len(), 32);
+        assert_eq!(definitions.len(), 33);
         assert!(definitions
             .iter()
             .all(|definition| definition.input_schema["type"] == "object"));
@@ -591,6 +591,9 @@ mod tests {
         assert!(definitions
             .iter()
             .any(|definition| definition.name == "unfour.db.list_connections"));
+        assert!(definitions
+            .iter()
+            .any(|definition| definition.name == "unfour.db.create_connection"));
         assert!(definitions
             .iter()
             .any(|definition| definition.name == "unfour.db.list_tables"));
