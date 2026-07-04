@@ -4,8 +4,9 @@ use std::sync::Arc;
 use tokio::runtime::{Builder, Runtime};
 use unfour_command_bus::{CommandBus, ReadCommand, ReadCommandResult};
 use unfour_core::models::{
-    ApiResponse, DatabaseConnection, DatabaseQueryInput, DatabaseQueryResult, DatabaseSchema,
-    DatabaseTestResult, SshDiagnosticInput, SshDiagnosticResult, SystemHealth,
+    ApiCollection, ApiRequestInput, ApiResponse, ApiSavedRequest, DatabaseConnection,
+    DatabaseQueryInput, DatabaseQueryResult, DatabaseSchema, DatabaseTestResult, SshConnection,
+    SshDiagnosticInput, SshDiagnosticResult, SystemHealth,
 };
 use unfour_core::AppError;
 
@@ -20,6 +21,83 @@ pub trait CommandBusAdapter: Send + Sync {
         request_id: &str,
         timeout_ms: Option<u64>,
     ) -> Result<ApiResponse, CommandBusAdapterError>;
+
+    fn send_api_request(
+        &self,
+        _input: ApiRequestInput,
+    ) -> Result<ApiResponse, CommandBusAdapterError> {
+        Err(CommandBusAdapterError {
+            code: "COMMAND_BUS_OPERATION_UNSUPPORTED",
+            message: "This command-bus adapter does not support ad-hoc API sends.",
+        })
+    }
+
+    fn save_api_request(
+        &self,
+        _input: ApiRequestInput,
+    ) -> Result<ApiSavedRequest, CommandBusAdapterError> {
+        Err(CommandBusAdapterError {
+            code: "COMMAND_BUS_OPERATION_UNSUPPORTED",
+            message: "This command-bus adapter does not support API request saves.",
+        })
+    }
+
+    fn update_api_request(
+        &self,
+        _workspace_id: &str,
+        _request_id: &str,
+        _input: ApiRequestInput,
+    ) -> Result<ApiSavedRequest, CommandBusAdapterError> {
+        Err(CommandBusAdapterError {
+            code: "COMMAND_BUS_OPERATION_UNSUPPORTED",
+            message: "This command-bus adapter does not support API request updates.",
+        })
+    }
+
+    fn delete_api_request(
+        &self,
+        _workspace_id: &str,
+        _request_id: &str,
+    ) -> Result<Vec<ApiSavedRequest>, CommandBusAdapterError> {
+        Err(CommandBusAdapterError {
+            code: "COMMAND_BUS_OPERATION_UNSUPPORTED",
+            message: "This command-bus adapter does not support API request deletion.",
+        })
+    }
+
+    fn create_api_collection(
+        &self,
+        _workspace_id: &str,
+        _name: &str,
+    ) -> Result<ApiCollection, CommandBusAdapterError> {
+        Err(CommandBusAdapterError {
+            code: "COMMAND_BUS_OPERATION_UNSUPPORTED",
+            message: "This command-bus adapter does not support API collection creation.",
+        })
+    }
+
+    fn update_api_collection(
+        &self,
+        _workspace_id: &str,
+        _collection_id: &str,
+        _name: &str,
+    ) -> Result<ApiCollection, CommandBusAdapterError> {
+        Err(CommandBusAdapterError {
+            code: "COMMAND_BUS_OPERATION_UNSUPPORTED",
+            message: "This command-bus adapter does not support API collection updates.",
+        })
+    }
+
+    fn delete_api_collection(
+        &self,
+        _workspace_id: &str,
+        _collection_id: &str,
+    ) -> Result<Vec<ApiCollection>, CommandBusAdapterError> {
+        Err(CommandBusAdapterError {
+            code: "COMMAND_BUS_OPERATION_UNSUPPORTED",
+            message: "This command-bus adapter does not support API collection deletion.",
+        })
+    }
 
     fn list_db_connections(
         &self,
@@ -70,6 +148,26 @@ pub trait CommandBusAdapter: Send + Sync {
         Err(CommandBusAdapterError {
             code: "COMMAND_BUS_OPERATION_UNSUPPORTED",
             message: "This command-bus adapter does not support SSH diagnostics.",
+        })
+    }
+
+    fn list_ssh_connections(
+        &self,
+        _workspace_id: &str,
+    ) -> Result<Vec<SshConnection>, CommandBusAdapterError> {
+        Err(CommandBusAdapterError {
+            code: "COMMAND_BUS_OPERATION_UNSUPPORTED",
+            message: "This command-bus adapter does not support SSH connection listing.",
+        })
+    }
+
+    fn run_ssh_command(
+        &self,
+        _input: SshDiagnosticInput,
+    ) -> Result<SshDiagnosticResult, CommandBusAdapterError> {
+        Err(CommandBusAdapterError {
+            code: "COMMAND_BUS_OPERATION_UNSUPPORTED",
+            message: "This command-bus adapter does not support SSH command execution.",
         })
     }
 }
@@ -146,6 +244,128 @@ impl CommandBusAdapter for LocalCommandBusAdapter {
             .map_err(|e| {
                 CommandBusAdapterError::from_app_error(
                     "The command-bus API send operation failed.",
+                    &e,
+                )
+            })
+    }
+
+    fn send_api_request(
+        &self,
+        input: ApiRequestInput,
+    ) -> Result<ApiResponse, CommandBusAdapterError> {
+        self.runtime
+            .block_on(self.bus.send_api_request(input))
+            .map_err(|e| {
+                CommandBusAdapterError::from_app_error(
+                    "The command-bus API send operation failed.",
+                    &e,
+                )
+            })
+    }
+
+    fn save_api_request(
+        &self,
+        input: ApiRequestInput,
+    ) -> Result<ApiSavedRequest, CommandBusAdapterError> {
+        self.runtime
+            .block_on(self.bus.save_api_request(input))
+            .map_err(|e| {
+                CommandBusAdapterError::from_app_error(
+                    "The command-bus API request save operation failed.",
+                    &e,
+                )
+            })
+    }
+
+    fn update_api_request(
+        &self,
+        workspace_id: &str,
+        request_id: &str,
+        input: ApiRequestInput,
+    ) -> Result<ApiSavedRequest, CommandBusAdapterError> {
+        self.runtime
+            .block_on(self.bus.update_api_request(
+                workspace_id.to_string(),
+                request_id.to_string(),
+                input,
+            ))
+            .map_err(|e| {
+                CommandBusAdapterError::from_app_error(
+                    "The command-bus API request update operation failed.",
+                    &e,
+                )
+            })
+    }
+
+    fn delete_api_request(
+        &self,
+        workspace_id: &str,
+        request_id: &str,
+    ) -> Result<Vec<ApiSavedRequest>, CommandBusAdapterError> {
+        self.runtime
+            .block_on(
+                self.bus
+                    .delete_api_request(workspace_id.to_string(), request_id.to_string()),
+            )
+            .map_err(|e| {
+                CommandBusAdapterError::from_app_error(
+                    "The command-bus API request delete operation failed.",
+                    &e,
+                )
+            })
+    }
+
+    fn create_api_collection(
+        &self,
+        workspace_id: &str,
+        name: &str,
+    ) -> Result<ApiCollection, CommandBusAdapterError> {
+        self.runtime
+            .block_on(
+                self.bus
+                    .api_collection_create(workspace_id.to_string(), name.to_string()),
+            )
+            .map_err(|e| {
+                CommandBusAdapterError::from_app_error(
+                    "The command-bus API collection create operation failed.",
+                    &e,
+                )
+            })
+    }
+
+    fn update_api_collection(
+        &self,
+        workspace_id: &str,
+        collection_id: &str,
+        name: &str,
+    ) -> Result<ApiCollection, CommandBusAdapterError> {
+        self.runtime
+            .block_on(self.bus.api_collection_rename(
+                workspace_id.to_string(),
+                collection_id.to_string(),
+                name.to_string(),
+            ))
+            .map_err(|e| {
+                CommandBusAdapterError::from_app_error(
+                    "The command-bus API collection update operation failed.",
+                    &e,
+                )
+            })
+    }
+
+    fn delete_api_collection(
+        &self,
+        workspace_id: &str,
+        collection_id: &str,
+    ) -> Result<Vec<ApiCollection>, CommandBusAdapterError> {
+        self.runtime
+            .block_on(
+                self.bus
+                    .api_collection_delete(workspace_id.to_string(), collection_id.to_string()),
+            )
+            .map_err(|e| {
+                CommandBusAdapterError::from_app_error(
+                    "The command-bus API collection delete operation failed.",
                     &e,
                 )
             })
@@ -235,6 +455,31 @@ impl CommandBusAdapter for LocalCommandBusAdapter {
             .block_on(self.bus.run_ssh_diagnostic(input))
             .map_err(|e| {
                 CommandBusAdapterError::from_app_error("The command-bus SSH diagnostic failed.", &e)
+            })
+    }
+
+    fn list_ssh_connections(
+        &self,
+        workspace_id: &str,
+    ) -> Result<Vec<SshConnection>, CommandBusAdapterError> {
+        self.runtime
+            .block_on(self.bus.list_ssh_connections(workspace_id.to_string()))
+            .map_err(|e| {
+                CommandBusAdapterError::from_app_error(
+                    "The command-bus SSH connection list operation failed.",
+                    &e,
+                )
+            })
+    }
+
+    fn run_ssh_command(
+        &self,
+        input: SshDiagnosticInput,
+    ) -> Result<SshDiagnosticResult, CommandBusAdapterError> {
+        self.runtime
+            .block_on(self.bus.run_ssh_command(input))
+            .map_err(|e| {
+                CommandBusAdapterError::from_app_error("The command-bus SSH command failed.", &e)
             })
     }
 }

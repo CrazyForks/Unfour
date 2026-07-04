@@ -11,15 +11,15 @@ From the repository root:
 cargo build -p unfour-mcp
 ```
 
-The default build includes native SSH transport, so
-`unfour.ssh.run_diagnostic` is available. To build without native SSH support:
+The default build includes native SSH transport, so SSH diagnostic, exec, file,
+and directory tools are available. To build without native SSH support:
 
 ```powershell
 cargo build -p unfour-mcp --no-default-features
 ```
 
-In a no-default-features build, the SSH tool remains listed but returns an
-unsupported-operation error.
+In a no-default-features build, SSH tools remain listed but return an
+unsupported-operation error when remote execution is required.
 
 ## Manual Smoke Check
 
@@ -59,9 +59,18 @@ Use the Unfour MCP server to inspect the history entry with id <history-id>.
 Use the Unfour MCP server to list database connections.
 Use the Unfour MCP server to describe the users table for connection <id>.
 Use the Unfour MCP server to run a read-only query: select id, email from users limit 10.
+Use the Unfour MCP server to explain this query on connection <id>: select * from users where email = 'me@example.com'.
+Use the Unfour MCP server to dry-run this database fix on connection <id>: update users set active = true where id = 42.
 Use the Unfour MCP server to list recent workspace activity.
 Use the Unfour MCP server to run the read-only SSH diagnostic command df -h on connection <id>.
+Use the Unfour MCP server to list /var/log on SSH connection <id>.
+Use the Unfour MCP server to read the last 20000 bytes of /var/log/app.log on SSH connection <id>.
 Use the Unfour MCP server to check system health.
 ```
+
+For high-risk requests, the first call returns `CONFIRMATION_REQUIRED` with a
+`confirmation_text`. Re-run only after reviewing the target workspace,
+command/SQL/path, and payload, passing `confirm=true` and that exact
+confirmation text.
 
 See `docs/mcp/tools.md` for the current tool list and safety constraints.

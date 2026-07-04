@@ -102,7 +102,7 @@ impl McpServer {
                 "title": "Unfour MCP",
                 "version": env!("CARGO_PKG_VERSION"),
             },
-            "instructions": "Unfour exposes read-only backend diagnostics over the command bus, scoped to the active workspace. Recommended troubleshooting flow: (1) unfour.system.health to confirm the store is ready; (2) unfour.activity.list to see what changed recently before a failure started; (3) for API issues, unfour.api.list_history then unfour.api.get_history to find the first failing request and inspect masked auth, and unfour.api.send_request to replay a saved request; (4) for database issues, unfour.db.list_connections, unfour.db.list_tables, unfour.db.describe_table, and unfour.db.query_readonly (SELECT/WITH/SHOW/EXPLAIN only); (5) for host/service issues, unfour.ssh.run_diagnostic with read-only commands (df, free, journalctl, grep, docker logs, kubectl get/logs, ...). Every tool is read-only or replay-only and never mutates your data; secrets are masked and never returned in usable form. Check each tool's annotations: openWorldHint marks tools that reach an external database or SSH host.",
+            "instructions": "Unfour exposes workspace-scoped API, database, SSH, activity, and health tools over the command bus. Default policy is environment-aware: dev workspaces allow ordinary read/write repair actions, test workspaces guard higher-risk actions, and prod workspaces are read-only except safe diagnostics. Recommended flow: (1) unfour.system.health; (2) unfour.activity.list; (3) inspect API history or saved requests, then use unfour.api.send_request/create_request/update_request/delete_request when policy allows; (4) inspect database connections and schemas, use unfour.db.query_readonly or unfour.db.explain first, then unfour.db.execute for confirmed fixes; (5) for hosts, start with unfour.ssh.run_diagnostic/list_dir/read_file, then use unfour.ssh.exec/write_file/patch_file only when appropriate. High-risk tools return CONFIRMATION_REQUIRED with a content-bound confirmation_text; re-run with confirm=true and that exact value to execute. Secrets are masked and never returned in usable form. Check tool annotations and structuredContent.risk_level before acting.",
         }))
     }
 
@@ -148,6 +148,7 @@ impl McpServer {
                 let error_kind = match &error {
                     ToolCallError::UnknownTool(_) => "UNKNOWN_TOOL",
                     ToolCallError::InvalidArguments(_) => "INVALID_ARGUMENTS",
+                    ToolCallError::ConfirmationRequired(_) => "CONFIRMATION_REQUIRED",
                     ToolCallError::PolicyBlocked(_) => "POLICY_BLOCKED",
                     ToolCallError::Execution { code, .. } => *code,
                 };
@@ -161,10 +162,12 @@ impl McpServer {
                     json!({ "request_id": request_id.as_str(), "tool_name": name }),
                 );
                 Err(match error {
-                    ToolCallError::UnknownTool(name) => {
-                        (-32602, format!("Unknown tool: {name}"))
-                    }
+                    ToolCallError::UnknownTool(name) => (-32602, format!("Unknown tool: {name}")),
                     ToolCallError::InvalidArguments(message) => (-32602, message),
+                    ToolCallError::ConfirmationRequired(confirmation) => (
+                        -32000,
+                        format!("CONFIRMATION_REQUIRED: {}", confirmation.reason),
+                    ),
                     ToolCallError::PolicyBlocked(denial) => {
                         (-32000, format!("{}: {}", denial.error.code, denial.reason))
                     }
@@ -501,7 +504,7 @@ mod tests {
         assert_eq!(responses.len(), 3);
         assert_eq!(
             responses[1]["result"]["tools"].as_array().unwrap().len(),
-            18
+            32
         );
         // `run_stdio` opens the real app-data store, so assert only on stable,
         // data-independent fields rather than a specific workspace id.

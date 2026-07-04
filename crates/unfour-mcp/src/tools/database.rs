@@ -5,7 +5,8 @@ use unfour_core::models::{DatabaseConnection, DatabaseQueryInput};
 use crate::command_bus_adapter::CommandBusAdapter;
 
 use super::{
-    object_with_allowed_keys, RegisteredTool, ToolAnnotations, ToolCallError, ToolDefinition,
+    confirmation::ensure_confirmed, object_with_allowed_keys, RegisteredTool, ToolAnnotations,
+    ToolCallError, ToolDefinition,
 };
 
 const DEFAULT_QUERY_LIMIT: u32 = 100;
@@ -245,6 +246,93 @@ pub(super) fn registered_tools() -> Vec<RegisteredTool> {
         },
         RegisteredTool {
             definition: ToolDefinition {
+                name: "unfour.db.execute",
+                title: "Execute Database SQL",
+                description:
+                    "Executes one SQL statement against a saved database connection through the Unfour command bus. Use for INSERT/UPDATE/DELETE/DDL when an agent needs to repair dev/test data. Dev allows non-high-risk writes by default; test allows small writes but high-risk SQL requires confirm; prod blocks writes. DELETE/UPDATE without WHERE, DROP, TRUNCATE, ALTER, and multi-row destructive statements require a second call with the returned confirmation_text. Returns affectedRows, statementType, durationMs, and engine safety metadata.",
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "connectionId": { "type": "string" },
+                        "sql": { "type": "string" },
+                        "limit": { "type": "integer" },
+                        "workspaceId": { "type": "string" },
+                        "catalog": { "type": "string" },
+                        "schema": { "type": "string" },
+                        "timeoutMs": { "type": "integer" },
+                        "dryRun": { "type": "boolean" },
+                        "transaction": { "type": "boolean" },
+                        "confirm": { "type": "boolean" },
+                        "confirmationText": { "type": "string" },
+                        "confirmation_text": { "type": "string" }
+                    },
+                    "required": ["connectionId", "sql"],
+                    "additionalProperties": false
+                }),
+                output_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "ok": { "type": "boolean" },
+                        "connectionId": { "type": "string" },
+                        "statementType": { "type": "string" },
+                        "affectedRows": { "type": "integer" },
+                        "columns": { "type": "array" },
+                        "rows": { "type": "array" },
+                        "rowCount": { "type": "integer" },
+                        "durationMs": { "type": "integer" },
+                        "dryRun": { "type": "boolean" },
+                        "safety": { "type": "object" },
+                        "source": { "type": "string", "const": "command-bus" }
+                    },
+                    "required": ["ok", "connectionId", "statementType", "dryRun", "source"],
+                    "additionalProperties": false
+                }),
+                annotations: ToolAnnotations::remote_action(),
+            },
+            handler: db_execute,
+        },
+        RegisteredTool {
+            definition: ToolDefinition {
+                name: "unfour.db.explain",
+                title: "Explain Database Query",
+                description:
+                    "Runs EXPLAIN for a read query against a saved database connection through the Unfour command bus. Use before optimizing slow SELECT/WITH queries. This is read-only in dev/test/prod; it returns structured columns/rows, durationMs, and truncation metadata.",
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "connectionId": { "type": "string" },
+                        "sql": { "type": "string" },
+                        "workspaceId": { "type": "string" },
+                        "limit": { "type": "integer" },
+                        "catalog": { "type": "string" },
+                        "schema": { "type": "string" },
+                        "timeoutMs": { "type": "integer" }
+                    },
+                    "required": ["connectionId", "sql"],
+                    "additionalProperties": false
+                }),
+                output_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "ok": { "type": "boolean" },
+                        "connectionId": { "type": "string" },
+                        "sql": { "type": "string" },
+                        "columns": { "type": "array" },
+                        "rows": { "type": "array" },
+                        "rowCount": { "type": "integer" },
+                        "durationMs": { "type": "integer" },
+                        "truncated": { "type": "boolean" },
+                        "source": { "type": "string", "const": "command-bus" }
+                    },
+                    "required": ["ok", "connectionId", "sql", "source"],
+                    "additionalProperties": false
+                }),
+                annotations: ToolAnnotations::remote_read(),
+            },
+            handler: db_explain,
+        },
+        RegisteredTool {
+            definition: ToolDefinition {
                 name: "unfour.db.test_connection",
                 title: "Test Database Connection",
                 description:
@@ -480,6 +568,186 @@ fn db_query_readonly(
     }
 }
 
+fn db_execute(
+    command_bus: &dyn CommandBusAdapter,
+    arguments: Value,
+) -> Result<Value, ToolCallError> {
+    let arguments = object_with_allowed_keys(
+        arguments,
+        &[
+            "connectionId",
+            "sql",
+            "limit",
+            "workspaceId",
+            "catalog",
+            "schema",
+            "timeoutMs",
+            "dryRun",
+            "transaction",
+            "confirm",
+            "confirmationText",
+            "confirmation_text",
+        ],
+    )?;
+    let connection_id = parse_required_string(&arguments, "connectionId", "unfour.db.execute")?;
+    let sql = parse_required_string(&arguments, "sql", "unfour.db.execute")?;
+    let workspace_id = resolve_workspace_id(command_bus, &arguments)?;
+    let limit = parse_optional_limit(&arguments, "limit", DEFAULT_QUERY_LIMIT, MAX_QUERY_LIMIT)?;
+    let catalog = parse_optional_string(&arguments, "catalog")?;
+    let schema = parse_optional_string(&arguments, "schema")?;
+    let timeout_ms = parse_optional_u64(&arguments, "timeoutMs")?;
+    let dry_run = parse_optional_bool(&arguments, "dryRun")?.unwrap_or(false);
+    let transaction = parse_optional_bool(&arguments, "transaction")?.unwrap_or(false);
+    validate_single_statement_for_execute(&sql)?;
+    let risk = classify_sql_risk(&sql);
+
+    if risk.requires_confirmation {
+        ensure_confirmed(
+            &arguments,
+            risk.confirmation_code,
+            risk.reason,
+            json!({
+                "tool": "unfour.db.execute",
+                "workspaceId": workspace_id,
+                "connectionId": connection_id,
+                "sql": sql,
+                "catalog": catalog,
+                "schema": schema,
+                "transaction": transaction
+            }),
+        )?;
+    }
+
+    if dry_run {
+        return Ok(json!({
+            "ok": true,
+            "connectionId": connection_id,
+            "statementType": risk.statement_type,
+            "affectedRows": 0,
+            "columns": [],
+            "rows": [],
+            "rowCount": 0,
+            "durationMs": 0,
+            "dryRun": true,
+            "transaction": transaction,
+            "safety": {
+                "classification": risk.statement_type,
+                "requiresConfirmation": risk.requires_confirmation,
+                "confirmed": risk.requires_confirmation,
+                "message": risk.reason
+            },
+            "source": "command-bus"
+        }));
+    }
+
+    let input = DatabaseQueryInput {
+        workspace_id,
+        connection_id: connection_id.clone(),
+        sql,
+        limit: Some(limit),
+        // The MCP layer has already applied environment policy and the
+        // content-bound confirmation token; pass the engine confirmation flag
+        // so non-high-risk dev/test writes can execute through the shared path.
+        confirm_mutation: Some(true),
+        catalog,
+        schema,
+        timeout_ms,
+    };
+
+    match command_bus.execute_db_query(input) {
+        Ok(result) => {
+            let (truncated_rows, was_truncated) =
+                truncate_query_rows(result.rows, MAX_QUERY_RESULT_BYTES);
+            let columns = result_columns(&result.columns);
+
+            Ok(json!({
+                "ok": true,
+                "connectionId": connection_id,
+                "statementType": result.safety.classification,
+                "affectedRows": result.affected_rows,
+                "columns": columns,
+                "rows": truncated_rows,
+                "rowCount": truncated_rows.len(),
+                "durationMs": result.duration_ms,
+                "truncated": was_truncated,
+                "dryRun": false,
+                "transaction": transaction,
+                "safety": result.safety,
+                "source": "command-bus"
+            }))
+        }
+        Err(error) => Err(ToolCallError::Execution {
+            code: error.code,
+            message: error.message,
+        }),
+    }
+}
+
+fn db_explain(
+    command_bus: &dyn CommandBusAdapter,
+    arguments: Value,
+) -> Result<Value, ToolCallError> {
+    let arguments = object_with_allowed_keys(
+        arguments,
+        &[
+            "connectionId",
+            "sql",
+            "workspaceId",
+            "limit",
+            "catalog",
+            "schema",
+            "timeoutMs",
+        ],
+    )?;
+    let connection_id = parse_required_string(&arguments, "connectionId", "unfour.db.explain")?;
+    let sql = parse_required_string(&arguments, "sql", "unfour.db.explain")?;
+    let workspace_id = resolve_workspace_id(command_bus, &arguments)?;
+    let limit = parse_optional_limit(&arguments, "limit", DEFAULT_QUERY_LIMIT, MAX_QUERY_LIMIT)?;
+    let catalog = parse_optional_string(&arguments, "catalog")?;
+    let schema = parse_optional_string(&arguments, "schema")?;
+    let timeout_ms = parse_optional_u64(&arguments, "timeoutMs")?;
+
+    validate_readonly_sql(&sql)?;
+    let explain_sql = if sql.trim_start().to_ascii_lowercase().starts_with("explain") {
+        sql
+    } else {
+        format!("EXPLAIN {}", sql.trim().trim_end_matches(';'))
+    };
+
+    let input = DatabaseQueryInput {
+        workspace_id,
+        connection_id: connection_id.clone(),
+        sql: explain_sql.clone(),
+        limit: Some(limit),
+        confirm_mutation: None,
+        catalog,
+        schema,
+        timeout_ms,
+    };
+
+    match command_bus.execute_db_query(input) {
+        Ok(result) => {
+            let (truncated_rows, was_truncated) =
+                truncate_query_rows(result.rows, MAX_QUERY_RESULT_BYTES);
+            Ok(json!({
+                "ok": true,
+                "connectionId": connection_id,
+                "sql": explain_sql,
+                "columns": result_columns(&result.columns),
+                "rows": truncated_rows,
+                "rowCount": truncated_rows.len(),
+                "durationMs": result.duration_ms,
+                "truncated": was_truncated,
+                "source": "command-bus"
+            }))
+        }
+        Err(error) => Err(ToolCallError::Execution {
+            code: error.code,
+            message: error.message,
+        }),
+    }
+}
+
 fn db_test_connection(
     command_bus: &dyn CommandBusAdapter,
     arguments: Value,
@@ -579,6 +847,99 @@ fn statement_has_write(sql: &str) -> bool {
         .any(|token| !token.is_empty() && WRITE.contains(&token.to_ascii_lowercase().as_str()))
 }
 
+fn validate_single_statement_for_execute(sql: &str) -> Result<(), ToolCallError> {
+    let stripped = strip_leading_comments(sql);
+    let without_trailing = stripped.trim_end_matches(';').trim_end();
+    if without_trailing.contains(';') {
+        return Err(ToolCallError::Execution {
+            code: "UNSUPPORTED_OPERATION",
+            message: "db_execute accepts exactly one SQL statement; split multi-statement SQL into separate confirmed calls.",
+        });
+    }
+    Ok(())
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SqlRisk {
+    statement_type: &'static str,
+    requires_confirmation: bool,
+    confirmation_code: &'static str,
+    reason: &'static str,
+}
+
+fn classify_sql_risk(sql: &str) -> SqlRisk {
+    let stripped = strip_leading_comments(sql);
+    let lower = stripped.to_ascii_lowercase();
+    let keyword = stripped
+        .split_whitespace()
+        .next()
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+
+    match keyword.as_str() {
+        "delete" if !contains_where(&lower) => SqlRisk {
+            statement_type: "mutation",
+            requires_confirmation: true,
+            confirmation_code: "DELETE_WITHOUT_WHERE",
+            reason: "DELETE without WHERE is dangerous and may affect an entire table.",
+        },
+        "update" if !contains_where(&lower) => SqlRisk {
+            statement_type: "mutation",
+            requires_confirmation: true,
+            confirmation_code: "UPDATE_WITHOUT_WHERE",
+            reason: "UPDATE without WHERE is dangerous and may affect an entire table.",
+        },
+        "drop" => SqlRisk {
+            statement_type: "schema-change",
+            requires_confirmation: true,
+            confirmation_code: "DROP_SQL",
+            reason: "DROP can remove schema objects or databases.",
+        },
+        "truncate" => SqlRisk {
+            statement_type: "schema-change",
+            requires_confirmation: true,
+            confirmation_code: "TRUNCATE_SQL",
+            reason: "TRUNCATE can delete all rows in a table.",
+        },
+        "alter" => SqlRisk {
+            statement_type: "schema-change",
+            requires_confirmation: true,
+            confirmation_code: "ALTER_SQL",
+            reason: "ALTER changes table or database structure.",
+        },
+        "create" | "vacuum" | "reindex" => SqlRisk {
+            statement_type: "schema-change",
+            requires_confirmation: false,
+            confirmation_code: "SCHEMA_SQL",
+            reason: "Schema-changing SQL.",
+        },
+        "insert" | "update" | "delete" | "replace" => SqlRisk {
+            statement_type: "mutation",
+            requires_confirmation: false,
+            confirmation_code: "MUTATION_SQL",
+            reason: "Data mutation SQL.",
+        },
+        "select" | "with" | "show" | "describe" | "desc" | "explain" | "pragma" => SqlRisk {
+            statement_type: "read",
+            requires_confirmation: false,
+            confirmation_code: "READ_SQL",
+            reason: "Read-only SQL.",
+        },
+        _ => SqlRisk {
+            statement_type: "unknown",
+            requires_confirmation: true,
+            confirmation_code: "UNKNOWN_SQL",
+            reason: "Unrecognized SQL statement type requires confirmation before execution.",
+        },
+    }
+}
+
+fn contains_where(lower_sql: &str) -> bool {
+    lower_sql
+        .split(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+        .any(|token| token == "where")
+}
+
 /// Strip leading SQL line comments (`--`) and block comments (`/* ... */`).
 fn strip_leading_comments(sql: &str) -> String {
     let mut s = sql.trim();
@@ -645,6 +1006,18 @@ fn truncate_query_rows(
         kept.push(row);
     }
     (kept, true)
+}
+
+fn result_columns(columns: &[unfour_core::models::DatabaseResultColumn]) -> Vec<Value> {
+    columns
+        .iter()
+        .map(|c| {
+            json!({
+                "name": c.name,
+                "dataType": c.data_type
+            })
+        })
+        .collect()
 }
 
 // --- Helpers ---
@@ -725,6 +1098,42 @@ fn parse_optional_u32(
     }
 }
 
+fn parse_optional_u64(
+    arguments: &Map<String, Value>,
+    key: &str,
+) -> Result<Option<u64>, ToolCallError> {
+    match arguments.get(key) {
+        None => Ok(None),
+        Some(Value::Number(n)) => {
+            let val = n.as_u64().ok_or_else(|| {
+                ToolCallError::InvalidArguments(format!(
+                    "argument `{}` must be a positive integer",
+                    key
+                ))
+            })?;
+            Ok(Some(val))
+        }
+        Some(_) => Err(ToolCallError::InvalidArguments(format!(
+            "argument `{}` must be a number",
+            key
+        ))),
+    }
+}
+
+fn parse_optional_bool(
+    arguments: &Map<String, Value>,
+    key: &str,
+) -> Result<Option<bool>, ToolCallError> {
+    match arguments.get(key) {
+        None => Ok(None),
+        Some(Value::Bool(value)) => Ok(Some(*value)),
+        Some(_) => Err(ToolCallError::InvalidArguments(format!(
+            "argument `{}` must be a boolean",
+            key
+        ))),
+    }
+}
+
 fn parse_optional_limit(
     arguments: &Map<String, Value>,
     key: &str,
@@ -745,961 +1154,13 @@ fn unexpected_result() -> ToolCallError {
 }
 
 #[cfg(test)]
-mod tests {
-    use std::sync::Arc;
-
-    use serde_json::json;
-    use unfour_command_bus::{
-        ConnectionListResult, CurrentWorkspaceResult, ReadCommand, ReadCommandResult,
-        WorkspaceListResult, WorkspaceSummary,
-    };
-    use unfour_core::models::{
-        ApiResponse, DatabaseConnection, DatabaseQueryInput, DatabaseQueryResult,
-        DatabaseQuerySafety, DatabaseResultColumn, DatabaseSchema, DatabaseTable,
-        DatabaseTableColumn, DatabaseTestResult,
-    };
-
-    use crate::command_bus_adapter::{CommandBusAdapter, CommandBusAdapterError};
-
-    use super::*;
-
-    // --- Stub implementations ---
-
-    struct DbStubCommandBus;
-
-    impl CommandBusAdapter for DbStubCommandBus {
-        fn execute_read(
-            &self,
-            command: ReadCommand,
-        ) -> Result<ReadCommandResult, CommandBusAdapterError> {
-            Ok(match command {
-                ReadCommand::CurrentWorkspace => {
-                    ReadCommandResult::CurrentWorkspace(CurrentWorkspaceResult {
-                        workspace_id: "workspace-1".to_string(),
-                        workspace_name: "Workspace".to_string(),
-                        environment_type: "dev".to_string(),
-                        mcp_policy: "auto".to_string(),
-                        workspace_root: None,
-                        mode: "local".to_string(),
-                        source: "command-bus".to_string(),
-                    })
-                }
-                ReadCommand::ListWorkspaces => ReadCommandResult::Workspaces(WorkspaceListResult {
-                    workspaces: vec![WorkspaceSummary {
-                        id: "workspace-1".to_string(),
-                        name: "Workspace".to_string(),
-                        is_default: true,
-                        is_active: true,
-                        environment_type: "dev".to_string(),
-                        mcp_policy: "auto".to_string(),
-                        last_opened_at: None,
-                    }],
-                    active_workspace_id: "workspace-1".to_string(),
-                    count: 1,
-                    source: "command-bus".to_string(),
-                }),
-                ReadCommand::ListConnections { .. } => {
-                    ReadCommandResult::Connections(ConnectionListResult {
-                        connections: vec![],
-                        count: 0,
-                        source: "command-bus".to_string(),
-                    })
-                }
-                _ => ReadCommandResult::CurrentWorkspace(CurrentWorkspaceResult {
-                    workspace_id: "workspace-1".to_string(),
-                    workspace_name: "Workspace".to_string(),
-                    environment_type: "dev".to_string(),
-                    mcp_policy: "auto".to_string(),
-                    workspace_root: None,
-                    mode: "local".to_string(),
-                    source: "command-bus".to_string(),
-                }),
-            })
-        }
-
-        fn execute_saved_api_request(
-            &self,
-            _request_id: &str,
-            _timeout_ms: Option<u64>,
-        ) -> Result<ApiResponse, CommandBusAdapterError> {
-            Ok(ApiResponse {
-                history_id: "history-1".to_string(),
-                status: 200,
-                status_text: "OK".to_string(),
-                headers: vec![],
-                body: "{}".to_string(),
-                duration_ms: 0,
-            })
-        }
-
-        fn list_db_connections(
-            &self,
-            _workspace_id: &str,
-        ) -> Result<Vec<DatabaseConnection>, CommandBusAdapterError> {
-            Ok(vec![DatabaseConnection {
-                id: "conn-1".to_string(),
-                workspace_id: "workspace-1".to_string(),
-                name: "Dev Database".to_string(),
-                driver: "postgres".to_string(),
-                host: Some("localhost".to_string()),
-                port: Some(5432),
-                database: Some("app_dev".to_string()),
-                username: Some("admin".to_string()),
-                ssl_mode: None,
-                sqlite_path: None,
-                credential_ref: Some("secret-ref-123".to_string()),
-                read_only: false,
-                created_at: "2026-01-01T00:00:00Z".to_string(),
-                updated_at: "2026-01-01T00:00:00Z".to_string(),
-                deleted_at: None,
-                revision: 1,
-                sync_status: "local".to_string(),
-                remote_id: None,
-            }])
-        }
-
-        fn get_db_schema(
-            &self,
-            _workspace_id: &str,
-            connection_id: &str,
-        ) -> Result<DatabaseSchema, CommandBusAdapterError> {
-            Ok(DatabaseSchema {
-                connection_id: connection_id.to_string(),
-                tables: vec![
-                    DatabaseTable {
-                        catalog: None,
-                        schema: Some("public".to_string()),
-                        name: "users".to_string(),
-                        kind: "table".to_string(),
-                        columns: vec![
-                            DatabaseTableColumn {
-                                name: "id".to_string(),
-                                data_type: "integer".to_string(),
-                                nullable: false,
-                                primary_key: true,
-                                default_value: None,
-                            },
-                            DatabaseTableColumn {
-                                name: "email".to_string(),
-                                data_type: "varchar".to_string(),
-                                nullable: false,
-                                primary_key: false,
-                                default_value: None,
-                            },
-                            DatabaseTableColumn {
-                                name: "created_at".to_string(),
-                                data_type: "timestamp".to_string(),
-                                nullable: true,
-                                primary_key: false,
-                                default_value: None,
-                            },
-                        ],
-                    },
-                    DatabaseTable {
-                        catalog: None,
-                        schema: Some("public".to_string()),
-                        name: "orders".to_string(),
-                        kind: "table".to_string(),
-                        columns: vec![DatabaseTableColumn {
-                            name: "id".to_string(),
-                            data_type: "integer".to_string(),
-                            nullable: false,
-                            primary_key: true,
-                            default_value: None,
-                        }],
-                    },
-                    DatabaseTable {
-                        catalog: None,
-                        schema: Some("analytics".to_string()),
-                        name: "events".to_string(),
-                        kind: "view".to_string(),
-                        columns: vec![],
-                    },
-                    DatabaseTable {
-                        catalog: None,
-                        schema: Some("analytics".to_string()),
-                        name: "summary".to_string(),
-                        kind: "table".to_string(),
-                        columns: vec![],
-                    },
-                    DatabaseTable {
-                        catalog: None,
-                        schema: Some("audit".to_string()),
-                        name: "logs".to_string(),
-                        kind: "table".to_string(),
-                        columns: vec![],
-                    },
-                ],
-            })
-        }
-
-        fn execute_db_query(
-            &self,
-            _input: DatabaseQueryInput,
-        ) -> Result<DatabaseQueryResult, CommandBusAdapterError> {
-            Ok(DatabaseQueryResult {
-                columns: vec![
-                    DatabaseResultColumn {
-                        name: "id".to_string(),
-                        data_type: "integer".to_string(),
-                    },
-                    DatabaseResultColumn {
-                        name: "email".to_string(),
-                        data_type: "varchar".to_string(),
-                    },
-                ],
-                rows: vec![
-                    vec![Some("1".to_string()), Some("user@example.com".to_string())],
-                    vec![Some("2".to_string()), Some("other@example.com".to_string())],
-                ],
-                affected_rows: 0,
-                duration_ms: 42,
-                safety: DatabaseQuerySafety {
-                    classification: "read".to_string(),
-                    requires_confirmation: false,
-                    confirmed: true,
-                    message: None,
-                },
-            })
-        }
-
-        fn test_db_connection(
-            &self,
-            _workspace_id: &str,
-            _connection_id: &str,
-        ) -> Result<DatabaseTestResult, CommandBusAdapterError> {
-            Ok(DatabaseTestResult {
-                ok: true,
-                message: "Connection successful".to_string(),
-                server_version: Some("PostgreSQL 16.1".to_string()),
-            })
-        }
-    }
-
-    struct DbFailingCommandBus;
-
-    impl CommandBusAdapter for DbFailingCommandBus {
-        fn execute_read(
-            &self,
-            command: ReadCommand,
-        ) -> Result<ReadCommandResult, CommandBusAdapterError> {
-            match command {
-                ReadCommand::CurrentWorkspace => Ok(ReadCommandResult::CurrentWorkspace(
-                    CurrentWorkspaceResult {
-                        workspace_id: "workspace-1".to_string(),
-                        workspace_name: "Workspace".to_string(),
-                        environment_type: "dev".to_string(),
-                        mcp_policy: "auto".to_string(),
-                        workspace_root: None,
-                        mode: "local".to_string(),
-                        source: "command-bus".to_string(),
-                    },
-                )),
-                ReadCommand::ListWorkspaces => {
-                    Ok(ReadCommandResult::Workspaces(WorkspaceListResult {
-                        workspaces: vec![WorkspaceSummary {
-                            id: "workspace-1".to_string(),
-                            name: "Workspace".to_string(),
-                            is_default: true,
-                            is_active: true,
-                            environment_type: "dev".to_string(),
-                            mcp_policy: "auto".to_string(),
-                            last_opened_at: None,
-                        }],
-                        active_workspace_id: "workspace-1".to_string(),
-                        count: 1,
-                        source: "command-bus".to_string(),
-                    }))
-                }
-                _ => Err(CommandBusAdapterError {
-                    code: "COMMAND_BUS_READ_FAILED",
-                    message: "The command-bus read operation failed.",
-                }),
-            }
-        }
-
-        fn execute_saved_api_request(
-            &self,
-            _request_id: &str,
-            _timeout_ms: Option<u64>,
-        ) -> Result<ApiResponse, CommandBusAdapterError> {
-            Err(CommandBusAdapterError {
-                code: "COMMAND_BUS_API_SEND_FAILED",
-                message: "The command-bus API send operation failed.",
-            })
-        }
-
-        fn list_db_connections(
-            &self,
-            _workspace_id: &str,
-        ) -> Result<Vec<DatabaseConnection>, CommandBusAdapterError> {
-            Err(CommandBusAdapterError {
-                code: "COMMAND_BUS_DB_LIST_FAILED",
-                message: "The command-bus database list operation failed.",
-            })
-        }
-
-        fn get_db_schema(
-            &self,
-            _workspace_id: &str,
-            _connection_id: &str,
-        ) -> Result<DatabaseSchema, CommandBusAdapterError> {
-            Err(CommandBusAdapterError {
-                code: "COMMAND_BUS_DB_SCHEMA_FAILED",
-                message: "The command-bus database schema operation failed.",
-            })
-        }
-
-        fn execute_db_query(
-            &self,
-            _input: DatabaseQueryInput,
-        ) -> Result<DatabaseQueryResult, CommandBusAdapterError> {
-            Err(CommandBusAdapterError {
-                code: "COMMAND_BUS_DB_QUERY_FAILED",
-                message: "The command-bus database query operation failed.",
-            })
-        }
-    }
-
-    fn registry() -> super::super::ToolRegistry {
-        super::super::ToolRegistry::with_command_bus(Arc::new(DbStubCommandBus))
-    }
-
-    // --- Schema / registration tests ---
-
-    #[test]
-    fn db_tools_are_registered() {
-        let definitions = registry().definitions();
-        assert!(definitions
-            .iter()
-            .any(|d| d.name == "unfour.db.list_connections"));
-        assert!(definitions
-            .iter()
-            .any(|d| d.name == "unfour.db.list_tables"));
-        assert!(definitions
-            .iter()
-            .any(|d| d.name == "unfour.db.describe_table"));
-        assert!(definitions
-            .iter()
-            .any(|d| d.name == "unfour.db.query_readonly"));
-    }
-
-    #[test]
-    fn db_list_connections_input_schema() {
-        let definitions = registry().definitions();
-        let tool = definitions
-            .iter()
-            .find(|d| d.name == "unfour.db.list_connections")
-            .unwrap();
-        assert_eq!(tool.input_schema["type"], "object");
-        assert!(tool.input_schema["properties"]["workspaceId"].is_object());
-    }
-
-    #[test]
-    fn db_list_tables_input_schema() {
-        let definitions = registry().definitions();
-        let tool = definitions
-            .iter()
-            .find(|d| d.name == "unfour.db.list_tables")
-            .unwrap();
-        assert_eq!(tool.input_schema["type"], "object");
-        assert_eq!(
-            tool.input_schema["required"].as_array().unwrap(),
-            &vec![json!("connectionId")]
-        );
-    }
-
-    #[test]
-    fn db_describe_table_input_schema() {
-        let definitions = registry().definitions();
-        let tool = definitions
-            .iter()
-            .find(|d| d.name == "unfour.db.describe_table")
-            .unwrap();
-        assert_eq!(tool.input_schema["type"], "object");
-        let required = tool.input_schema["required"].as_array().unwrap();
-        assert!(required.contains(&json!("connectionId")));
-        assert!(required.contains(&json!("tableName")));
-    }
-
-    // --- list_connections tests ---
-
-    #[test]
-    fn list_connections_returns_safe_summary() {
-        let result = registry()
-            .call("unfour.db.list_connections", json!({}))
-            .expect("should succeed");
-
-        let content = &result["structuredContent"];
-        assert_eq!(content["count"], 1);
-        let conn = &content["connections"][0];
-        assert_eq!(conn["id"], "conn-1");
-        assert_eq!(conn["name"], "Dev Database");
-        assert_eq!(conn["databaseType"], "postgres");
-        assert_eq!(conn["host"], "localhost");
-        assert_eq!(conn["port"], 5432);
-        assert_eq!(conn["database"], "app_dev");
-
-        // Ensure sensitive fields are NOT present.
-        let serialized = serde_json::to_string(content).unwrap();
-        assert!(!serialized.contains("admin"));
-        assert!(!serialized.contains("secret-ref-123"));
-        assert!(!serialized.contains("credentialRef"));
-        assert!(!serialized.contains("credential_ref"));
-    }
-
-    #[test]
-    fn list_connections_resolves_default_workspace() {
-        let result = registry()
-            .call("unfour.db.list_connections", json!({}))
-            .expect("should succeed");
-        assert_eq!(result["structuredContent"]["source"], "command-bus");
-    }
-
-    #[test]
-    fn list_connections_handles_empty() {
-        struct EmptyDbStub;
-        impl CommandBusAdapter for EmptyDbStub {
-            fn execute_read(
-                &self,
-                _command: ReadCommand,
-            ) -> Result<ReadCommandResult, CommandBusAdapterError> {
-                Ok(ReadCommandResult::CurrentWorkspace(
-                    CurrentWorkspaceResult {
-                        workspace_id: "ws-1".to_string(),
-                        workspace_name: "W".to_string(),
-                        environment_type: "dev".to_string(),
-                        mcp_policy: "auto".to_string(),
-                        workspace_root: None,
-                        mode: "local".to_string(),
-                        source: "command-bus".to_string(),
-                    },
-                ))
-            }
-            fn execute_saved_api_request(
-                &self,
-                _: &str,
-                _: Option<u64>,
-            ) -> Result<ApiResponse, CommandBusAdapterError> {
-                unreachable!()
-            }
-            fn list_db_connections(
-                &self,
-                _: &str,
-            ) -> Result<Vec<DatabaseConnection>, CommandBusAdapterError> {
-                Ok(vec![])
-            }
-            fn get_db_schema(
-                &self,
-                _: &str,
-                _: &str,
-            ) -> Result<DatabaseSchema, CommandBusAdapterError> {
-                unreachable!()
-            }
-            fn execute_db_query(
-                &self,
-                _: DatabaseQueryInput,
-            ) -> Result<DatabaseQueryResult, CommandBusAdapterError> {
-                unreachable!()
-            }
-        }
-
-        let reg = super::super::ToolRegistry::with_command_bus(Arc::new(EmptyDbStub));
-        let result = reg
-            .call("unfour.db.list_connections", json!({}))
-            .expect("should succeed");
-        assert_eq!(result["structuredContent"]["count"], 0);
-    }
-
-    // --- list_tables tests ---
-
-    #[test]
-    fn list_tables_returns_table_summaries() {
-        let result = registry()
-            .call("unfour.db.list_tables", json!({ "connectionId": "conn-1" }))
-            .expect("should succeed");
-
-        let content = &result["structuredContent"];
-        assert_eq!(content["connectionId"], "conn-1");
-        assert_eq!(content["totalTables"], 5);
-        assert_eq!(content["count"], 5);
-        assert_eq!(content["truncated"], false);
-
-        let first = &content["tables"][0];
-        assert_eq!(first["name"], "users");
-        assert_eq!(first["schema"], "public");
-        assert_eq!(first["kind"], "table");
-        assert_eq!(first["columnCount"], 3);
-    }
-
-    #[test]
-    fn list_tables_respects_limit() {
-        let result = registry()
-            .call(
-                "unfour.db.list_tables",
-                json!({ "connectionId": "conn-1", "limit": 2 }),
-            )
-            .expect("should succeed");
-
-        let content = &result["structuredContent"];
-        assert_eq!(content["count"], 2);
-        assert_eq!(content["totalTables"], 5);
-        assert_eq!(content["truncated"], true);
-    }
-
-    #[test]
-    fn list_tables_requires_connection_id() {
-        let result = registry().call("unfour.db.list_tables", json!({}));
-        assert!(result.is_err(), "should fail without connectionId");
-    }
-
-    #[test]
-    fn list_tables_clamps_limit_to_500() {
-        let result = registry()
-            .call(
-                "unfour.db.list_tables",
-                json!({ "connectionId": "conn-1", "limit": 9999 }),
-            )
-            .expect("should succeed");
-
-        let content = &result["structuredContent"];
-        // We have 5 tables, limit clamped to 500, so all 5 returned.
-        assert_eq!(content["count"], 5);
-        assert_eq!(content["truncated"], false);
-    }
-
-    // --- describe_table tests ---
-
-    #[test]
-    fn describe_table_returns_columns() {
-        let result = registry()
-            .call(
-                "unfour.db.describe_table",
-                json!({ "connectionId": "conn-1", "tableName": "users" }),
-            )
-            .expect("should succeed");
-
-        let content = &result["structuredContent"];
-        assert_eq!(content["connectionId"], "conn-1");
-        let table = &content["table"];
-        assert_eq!(table["name"], "users");
-        assert_eq!(table["schema"], "public");
-        assert_eq!(table["kind"], "table");
-        assert_eq!(table["columnCount"], 3);
-
-        let id_col = &table["columns"][0];
-        assert_eq!(id_col["name"], "id");
-        assert_eq!(id_col["dataType"], "integer");
-        assert_eq!(id_col["nullable"], false);
-        assert_eq!(id_col["primaryKey"], true);
-    }
-
-    #[test]
-    fn describe_table_with_schema_filter() {
-        let result = registry()
-            .call(
-                "unfour.db.describe_table",
-                json!({ "connectionId": "conn-1", "tableName": "events", "schema": "analytics" }),
-            )
-            .expect("should succeed");
-
-        let content = &result["structuredContent"];
-        assert_eq!(content["table"]["name"], "events");
-        assert_eq!(content["table"]["schema"], "analytics");
-        assert_eq!(content["table"]["kind"], "view");
-    }
-
-    #[test]
-    fn describe_table_not_found_returns_error() {
-        let result = registry()
-            .call(
-                "unfour.db.describe_table",
-                json!({ "connectionId": "conn-1", "tableName": "nonexistent" }),
-            )
-            .expect("should return error result");
-
-        assert_eq!(result["isError"], true);
-        assert_eq!(
-            result["structuredContent"]["error"]["code"],
-            "TABLE_NOT_FOUND"
-        );
-    }
-
-    #[test]
-    fn describe_table_requires_table_name() {
-        let result = registry().call(
-            "unfour.db.describe_table",
-            json!({ "connectionId": "conn-1" }),
-        );
-        assert!(result.is_err(), "should fail without tableName");
-    }
-
-    // --- query_readonly tests ---
-
-    #[test]
-    fn query_readonly_executes_select() {
-        let result = registry()
-            .call(
-                "unfour.db.query_readonly",
-                json!({
-                    "connectionId": "conn-1",
-                    "sql": "SELECT id, email FROM users LIMIT 10"
-                }),
-            )
-            .expect("should succeed");
-
-        let content = &result["structuredContent"];
-        assert_eq!(content["ok"], true);
-        assert_eq!(content["connectionId"], "conn-1");
-        assert_eq!(content["columns"].as_array().unwrap().len(), 2);
-        assert_eq!(content["rowCount"], 2);
-        assert_eq!(content["durationMs"], 42);
-        assert_eq!(content["source"], "command-bus");
-    }
-
-    #[test]
-    fn query_readonly_allows_with_cte() {
-        let result = registry()
-            .call(
-                "unfour.db.query_readonly",
-                json!({
-                    "connectionId": "conn-1",
-                    "sql": "WITH cte AS (SELECT 1) SELECT * FROM cte"
-                }),
-            )
-            .expect("should succeed");
-        assert_eq!(result["structuredContent"]["ok"], true);
-    }
-
-    #[test]
-    fn query_readonly_allows_explain() {
-        let result = registry()
-            .call(
-                "unfour.db.query_readonly",
-                json!({
-                    "connectionId": "conn-1",
-                    "sql": "EXPLAIN SELECT * FROM users"
-                }),
-            )
-            .expect("should succeed");
-        assert_eq!(result["structuredContent"]["ok"], true);
-    }
-
-    #[test]
-    fn query_readonly_rejects_insert() {
-        let result = registry()
-            .call(
-                "unfour.db.query_readonly",
-                json!({
-                    "connectionId": "conn-1",
-                    "sql": "INSERT INTO users (email) VALUES ('evil@test.com')"
-                }),
-            )
-            .expect("should return error result");
-        assert_eq!(result["isError"], true);
-    }
-
-    #[test]
-    fn query_readonly_rejects_update() {
-        let result = registry()
-            .call(
-                "unfour.db.query_readonly",
-                json!({
-                    "connectionId": "conn-1",
-                    "sql": "UPDATE users SET email = 'hacked' WHERE id = 1"
-                }),
-            )
-            .expect("should return error result");
-        assert_eq!(result["isError"], true);
-    }
-
-    #[test]
-    fn query_readonly_rejects_delete() {
-        let result = registry()
-            .call(
-                "unfour.db.query_readonly",
-                json!({
-                    "connectionId": "conn-1",
-                    "sql": "DELETE FROM users WHERE id = 1"
-                }),
-            )
-            .expect("should return error result");
-        assert_eq!(result["isError"], true);
-    }
-
-    #[test]
-    fn query_readonly_rejects_drop_alter_create() {
-        for sql in &[
-            "DROP TABLE users",
-            "ALTER TABLE users ADD COLUMN foo TEXT",
-            "CREATE TABLE evil (id INT)",
-            "TRUNCATE TABLE users",
-        ] {
-            let result = registry()
-                .call(
-                    "unfour.db.query_readonly",
-                    json!({ "connectionId": "conn-1", "sql": sql }),
-                )
-                .expect("should return error result");
-            assert_eq!(result["isError"], true, "should reject: {}", sql);
-        }
-    }
-
-    #[test]
-    fn query_readonly_rejects_multi_statement() {
-        let result = registry()
-            .call(
-                "unfour.db.query_readonly",
-                json!({
-                    "connectionId": "conn-1",
-                    "sql": "SELECT 1; DROP TABLE users"
-                }),
-            )
-            .expect("should return error result");
-        assert_eq!(result["isError"], true);
-    }
-
-    #[test]
-    fn query_readonly_rejects_comment_bypass() {
-        let result = registry()
-            .call(
-                "unfour.db.query_readonly",
-                json!({
-                    "connectionId": "conn-1",
-                    "sql": "/* harmless comment */ INSERT INTO users VALUES (1)"
-                }),
-            )
-            .expect("should return error result");
-        assert_eq!(result["isError"], true);
-    }
-
-    #[test]
-    fn query_readonly_clamps_limit_to_1000() {
-        let result = registry()
-            .call(
-                "unfour.db.query_readonly",
-                json!({
-                    "connectionId": "conn-1",
-                    "sql": "SELECT * FROM users",
-                    "limit": 99999
-                }),
-            )
-            .expect("should succeed");
-        assert_eq!(result["structuredContent"]["ok"], true);
-    }
-
-    #[test]
-    fn query_readonly_truncates_large_results() {
-        struct LargeResultStub;
-        impl CommandBusAdapter for LargeResultStub {
-            fn execute_read(
-                &self,
-                _: ReadCommand,
-            ) -> Result<ReadCommandResult, CommandBusAdapterError> {
-                Ok(ReadCommandResult::CurrentWorkspace(
-                    CurrentWorkspaceResult {
-                        workspace_id: "ws-1".to_string(),
-                        workspace_name: "W".to_string(),
-                        environment_type: "dev".to_string(),
-                        mcp_policy: "auto".to_string(),
-                        workspace_root: None,
-                        mode: "local".to_string(),
-                        source: "command-bus".to_string(),
-                    },
-                ))
-            }
-            fn execute_saved_api_request(
-                &self,
-                _: &str,
-                _: Option<u64>,
-            ) -> Result<ApiResponse, CommandBusAdapterError> {
-                unreachable!()
-            }
-            fn list_db_connections(
-                &self,
-                _: &str,
-            ) -> Result<Vec<DatabaseConnection>, CommandBusAdapterError> {
-                unreachable!()
-            }
-            fn get_db_schema(
-                &self,
-                _: &str,
-                _: &str,
-            ) -> Result<DatabaseSchema, CommandBusAdapterError> {
-                unreachable!()
-            }
-            fn execute_db_query(
-                &self,
-                _: DatabaseQueryInput,
-            ) -> Result<DatabaseQueryResult, CommandBusAdapterError> {
-                // Generate rows that will exceed 20KB.
-                let big_value = "x".repeat(1024);
-                let rows: Vec<Vec<Option<String>>> = (0..100)
-                    .map(|i| vec![Some(i.to_string()), Some(big_value.clone())])
-                    .collect();
-                Ok(DatabaseQueryResult {
-                    columns: vec![
-                        DatabaseResultColumn {
-                            name: "id".to_string(),
-                            data_type: "integer".to_string(),
-                        },
-                        DatabaseResultColumn {
-                            name: "data".to_string(),
-                            data_type: "text".to_string(),
-                        },
-                    ],
-                    rows,
-                    affected_rows: 0,
-                    duration_ms: 10,
-                    safety: DatabaseQuerySafety {
-                        classification: "read".to_string(),
-                        requires_confirmation: false,
-                        confirmed: true,
-                        message: None,
-                    },
-                })
-            }
-        }
-
-        let reg = super::super::ToolRegistry::with_command_bus(Arc::new(LargeResultStub));
-        let result = reg
-            .call(
-                "unfour.db.query_readonly",
-                json!({
-                    "connectionId": "conn-1",
-                    "sql": "SELECT id, data FROM big_table"
-                }),
-            )
-            .expect("should succeed");
-
-        let content = &result["structuredContent"];
-        assert_eq!(content["ok"], true);
-        assert_eq!(content["truncated"], true);
-        // Should have fewer rows than the original 100.
-        assert!(content["rowCount"].as_u64().unwrap() < 100);
-    }
-
-    #[test]
-    fn query_readonly_command_bus_failure() {
-        let reg = super::super::ToolRegistry::with_command_bus(Arc::new(DbFailingCommandBus));
-        let result = reg
-            .call(
-                "unfour.db.query_readonly",
-                json!({
-                    "connectionId": "conn-1",
-                    "sql": "SELECT 1",
-                    "workspaceId": "workspace-1"
-                }),
-            )
-            .expect("should return error result");
-        assert_eq!(result["isError"], true);
-        assert_eq!(
-            result["structuredContent"]["error"]["code"],
-            "COMMAND_BUS_DB_QUERY_FAILED"
-        );
-    }
-
-    // --- test_connection tests ---
-
-    #[test]
-    fn test_connection_returns_ok_with_server_version() {
-        let result = registry()
-            .call(
-                "unfour.db.test_connection",
-                json!({ "connectionId": "conn-1" }),
-            )
-            .expect("should succeed");
-
-        let content = &result["structuredContent"];
-        assert_eq!(content["ok"], true);
-        assert_eq!(content["connectionId"], "conn-1");
-        assert_eq!(content["message"], "Connection successful");
-        assert_eq!(content["serverVersion"], "PostgreSQL 16.1");
-        assert_eq!(content["source"], "command-bus");
-    }
-
-    #[test]
-    fn test_connection_requires_connection_id() {
-        let result = registry().call("unfour.db.test_connection", json!({}));
-        assert!(result.is_err(), "should fail without connectionId");
-    }
-
-    // --- SQL validation unit tests ---
-
-    #[test]
-    fn validate_readonly_sql_case_insensitive() {
-        assert!(validate_readonly_sql("SELECT 1").is_ok());
-        assert!(validate_readonly_sql("select 1").is_ok());
-        assert!(validate_readonly_sql("Select 1").is_ok());
-        assert!(validate_readonly_sql("  SELECT 1  ").is_ok());
-    }
-
-    #[test]
-    fn validate_readonly_sql_rejects_empty() {
-        assert!(validate_readonly_sql("").is_err());
-        assert!(validate_readonly_sql("   ").is_err());
-    }
-
-    #[test]
-    fn validate_readonly_sql_rejects_transaction_control() {
-        assert!(validate_readonly_sql("BEGIN").is_err());
-        assert!(validate_readonly_sql("COMMIT").is_err());
-        assert!(validate_readonly_sql("ROLLBACK").is_err());
-    }
-
-    #[test]
-    fn validate_readonly_sql_strips_leading_comments() {
-        // Block comment followed by valid SELECT.
-        assert!(validate_readonly_sql("/* comment */ SELECT 1").is_ok());
-        // Line comment followed by valid SELECT.
-        assert!(validate_readonly_sql("-- comment\nSELECT 1").is_ok());
-        // Block comment followed by forbidden INSERT.
-        assert!(validate_readonly_sql("/* comment */ INSERT INTO t VALUES (1)").is_err());
-        // Multiple comments then valid query.
-        assert!(validate_readonly_sql("-- a\n-- b\nSELECT 1").is_ok());
-        assert!(validate_readonly_sql("/* a */ /* b */ SELECT 1").is_ok());
-    }
-
-    #[test]
-    fn validate_readonly_sql_rejects_writes_behind_explain_and_with() {
-        // Genuinely read-only EXPLAIN/CTE statements remain allowed.
-        assert!(validate_readonly_sql("EXPLAIN SELECT * FROM users").is_ok());
-        assert!(validate_readonly_sql("EXPLAIN ANALYZE SELECT * FROM users").is_ok());
-        assert!(validate_readonly_sql("WITH c AS (SELECT 1) SELECT * FROM c").is_ok());
-
-        // EXPLAIN ANALYZE <write> and data-modifying CTEs execute in PostgreSQL,
-        // so a read-only tool must reject them.
-        assert!(validate_readonly_sql("EXPLAIN ANALYZE DELETE FROM users").is_err());
-        assert!(validate_readonly_sql("EXPLAIN ANALYZE INSERT INTO users VALUES (1)").is_err());
-        assert!(
-            validate_readonly_sql("WITH d AS (DELETE FROM users RETURNING *) SELECT * FROM d")
-                .is_err()
-        );
-        assert!(validate_readonly_sql("EXPLAIN DROP TABLE users").is_err());
-    }
-
-    // --- Truncation unit tests ---
-
-    #[test]
-    fn truncate_query_rows_preserves_small_results() {
-        let rows = vec![
-            vec![Some("1".to_string()), Some("a".to_string())],
-            vec![Some("2".to_string()), Some("b".to_string())],
-        ];
-        let (kept, truncated) = truncate_query_rows(rows.clone(), 1024);
-        assert_eq!(kept.len(), 2);
-        assert!(!truncated);
-    }
-
-    #[test]
-    fn truncate_query_rows_truncates_at_limit() {
-        let big = "x".repeat(500);
-        let rows: Vec<Vec<Option<String>>> = (0..50)
-            .map(|i| vec![Some(i.to_string()), Some(big.clone())])
-            .collect();
-        let (kept, truncated) = truncate_query_rows(rows, 1024);
-        assert!(truncated);
-        assert!(kept.len() < 50);
-        assert!(!kept.is_empty());
-    }
-}
+#[path = "database_tests.rs"]
+mod tests;
+
+#[cfg(test)]
+#[path = "database_schema_tests.rs"]
+mod schema_tests;
+
+#[cfg(test)]
+#[path = "database_validation_tests.rs"]
+mod validation_tests;

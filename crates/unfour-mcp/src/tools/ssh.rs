@@ -4,60 +4,192 @@ use unfour_core::models::SshDiagnosticInput;
 
 use crate::command_bus_adapter::CommandBusAdapter;
 
+#[path = "ssh_risk.rs"]
+mod ssh_risk;
+
 use super::{
+    confirmation::{ensure_confirmed, is_confirmed},
     object_with_allowed_keys, RegisteredTool, ToolAnnotations, ToolCallError, ToolDefinition,
+};
+use ssh_risk::{
+    classify_high_risk_command, is_readonly_ssh_command, is_sensitive_path, parse_optional_u64,
+    redact_command_display, shell_env_key, shell_quote,
 };
 
 const MAX_DIAGNOSTIC_TIMEOUT_MS: u64 = 60_000;
+const DEFAULT_FILE_LIMIT: u64 = 20 * 1024;
+const MAX_FILE_LIMIT: u64 = 128 * 1024;
 
 pub(super) fn registered_tools() -> Vec<RegisteredTool> {
-    vec![RegisteredTool {
-        definition: ToolDefinition {
-            name: "unfour.ssh.run_diagnostic",
-            title: "Run SSH Diagnostic Command",
-            description:
-                "Runs a single read-only diagnostic command on a saved SSH connection through the Unfour command bus and returns captured stdout/stderr. Only a fixed allowlist of read-only utilities is permitted (df, free, uptime, ps, ss, ip, tail, cat, grep, systemctl status, journalctl, plus read-only container subcommands: docker/podman ps|logs|inspect|stats and kubectl get|describe|logs|top); shells, pipes, redirection, chaining, and any write/control operation are rejected. For container CLIs the read-only subcommand must come first (e.g. `docker logs web`, `kubectl get pods -n prod`). Output is line-redacted for sensitive material. Requires an SSH-native build.",
-            input_schema: json!({
-                "type": "object",
-                "properties": {
-                    "connectionId": {
-                        "type": "string",
-                        "description": "The saved SSH connection ID to run the command on."
-                    },
-                    "command": {
-                        "type": "string",
-                        "description": "A single read-only diagnostic command from the allowlist (e.g. \"df -h\", \"systemctl status nginx\", \"tail -n 200 /var/log/syslog\", \"grep ERROR /var/log/app.log\", \"docker logs web\", \"kubectl get pods -n prod\")."
-                    },
-                    "workspaceId": {
-                        "type": "string",
-                        "description": "Optional workspace ID. Uses the active workspace if omitted."
-                    },
-                    "timeoutMs": {
-                        "type": "integer",
-                        "description": "Optional command timeout in milliseconds (default 15000, max 60000)."
-                    }
-                },
-                "required": ["connectionId", "command"],
-                "additionalProperties": false
-            }),
-            output_schema: json!({
-                "type": "object",
-                "properties": {
-                    "connectionId": { "type": "string" },
-                    "command": { "type": "string" },
-                    "stdout": { "type": "string" },
-                    "stderr": { "type": "string" },
-                    "exitStatus": { "type": ["integer", "null"] },
-                    "truncated": { "type": "boolean" },
-                    "source": { "type": "string", "const": "command-bus" }
-                },
-                "required": ["connectionId", "command", "stdout", "stderr", "truncated", "source"],
-                "additionalProperties": false
-            }),
-            annotations: ToolAnnotations::remote_read(),
+    vec![
+        RegisteredTool {
+            definition: ToolDefinition {
+                name: "unfour.ssh.list_connections",
+                title: "List SSH Connections",
+                description:
+                    "Lists saved SSH connections for a workspace through the Unfour command bus. Returns connection id, name, host, port, username, and environment; never returns passwords, private keys, passphrases, or credential references.",
+                input_schema: json!({
+                    "type": "object",
+                    "properties": { "workspaceId": { "type": "string" } },
+                    "additionalProperties": false
+                }),
+                output_schema: json!({ "type": "object" }),
+                annotations: ToolAnnotations::local_read(),
+            },
+            handler: ssh_list_connections,
         },
-        handler: ssh_run_diagnostic,
-    }]
+        RegisteredTool {
+            definition: ToolDefinition {
+                name: "unfour.ssh.run_diagnostic",
+                title: "Run SSH Diagnostic Command",
+                description:
+                    "Runs a single read-only diagnostic command on a saved SSH connection through the Unfour command bus and returns captured stdout/stderr. Safe in dev/test/prod for allowlisted diagnostics. For broader command execution use unfour.ssh.exec, which applies environment policy and high-risk confirmation.",
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "connectionId": { "type": "string" },
+                        "command": { "type": "string" },
+                        "workspaceId": { "type": "string" },
+                        "timeoutMs": { "type": "integer" }
+                    },
+                    "required": ["connectionId", "command"],
+                    "additionalProperties": false
+                }),
+                output_schema: json!({ "type": "object" }),
+                annotations: ToolAnnotations::remote_read(),
+            },
+            handler: ssh_run_diagnostic,
+        },
+        RegisteredTool {
+            definition: ToolDefinition {
+                name: "unfour.ssh.exec",
+                title: "Execute SSH Command",
+                description:
+                    "Executes one non-interactive SSH command on a saved connection. Use for dev/test repair loops after diagnostics identify a fix. Dev allows ordinary commands; test allows safe diagnostics and guarded commands; prod only allows read-only diagnostic commands. High-risk commands such as rm -rf, restart/shutdown, kill, docker/kubectl delete, and curl-pipe-shell require confirm with the returned confirmation_text.",
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "connectionId": { "type": "string" },
+                        "command": { "type": "string" },
+                        "workspaceId": { "type": "string" },
+                        "cwd": { "type": "string" },
+                        "env": { "type": "object" },
+                        "timeoutMs": { "type": "integer" },
+                        "confirm": { "type": "boolean" },
+                        "confirmationText": { "type": "string" },
+                        "confirmation_text": { "type": "string" }
+                    },
+                    "required": ["connectionId", "command"],
+                    "additionalProperties": false
+                }),
+                output_schema: json!({ "type": "object" }),
+                annotations: ToolAnnotations::remote_action(),
+            },
+            handler: ssh_exec,
+        },
+        RegisteredTool {
+            definition: ToolDefinition {
+                name: "unfour.ssh.read_file",
+                title: "Read SSH File",
+                description:
+                    "Reads a bounded remote file slice or tail through SSH. Useful for logs and config inspection. Dev/test/prod allow ordinary reads; output is capped and line-redacted by the SSH engine. Sensitive paths may still be blocked by connection or OS permissions.",
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "connectionId": { "type": "string" },
+                        "path": { "type": "string" },
+                        "workspaceId": { "type": "string" },
+                        "offset": { "type": "integer" },
+                        "limit": { "type": "integer" },
+                        "tailLines": { "type": "integer" },
+                        "timeoutMs": { "type": "integer" }
+                    },
+                    "required": ["connectionId", "path"],
+                    "additionalProperties": false
+                }),
+                output_schema: json!({ "type": "object" }),
+                annotations: ToolAnnotations::remote_read(),
+            },
+            handler: ssh_read_file,
+        },
+        RegisteredTool {
+            definition: ToolDefinition {
+                name: "unfour.ssh.write_file",
+                title: "Write SSH File",
+                description:
+                    "Writes or appends a remote file through SSH. Dev allows ordinary project paths; test and high-risk paths require confirmation; prod is blocked by policy. The returned result contains only path/mode/byte counts and command status, never file content.",
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "connectionId": { "type": "string" },
+                        "path": { "type": "string" },
+                        "content": { "type": "string" },
+                        "mode": { "type": "string", "enum": ["overwrite", "append", "create"] },
+                        "workspaceId": { "type": "string" },
+                        "timeoutMs": { "type": "integer" },
+                        "confirm": { "type": "boolean" },
+                        "confirmationText": { "type": "string" },
+                        "confirmation_text": { "type": "string" }
+                    },
+                    "required": ["connectionId", "path", "content"],
+                    "additionalProperties": false
+                }),
+                output_schema: json!({ "type": "object" }),
+                annotations: ToolAnnotations::remote_action(),
+            },
+            handler: ssh_write_file,
+        },
+        RegisteredTool {
+            definition: ToolDefinition {
+                name: "unfour.ssh.patch_file",
+                title: "Patch SSH File",
+                description:
+                    "Applies a small search/replace patch to a remote file through SSH and returns a diff summary without file content. Dev allows single-match project-file patches; test, system paths, or multi-match replacements require confirmation; prod is blocked by policy.",
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "connectionId": { "type": "string" },
+                        "path": { "type": "string" },
+                        "search": { "type": "string" },
+                        "replace": { "type": "string" },
+                        "workspaceId": { "type": "string" },
+                        "timeoutMs": { "type": "integer" },
+                        "confirm": { "type": "boolean" },
+                        "confirmationText": { "type": "string" },
+                        "confirmation_text": { "type": "string" }
+                    },
+                    "required": ["connectionId", "path", "search", "replace"],
+                    "additionalProperties": false
+                }),
+                output_schema: json!({ "type": "object" }),
+                annotations: ToolAnnotations::remote_action(),
+            },
+            handler: ssh_patch_file,
+        },
+        RegisteredTool {
+            definition: ToolDefinition {
+                name: "unfour.ssh.list_dir",
+                title: "List SSH Directory",
+                description:
+                    "Lists a bounded remote directory through SSH and returns structured entry summaries when the remote find utility is available. Safe in dev/test/prod.",
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "connectionId": { "type": "string" },
+                        "path": { "type": "string" },
+                        "workspaceId": { "type": "string" },
+                        "limit": { "type": "integer" },
+                        "timeoutMs": { "type": "integer" }
+                    },
+                    "required": ["connectionId", "path"],
+                    "additionalProperties": false
+                }),
+                output_schema: json!({ "type": "object" }),
+                annotations: ToolAnnotations::remote_read(),
+            },
+            handler: ssh_list_dir,
+        },
+    ]
 }
 
 fn ssh_run_diagnostic(
@@ -95,6 +227,545 @@ fn ssh_run_diagnostic(
         "truncated": result.truncated,
         "source": "command-bus"
     }))
+}
+
+fn ssh_list_connections(
+    command_bus: &dyn CommandBusAdapter,
+    arguments: Value,
+) -> Result<Value, ToolCallError> {
+    let arguments = object_with_allowed_keys(arguments, &["workspaceId"])?;
+    let workspace = resolve_workspace(command_bus, &arguments)?;
+    let connections = command_bus
+        .list_ssh_connections(&workspace.workspace_id)
+        .map_err(|error| ToolCallError::Execution {
+            code: error.code,
+            message: error.message,
+        })?;
+    let connections = connections
+        .iter()
+        .map(|connection| {
+            json!({
+                "connectionId": connection.id,
+                "id": connection.id,
+                "name": connection.name,
+                "host": connection.host,
+                "port": connection.port,
+                "username": connection.username,
+                "environment": workspace.environment_type,
+                "workspaceId": connection.workspace_id
+            })
+        })
+        .collect::<Vec<_>>();
+    Ok(json!({
+        "connections": connections,
+        "count": connections.len(),
+        "source": "command-bus"
+    }))
+}
+
+fn ssh_exec(command_bus: &dyn CommandBusAdapter, arguments: Value) -> Result<Value, ToolCallError> {
+    let arguments = object_with_allowed_keys(
+        arguments,
+        &[
+            "connectionId",
+            "command",
+            "workspaceId",
+            "cwd",
+            "env",
+            "timeoutMs",
+            "confirm",
+            "confirmationText",
+            "confirmation_text",
+        ],
+    )?;
+    let connection_id = parse_required_string(&arguments, "connectionId", "unfour.ssh.exec")?;
+    let mut command = parse_required_string(&arguments, "command", "unfour.ssh.exec")?;
+    let workspace = resolve_workspace(command_bus, &arguments)?;
+    let timeout_ms = parse_optional_timeout(&arguments)?;
+
+    if let Some(cwd) = parse_optional_string(&arguments, "cwd")? {
+        command = format!("cd {} && {}", shell_quote(&cwd), command);
+    }
+    if let Some(env) = arguments.get("env").and_then(Value::as_object) {
+        let prefix = env
+            .iter()
+            .map(|(key, value)| {
+                let raw = value
+                    .as_str()
+                    .map(str::to_string)
+                    .unwrap_or_else(|| value.to_string());
+                format!("{}={}", shell_env_key(key), shell_quote(&raw))
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
+        if !prefix.is_empty() {
+            command = format!("{prefix} {command}");
+        }
+    }
+
+    if let Some((code, reason)) = classify_high_risk_command(&command) {
+        ensure_confirmed(
+            &arguments,
+            code,
+            reason,
+            json!({
+                "tool": "unfour.ssh.exec",
+                "workspaceId": workspace.workspace_id,
+                "connectionId": connection_id.clone(),
+                "command": command.clone()
+            }),
+        )?;
+    }
+
+    let input = SshDiagnosticInput {
+        workspace_id: workspace.workspace_id,
+        connection_id,
+        command: command.clone(),
+        timeout_ms,
+    };
+    let result = if is_readonly_ssh_command(&command) {
+        command_bus.run_ssh_diagnostic(input)
+    } else {
+        command_bus.run_ssh_command(input)
+    }
+    .map_err(|error| ToolCallError::Execution {
+        code: error.code,
+        message: error.message,
+    })?;
+
+    Ok(ssh_command_result(result, "command-bus"))
+}
+
+fn ssh_read_file(
+    command_bus: &dyn CommandBusAdapter,
+    arguments: Value,
+) -> Result<Value, ToolCallError> {
+    let arguments = object_with_allowed_keys(
+        arguments,
+        &[
+            "connectionId",
+            "path",
+            "workspaceId",
+            "offset",
+            "limit",
+            "tailLines",
+            "timeoutMs",
+        ],
+    )?;
+    let connection_id = parse_required_string(&arguments, "connectionId", "unfour.ssh.read_file")?;
+    let path = parse_required_string(&arguments, "path", "unfour.ssh.read_file")?;
+    let workspace = resolve_workspace(command_bus, &arguments)?;
+    let timeout_ms = parse_optional_timeout(&arguments)?;
+    let limit = parse_optional_u64(&arguments, "limit")?
+        .unwrap_or(DEFAULT_FILE_LIMIT)
+        .clamp(1, MAX_FILE_LIMIT);
+    let command = if let Some(tail_lines) = parse_optional_u64(&arguments, "tailLines")? {
+        format!(
+            "tail -n {} -- {}",
+            tail_lines.clamp(1, 10_000),
+            shell_quote(&path)
+        )
+    } else {
+        let offset = parse_optional_u64(&arguments, "offset")?.unwrap_or(0);
+        if offset > 0 {
+            format!(
+                "dd if={} bs=1 skip={} count={} 2>/dev/null",
+                shell_quote(&path),
+                offset,
+                limit
+            )
+        } else {
+            format!("head -c {} -- {}", limit, shell_quote(&path))
+        }
+    };
+
+    let result = command_bus
+        .run_ssh_command(SshDiagnosticInput {
+            workspace_id: workspace.workspace_id,
+            connection_id: connection_id.clone(),
+            command,
+            timeout_ms,
+        })
+        .map_err(|error| ToolCallError::Execution {
+            code: error.code,
+            message: error.message,
+        })?;
+
+    Ok(json!({
+        "connectionId": connection_id,
+        "path": path,
+        "content": result.stdout,
+        "stderr": result.stderr,
+        "exitCode": result.exit_status,
+        "limit": limit,
+        "truncated": result.truncated,
+        "source": "command-bus"
+    }))
+}
+
+fn ssh_write_file(
+    command_bus: &dyn CommandBusAdapter,
+    arguments: Value,
+) -> Result<Value, ToolCallError> {
+    let arguments = object_with_allowed_keys(
+        arguments,
+        &[
+            "connectionId",
+            "path",
+            "content",
+            "mode",
+            "workspaceId",
+            "timeoutMs",
+            "confirm",
+            "confirmationText",
+            "confirmation_text",
+        ],
+    )?;
+    let connection_id = parse_required_string(&arguments, "connectionId", "unfour.ssh.write_file")?;
+    let path = parse_required_string(&arguments, "path", "unfour.ssh.write_file")?;
+    let content = parse_required_string(&arguments, "content", "unfour.ssh.write_file")?;
+    let mode = parse_optional_string(&arguments, "mode")?.unwrap_or_else(|| "overwrite".into());
+    let workspace = resolve_workspace(command_bus, &arguments)?;
+    let timeout_ms = parse_optional_timeout(&arguments)?;
+    if workspace.environment_type == "test" || is_sensitive_path(&path) {
+        ensure_confirmed(
+            &arguments,
+            "SSH_WRITE_FILE",
+            "Writing remote files in test or sensitive paths requires confirmation.",
+            json!({
+                "tool": "unfour.ssh.write_file",
+                "workspaceId": workspace.workspace_id,
+                "connectionId": connection_id.clone(),
+                "path": path.clone(),
+                "mode": mode.clone(),
+                "contentBytes": content.len()
+            }),
+        )?;
+    }
+
+    let redirect = match mode.as_str() {
+        "append" => ">>",
+        "create" | "overwrite" => ">",
+        _ => {
+            return Err(ToolCallError::InvalidArguments(
+                "argument `mode` must be one of: overwrite, append, create".to_string(),
+            ))
+        }
+    };
+    let marker = heredoc_marker(&content);
+    let noclobber = if mode == "create" { "set -C; " } else { "" };
+    let command = format!(
+        "{}cat {} {} <<'{}'\n{}\n{}",
+        noclobber,
+        redirect,
+        shell_quote(&path),
+        marker,
+        content,
+        marker
+    );
+    let result = command_bus
+        .run_ssh_command(SshDiagnosticInput {
+            workspace_id: workspace.workspace_id,
+            connection_id: connection_id.clone(),
+            command,
+            timeout_ms,
+        })
+        .map_err(|error| ToolCallError::Execution {
+            code: error.code,
+            message: error.message,
+        })?;
+
+    Ok(json!({
+        "connectionId": connection_id,
+        "path": path,
+        "mode": mode,
+        "bytes": content.len(),
+        "stdout": result.stdout,
+        "stderr": result.stderr,
+        "exitCode": result.exit_status,
+        "truncated": result.truncated,
+        "source": "command-bus"
+    }))
+}
+
+fn ssh_patch_file(
+    command_bus: &dyn CommandBusAdapter,
+    arguments: Value,
+) -> Result<Value, ToolCallError> {
+    let arguments = object_with_allowed_keys(
+        arguments,
+        &[
+            "connectionId",
+            "path",
+            "search",
+            "replace",
+            "workspaceId",
+            "timeoutMs",
+            "confirm",
+            "confirmationText",
+            "confirmation_text",
+        ],
+    )?;
+    let connection_id = parse_required_string(&arguments, "connectionId", "unfour.ssh.patch_file")?;
+    let path = parse_required_string(&arguments, "path", "unfour.ssh.patch_file")?;
+    let search = parse_required_string(&arguments, "search", "unfour.ssh.patch_file")?;
+    let replace = parse_required_string(&arguments, "replace", "unfour.ssh.patch_file")?;
+    let workspace = resolve_workspace(command_bus, &arguments)?;
+    let timeout_ms = parse_optional_timeout(&arguments)?;
+    let multi_match_payload = json!({
+        "tool": "unfour.ssh.patch_file",
+        "workspaceId": workspace.workspace_id.clone(),
+        "connectionId": connection_id.clone(),
+        "path": path.clone(),
+        "searchBytes": search.len(),
+        "replaceBytes": replace.len(),
+        "replaceAllMatches": true
+    });
+    let allow_multiple_matches = is_confirmed(
+        &arguments,
+        "SSH_PATCH_MULTIPLE_MATCHES",
+        &multi_match_payload,
+    );
+    if workspace.environment_type == "test" || is_sensitive_path(&path) {
+        ensure_confirmed(
+            &arguments,
+            "SSH_PATCH_FILE",
+            "Patching remote files in test or sensitive paths requires confirmation.",
+            json!({
+                "tool": "unfour.ssh.patch_file",
+                "workspaceId": workspace.workspace_id,
+                "connectionId": connection_id.clone(),
+                "path": path.clone(),
+                "searchBytes": search.len(),
+                "replaceBytes": replace.len()
+            }),
+        )?;
+    }
+
+    let script = format!(
+        "from pathlib import Path\np = Path({})\ntext = p.read_text()\nsearch = {}\nreplace = {}\nallow_multiple = {}\ncount = text.count(search)\nprint('__UNFOUR_MATCH_COUNT__', count)\nif count == 0 or (count > 1 and not allow_multiple):\n    raise SystemExit(3)\nreplacements = count if allow_multiple else 1\np.write_text(text.replace(search, replace, replacements))\nprint('__UNFOUR_PATCHED__', replacements)\n",
+        python_string(&path),
+        python_string(&search),
+        python_string(&replace),
+        if allow_multiple_matches { "True" } else { "False" }
+    );
+    let marker = heredoc_marker(&script);
+    let command = format!("python3 - <<'{}'\n{}\n{}", marker, script, marker);
+    let result = command_bus
+        .run_ssh_command(SshDiagnosticInput {
+            workspace_id: workspace.workspace_id,
+            connection_id: connection_id.clone(),
+            command,
+            timeout_ms,
+        })
+        .map_err(|error| ToolCallError::Execution {
+            code: error.code,
+            message: error.message,
+        })?;
+    let matches = parse_match_count(&result.stdout);
+    if result.exit_status == Some(3) && matches.unwrap_or(0) > 1 {
+        ensure_confirmed(
+            &arguments,
+            "SSH_PATCH_MULTIPLE_MATCHES",
+            "Patching multiple remote matches requires confirmation.",
+            multi_match_payload,
+        )?;
+    }
+    let replacements = if result.exit_status == Some(0) {
+        if allow_multiple_matches {
+            matches.unwrap_or(1)
+        } else {
+            1
+        }
+    } else {
+        0
+    };
+    Ok(json!({
+        "connectionId": connection_id,
+        "path": path,
+        "patched": result.exit_status == Some(0),
+        "matches": matches,
+        "diffSummary": {
+            "searchBytes": search.len(),
+            "replaceBytes": replace.len(),
+            "replacements": replacements
+        },
+        "stdout": result.stdout,
+        "stderr": result.stderr,
+        "exitCode": result.exit_status,
+        "truncated": result.truncated,
+        "source": "command-bus"
+    }))
+}
+
+fn ssh_list_dir(
+    command_bus: &dyn CommandBusAdapter,
+    arguments: Value,
+) -> Result<Value, ToolCallError> {
+    let arguments = object_with_allowed_keys(
+        arguments,
+        &["connectionId", "path", "workspaceId", "limit", "timeoutMs"],
+    )?;
+    let connection_id = parse_required_string(&arguments, "connectionId", "unfour.ssh.list_dir")?;
+    let path = parse_required_string(&arguments, "path", "unfour.ssh.list_dir")?;
+    let workspace = resolve_workspace(command_bus, &arguments)?;
+    let timeout_ms = parse_optional_timeout(&arguments)?;
+    let limit = parse_optional_u64(&arguments, "limit")?
+        .unwrap_or(200)
+        .clamp(1, 1_000);
+    let command = format!(
+        "find {} -maxdepth 1 -mindepth 1 -printf '%f\\t%y\\t%s\\t%TY-%Tm-%TdT%TH:%TM:%TS%Tz\\n' | head -n {}",
+        shell_quote(&path),
+        limit
+    );
+    let result = command_bus
+        .run_ssh_command(SshDiagnosticInput {
+            workspace_id: workspace.workspace_id,
+            connection_id: connection_id.clone(),
+            command,
+            timeout_ms,
+        })
+        .map_err(|error| ToolCallError::Execution {
+            code: error.code,
+            message: error.message,
+        })?;
+    let entries = parse_find_entries(&result.stdout);
+    Ok(json!({
+        "connectionId": connection_id,
+        "path": path,
+        "entries": entries,
+        "count": entries.len(),
+        "stderr": result.stderr,
+        "exitCode": result.exit_status,
+        "truncated": result.truncated,
+        "source": "command-bus"
+    }))
+}
+
+#[derive(Debug, Clone)]
+struct WorkspaceContext {
+    workspace_id: String,
+    environment_type: String,
+}
+
+fn resolve_workspace(
+    command_bus: &dyn CommandBusAdapter,
+    arguments: &Map<String, Value>,
+) -> Result<WorkspaceContext, ToolCallError> {
+    match parse_optional_string(arguments, "workspaceId")? {
+        Some(id) => {
+            let result = command_bus
+                .execute_read(ReadCommand::ListWorkspaces)
+                .map_err(|error| ToolCallError::Execution {
+                    code: error.code,
+                    message: error.message,
+                })?;
+            let ReadCommandResult::Workspaces(workspaces) = result else {
+                return Err(ToolCallError::Execution {
+                    code: "COMMAND_BUS_RESULT_MISMATCH",
+                    message: "The command-bus returned an unexpected result.",
+                });
+            };
+            let workspace = workspaces
+                .workspaces
+                .into_iter()
+                .find(|workspace| workspace.id == id)
+                .ok_or(ToolCallError::Execution {
+                    code: "WORKSPACE_NOT_FOUND",
+                    message: "The requested workspace was not found.",
+                })?;
+            Ok(WorkspaceContext {
+                workspace_id: workspace.id,
+                environment_type: workspace.environment_type,
+            })
+        }
+        None => {
+            let result = command_bus
+                .execute_read(ReadCommand::CurrentWorkspace)
+                .map_err(|error| ToolCallError::Execution {
+                    code: error.code,
+                    message: error.message,
+                })?;
+            let ReadCommandResult::CurrentWorkspace(workspace) = result else {
+                return Err(ToolCallError::Execution {
+                    code: "COMMAND_BUS_RESULT_MISMATCH",
+                    message: "The command-bus returned an unexpected result.",
+                });
+            };
+            Ok(WorkspaceContext {
+                workspace_id: workspace.workspace_id,
+                environment_type: workspace.environment_type,
+            })
+        }
+    }
+}
+
+fn ssh_command_result(result: unfour_core::models::SshDiagnosticResult, source: &str) -> Value {
+    json!({
+        "connectionId": result.connection_id,
+        "command": redact_command_display(&result.command),
+        "stdout": result.stdout,
+        "stderr": result.stderr,
+        "exitCode": result.exit_status,
+        "exitStatus": result.exit_status,
+        "truncated": result.truncated,
+        "source": source
+    })
+}
+
+fn heredoc_marker(content: &str) -> String {
+    let mut marker = format!("UNFOUR_MCP_EOF_{}", fnv1a_hex8(content));
+    while content.contains(&marker) {
+        marker.push('X');
+    }
+    marker
+}
+
+fn python_string(value: &str) -> String {
+    serde_json::to_string(value).unwrap_or_else(|_| "''".to_string())
+}
+
+fn parse_match_count(stdout: &str) -> Option<u64> {
+    stdout.lines().find_map(|line| {
+        line.strip_prefix("__UNFOUR_MATCH_COUNT__")
+            .and_then(|rest| rest.trim().parse::<u64>().ok())
+    })
+}
+
+fn parse_find_entries(stdout: &str) -> Vec<Value> {
+    stdout
+        .lines()
+        .filter_map(|line| {
+            let mut parts = line.split('\t');
+            let name = parts.next()?.to_string();
+            let kind = match parts.next().unwrap_or_default() {
+                "d" => "directory",
+                "f" => "file",
+                "l" => "symlink",
+                other => other,
+            };
+            let size = parts
+                .next()
+                .and_then(|value| value.parse::<u64>().ok())
+                .unwrap_or(0);
+            let modified_at = parts.next().unwrap_or_default();
+            Some(json!({
+                "name": name,
+                "type": kind,
+                "size": size,
+                "modifiedAt": modified_at
+            }))
+        })
+        .collect()
+}
+
+fn fnv1a_hex8(value: &str) -> String {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in value.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    format!("{:08x}", hash & 0xffff_ffff)
 }
 
 fn resolve_workspace_id(
@@ -172,218 +843,5 @@ fn parse_optional_timeout(arguments: &Map<String, Value>) -> Result<Option<u64>,
 }
 
 #[cfg(test)]
-mod tests {
-    use std::sync::Arc;
-
-    use serde_json::json;
-    use unfour_command_bus::{CurrentWorkspaceResult, ReadCommand, ReadCommandResult};
-    use unfour_core::models::{
-        ApiResponse, DatabaseConnection, DatabaseQueryInput, DatabaseQueryResult,
-        DatabaseQuerySafety, DatabaseSchema, SshDiagnosticInput, SshDiagnosticResult,
-    };
-
-    use crate::command_bus_adapter::{CommandBusAdapter, CommandBusAdapterError};
-    use crate::tools::ToolRegistry;
-
-    /// Stub that runs diagnostics, echoing the validated command back.
-    struct SshStubCommandBus;
-
-    impl CommandBusAdapter for SshStubCommandBus {
-        fn execute_read(
-            &self,
-            command: ReadCommand,
-        ) -> Result<ReadCommandResult, CommandBusAdapterError> {
-            match command {
-                ReadCommand::CurrentWorkspace => Ok(ReadCommandResult::CurrentWorkspace(
-                    CurrentWorkspaceResult {
-                        workspace_id: "ws-active".to_string(),
-                        workspace_name: "Active".to_string(),
-                        environment_type: "dev".to_string(),
-                        mcp_policy: "auto".to_string(),
-                        workspace_root: None,
-                        mode: "local".to_string(),
-                        source: "command-bus".to_string(),
-                    },
-                )),
-                _ => Err(CommandBusAdapterError {
-                    code: "UNEXPECTED",
-                    message: "unexpected command",
-                }),
-            }
-        }
-
-        fn run_ssh_diagnostic(
-            &self,
-            input: SshDiagnosticInput,
-        ) -> Result<SshDiagnosticResult, CommandBusAdapterError> {
-            Ok(SshDiagnosticResult {
-                connection_id: input.connection_id,
-                command: input.command,
-                stdout: "Filesystem Size Used Avail\n/dev/sda1 50G 20G 30G".to_string(),
-                stderr: String::new(),
-                exit_status: Some(0),
-                truncated: false,
-            })
-        }
-
-        fn execute_saved_api_request(
-            &self,
-            _request_id: &str,
-            _timeout_ms: Option<u64>,
-        ) -> Result<ApiResponse, CommandBusAdapterError> {
-            unreachable!()
-        }
-
-        fn list_db_connections(
-            &self,
-            _workspace_id: &str,
-        ) -> Result<Vec<DatabaseConnection>, CommandBusAdapterError> {
-            Ok(vec![])
-        }
-
-        fn get_db_schema(
-            &self,
-            _workspace_id: &str,
-            _connection_id: &str,
-        ) -> Result<DatabaseSchema, CommandBusAdapterError> {
-            Ok(DatabaseSchema {
-                connection_id: String::new(),
-                tables: vec![],
-            })
-        }
-
-        fn execute_db_query(
-            &self,
-            _input: DatabaseQueryInput,
-        ) -> Result<DatabaseQueryResult, CommandBusAdapterError> {
-            Ok(DatabaseQueryResult {
-                columns: vec![],
-                rows: vec![],
-                affected_rows: 0,
-                duration_ms: 0,
-                safety: DatabaseQuerySafety {
-                    classification: "read".to_string(),
-                    requires_confirmation: false,
-                    confirmed: true,
-                    message: None,
-                },
-            })
-        }
-    }
-
-    /// Stub that does NOT override `run_ssh_diagnostic`, so the trait default
-    /// (unsupported) is exercised — mirrors a build without `ssh-native`.
-    struct UnsupportedSshCommandBus;
-
-    impl CommandBusAdapter for UnsupportedSshCommandBus {
-        fn execute_read(
-            &self,
-            _command: ReadCommand,
-        ) -> Result<ReadCommandResult, CommandBusAdapterError> {
-            Ok(ReadCommandResult::CurrentWorkspace(
-                CurrentWorkspaceResult {
-                    workspace_id: "ws-active".to_string(),
-                    workspace_name: "Active".to_string(),
-                    environment_type: "dev".to_string(),
-                    mcp_policy: "auto".to_string(),
-                    workspace_root: None,
-                    mode: "local".to_string(),
-                    source: "command-bus".to_string(),
-                },
-            ))
-        }
-
-        fn execute_saved_api_request(
-            &self,
-            _request_id: &str,
-            _timeout_ms: Option<u64>,
-        ) -> Result<ApiResponse, CommandBusAdapterError> {
-            unreachable!()
-        }
-
-        fn list_db_connections(
-            &self,
-            _workspace_id: &str,
-        ) -> Result<Vec<DatabaseConnection>, CommandBusAdapterError> {
-            Ok(vec![])
-        }
-
-        fn get_db_schema(
-            &self,
-            _workspace_id: &str,
-            _connection_id: &str,
-        ) -> Result<DatabaseSchema, CommandBusAdapterError> {
-            Ok(DatabaseSchema {
-                connection_id: String::new(),
-                tables: vec![],
-            })
-        }
-
-        fn execute_db_query(
-            &self,
-            _input: DatabaseQueryInput,
-        ) -> Result<DatabaseQueryResult, CommandBusAdapterError> {
-            unreachable!()
-        }
-    }
-
-    fn registry() -> ToolRegistry {
-        ToolRegistry::with_command_bus(Arc::new(SshStubCommandBus))
-    }
-
-    #[test]
-    fn ssh_tool_is_registered() {
-        assert!(registry()
-            .definitions()
-            .iter()
-            .any(|d| d.name == "unfour.ssh.run_diagnostic"));
-    }
-
-    #[test]
-    fn run_diagnostic_returns_captured_output() {
-        let result = registry()
-            .call(
-                "unfour.ssh.run_diagnostic",
-                json!({ "connectionId": "conn-1", "command": "df -h" }),
-            )
-            .expect("should succeed");
-
-        assert_eq!(result["isError"], false);
-        let content = &result["structuredContent"];
-        assert_eq!(content["connectionId"], "conn-1");
-        assert_eq!(content["command"], "df -h");
-        assert_eq!(content["exitStatus"], 0);
-        assert!(content["stdout"].as_str().unwrap().contains("Filesystem"));
-        assert_eq!(content["source"], "command-bus");
-    }
-
-    #[test]
-    fn run_diagnostic_requires_connection_and_command() {
-        assert!(registry()
-            .call("unfour.ssh.run_diagnostic", json!({ "command": "df -h" }))
-            .is_err());
-        assert!(registry()
-            .call(
-                "unfour.ssh.run_diagnostic",
-                json!({ "connectionId": "conn-1" })
-            )
-            .is_err());
-    }
-
-    #[test]
-    fn run_diagnostic_surfaces_unsupported_when_native_disabled() {
-        let registry = ToolRegistry::with_command_bus(Arc::new(UnsupportedSshCommandBus));
-        let result = registry
-            .call(
-                "unfour.ssh.run_diagnostic",
-                json!({ "connectionId": "conn-1", "command": "uptime" }),
-            )
-            .expect("execution errors become MCP tool results");
-
-        assert_eq!(result["isError"], true);
-        assert_eq!(
-            result["structuredContent"]["error"]["code"],
-            "COMMAND_BUS_OPERATION_UNSUPPORTED"
-        );
-    }
-}
+#[path = "ssh_tests.rs"]
+mod tests;

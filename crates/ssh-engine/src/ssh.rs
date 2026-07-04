@@ -19,7 +19,13 @@ use crate::host_key::HostKeyStore;
 
 #[path = "diagnostics.rs"]
 mod diagnostics;
-use diagnostics::validate_diagnostic_command;
+#[path = "validation.rs"]
+mod validation;
+use diagnostics::{validate_diagnostic_command, validate_one_shot_command};
+use validation::{
+    empty_to_none, validate_connection_id, validate_pty_size, validate_session_id,
+    validate_workspace_id,
+};
 
 /// Callback invoked when terminal output data arrives from a native SSH channel.
 /// The payload is a JSON string with `sessionId` and `data` fields.
@@ -444,6 +450,37 @@ impl SshService {
             let _ = (timeout, &connection, &command);
             Err(AppError::Unsupported(
                 "ssh diagnostics require a build with the ssh-native feature".to_string(),
+            ))
+        }
+    }
+
+    /// Run a single non-interactive SSH command over a fresh native connection.
+    /// This lower-level execution primitive intentionally performs only basic
+    /// command-shape validation; policy, environment gating, and high-risk
+    /// confirmation live in the command-bus/MCP adapter path before this method
+    /// is called.
+    pub async fn run_command(&self, input: SshDiagnosticInput) -> AppResult<SshDiagnosticResult> {
+        validate_workspace_id(&input.workspace_id)?;
+        validate_connection_id(&input.connection_id)?;
+        let command = validate_one_shot_command(&input.command)?;
+        let timeout = std::time::Duration::from_millis(
+            input.timeout_ms.unwrap_or(15_000).clamp(1_000, 60_000),
+        );
+        let connection = self
+            .get_connection(&input.workspace_id, &input.connection_id)
+            .await?;
+        validate_connection_ready_for_session(&connection)?;
+
+        #[cfg(feature = "ssh-native")]
+        {
+            self.run_diagnostic_native(&connection, &command, timeout)
+                .await
+        }
+        #[cfg(not(feature = "ssh-native"))]
+        {
+            let _ = (timeout, &connection, &command);
+            Err(AppError::Unsupported(
+                "ssh command execution requires a build with the ssh-native feature".to_string(),
             ))
         }
     }
@@ -2029,48 +2066,6 @@ fn normalize_required(value: &str, label: &str) -> AppResult<String> {
         )));
     }
     Ok(trimmed.to_string())
-}
-
-fn empty_to_none(value: Option<String>) -> Option<String> {
-    value
-        .map(|item| item.trim().to_string())
-        .filter(|item| !item.is_empty())
-}
-
-fn validate_workspace_id(workspace_id: &str) -> AppResult<()> {
-    if workspace_id.trim().is_empty() {
-        return Err(AppError::Validation(
-            "workspace id cannot be empty".to_string(),
-        ));
-    }
-    Ok(())
-}
-
-fn validate_connection_id(connection_id: &str) -> AppResult<()> {
-    if connection_id.trim().is_empty() {
-        return Err(AppError::Validation(
-            "ssh connection id cannot be empty".to_string(),
-        ));
-    }
-    Ok(())
-}
-
-fn validate_session_id(session_id: &str) -> AppResult<()> {
-    if session_id.trim().is_empty() {
-        return Err(AppError::Validation(
-            "ssh session id cannot be empty".to_string(),
-        ));
-    }
-    Ok(())
-}
-
-fn validate_pty_size(cols: u16, rows: u16) -> AppResult<()> {
-    if !(20..=300).contains(&cols) || !(8..=100).contains(&rows) {
-        return Err(AppError::Validation(
-            "ssh pty size must be between 20x8 and 300x100".to_string(),
-        ));
-    }
-    Ok(())
 }
 
 fn session_for_workspace_mut<'a>(

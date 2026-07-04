@@ -1,5 +1,6 @@
 mod activity;
 mod api;
+mod confirmation;
 mod database;
 mod policy;
 mod real;
@@ -12,9 +13,13 @@ use serde::Serialize;
 use serde_json::{Map, Value};
 
 use crate::command_bus_adapter::CommandBusAdapter;
-use crate::response::{structured_policy_error, structured_tool_error, structured_tool_result};
+use crate::response::{
+    structured_confirmation_required, structured_policy_error, structured_tool_error,
+    structured_tool_result,
+};
 
-use self::policy::{check_tool_policy, McpPolicyDenial};
+use self::confirmation::ConfirmationRequired;
+use self::policy::{evaluate_tool_policy, McpPolicyDenial};
 
 type ToolHandler = fn(&dyn CommandBusAdapter, Value) -> Result<Value, ToolCallError>;
 
@@ -62,6 +67,26 @@ impl ToolAnnotations {
         }
     }
 
+    /// Mutates local Unfour metadata only.
+    pub(super) const fn local_write() -> Self {
+        Self {
+            read_only_hint: false,
+            destructive_hint: false,
+            idempotent_hint: false,
+            open_world_hint: false,
+        }
+    }
+
+    /// Mutates local Unfour metadata in a way that removes or hides records.
+    pub(super) const fn local_write_destructive() -> Self {
+        Self {
+            read_only_hint: false,
+            destructive_hint: true,
+            idempotent_hint: false,
+            open_world_hint: false,
+        }
+    }
+
     /// Performs an external action with a side effect (e.g. sends an HTTP
     /// request and records history). Not destructive, but not idempotent.
     pub(super) const fn remote_action() -> Self {
@@ -85,9 +110,10 @@ pub struct ToolRegistry {
 }
 
 #[derive(Debug, PartialEq)]
-pub enum ToolCallError {
+pub(crate) enum ToolCallError {
     UnknownTool(String),
     InvalidArguments(String),
+    ConfirmationRequired(ConfirmationRequired),
     PolicyBlocked(McpPolicyDenial),
     Execution {
         code: &'static str,
@@ -114,43 +140,97 @@ impl ToolRegistry {
             .collect()
     }
 
-    pub fn call(&self, name: &str, arguments: Value) -> Result<Value, ToolCallError> {
+    pub(crate) fn call(&self, name: &str, arguments: Value) -> Result<Value, ToolCallError> {
+        let started = std::time::Instant::now();
         let tool = self
             .tools
             .iter()
             .find(|tool| tool.definition.name == name)
             .ok_or_else(|| ToolCallError::UnknownTool(name.to_string()))?;
-        if let Err(error) = check_tool_policy(self.command_bus.as_ref(), name, &arguments) {
-            return policy_or_execution_error(error);
-        }
+        let policy = match evaluate_tool_policy(self.command_bus.as_ref(), name, &arguments) {
+            Ok(policy) => policy,
+            Err(error) => {
+                return policy_or_execution_error(name, started.elapsed().as_millis(), error);
+            }
+        };
         let result = (tool.handler)(self.command_bus.as_ref(), arguments);
 
         match result {
-            Ok(value) => Ok(structured_tool_result(value)),
+            Ok(value) => Ok(structured_tool_result(
+                name,
+                &policy.workspace.environment_type,
+                policy.risk.risk_level(),
+                started.elapsed().as_millis(),
+                value,
+            )),
+            Err(ToolCallError::ConfirmationRequired(confirmation)) => {
+                Ok(structured_confirmation_required(
+                    name,
+                    &policy.workspace.environment_type,
+                    confirmation.risk_level,
+                    started.elapsed().as_millis(),
+                    serde_json::to_value(confirmation).map_err(|_| ToolCallError::Execution {
+                        code: "TOOL_RESULT_SERIALIZATION_FAILED",
+                        message: "The tool result could not be serialized.",
+                    })?,
+                ))
+            }
             Err(ToolCallError::PolicyBlocked(denial)) => Ok(structured_policy_error(
-                serde_json::to_value(denial).map_err(|_| ToolCallError::Execution {
+                name,
+                &denial.environment_type,
+                policy.risk.risk_level(),
+                started.elapsed().as_millis(),
+                serde_json::to_value(denial.clone()).map_err(|_| ToolCallError::Execution {
                     code: "TOOL_RESULT_SERIALIZATION_FAILED",
                     message: "The tool result could not be serialized.",
                 })?,
             )),
-            Err(ToolCallError::Execution { code, message }) => {
-                Ok(structured_tool_error(code, message))
-            }
+            Err(ToolCallError::Execution { code, message }) => Ok(structured_tool_error(
+                name,
+                &policy.workspace.environment_type,
+                policy.risk.risk_level(),
+                started.elapsed().as_millis(),
+                code,
+                message,
+            )),
             Err(error) => Err(error),
         }
     }
 }
 
-fn policy_or_execution_error(error: ToolCallError) -> Result<Value, ToolCallError> {
+fn policy_or_execution_error(
+    tool_name: &str,
+    duration_ms: u128,
+    error: ToolCallError,
+) -> Result<Value, ToolCallError> {
     match error {
         ToolCallError::PolicyBlocked(denial) => Ok(structured_policy_error(
-            serde_json::to_value(denial).map_err(|_| ToolCallError::Execution {
+            tool_name,
+            &denial.environment_type,
+            denial_risk_level(&denial),
+            duration_ms,
+            serde_json::to_value(denial.clone()).map_err(|_| ToolCallError::Execution {
                 code: "TOOL_RESULT_SERIALIZATION_FAILED",
                 message: "The tool result could not be serialized.",
             })?,
         )),
-        ToolCallError::Execution { code, message } => Ok(structured_tool_error(code, message)),
+        ToolCallError::Execution { code, message } => Ok(structured_tool_error(
+            tool_name,
+            "unknown",
+            "medium",
+            duration_ms,
+            code,
+            message,
+        )),
         other => Err(other),
+    }
+}
+
+fn denial_risk_level(denial: &McpPolicyDenial) -> &'static str {
+    match denial.risk {
+        "read" => "low",
+        "write" | "execute" => "medium",
+        _ => "high",
     }
 }
 
@@ -483,7 +563,7 @@ mod tests {
     fn tool_schemas_are_available() {
         let definitions = ToolRegistry::with_command_bus(Arc::new(StubCommandBus)).definitions();
 
-        assert_eq!(definitions.len(), 18);
+        assert_eq!(definitions.len(), 32);
         assert!(definitions
             .iter()
             .all(|definition| definition.input_schema["type"] == "object"));
@@ -544,6 +624,12 @@ mod tests {
         assert!(definitions
             .iter()
             .any(|definition| definition.name == "unfour.ssh.run_diagnostic"));
+        assert!(definitions
+            .iter()
+            .any(|definition| definition.name == "unfour.db.execute"));
+        assert!(definitions
+            .iter()
+            .any(|definition| definition.name == "unfour.ssh.exec"));
         assert_eq!(
             definitions
                 .iter()
@@ -589,8 +675,8 @@ mod tests {
     fn prod_workspace_blocks_ssh_execution_with_policy_payload() {
         let result = ToolRegistry::with_command_bus(Arc::new(StubCommandBus))
             .call(
-                "unfour.ssh.run_diagnostic",
-                json!({ "connectionId": "ssh-1", "command": "df -h" }),
+                "unfour.ssh.exec",
+                json!({ "connectionId": "ssh-1", "command": "rm -rf /tmp/app" }),
             )
             .expect("policy denials are MCP tool results");
 

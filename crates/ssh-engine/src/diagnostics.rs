@@ -163,3 +163,26 @@ pub(crate) fn validate_diagnostic_command(command: &str) -> AppResult<String> {
 
     Ok(trimmed.to_string())
 }
+
+/// Validate a broader one-shot SSH command. The MCP layer applies workspace
+/// policy and high-risk confirmation before this reaches the engine; the engine
+/// still enforces basic shape limits before opening a remote channel.
+pub(crate) fn validate_one_shot_command(command: &str) -> AppResult<String> {
+    let trimmed = command.trim();
+    if trimmed.is_empty() {
+        return Err(AppError::Validation(
+            "ssh command cannot be empty".to_string(),
+        ));
+    }
+    if trimmed.chars().count() > 4096 {
+        return Err(AppError::Validation(
+            "ssh command must be 4096 characters or fewer".to_string(),
+        ));
+    }
+    if trimmed.chars().any(char::is_control) {
+        return Err(AppError::Validation(
+            "ssh command cannot contain control characters".to_string(),
+        ));
+    }
+    Ok(trimmed.to_string())
+}
