@@ -213,7 +213,12 @@ pub fn safe_path_display(path: &Path) -> String {
         .take(3)
         .map(|part| part.as_os_str().to_string_lossy().to_string())
         .collect::<Vec<_>>();
-    parts.into_iter().rev().collect::<PathBuf>().display().to_string()
+    parts
+        .into_iter()
+        .rev()
+        .collect::<PathBuf>()
+        .display()
+        .to_string()
 }
 
 pub fn prune_old_logs(log_dir: &Path, retention_days: u64) -> io::Result<()> {
@@ -354,7 +359,12 @@ fn copy_recent_logs(source_dir: &Path, target_dir: &Path) -> io::Result<Vec<Stri
     let mut entries = fs::read_dir(source_dir)?
         .filter_map(Result::ok)
         .filter(|entry| entry.path().is_file())
-        .filter(|entry| entry.file_name().to_string_lossy().starts_with("unfour.log"))
+        .filter(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with("unfour.log")
+        })
         .map(|entry| {
             let modified = entry
                 .metadata()
@@ -401,12 +411,7 @@ pub fn log_command_completed(command: &str, command_id: &str, duration_ms: u128)
     );
 }
 
-pub fn log_command_failed(
-    command: &str,
-    command_id: &str,
-    duration_ms: u128,
-    error_kind: &str,
-) {
+pub fn log_command_failed(command: &str, command_id: &str, duration_ms: u128, error_kind: &str) {
     let meta = metadata();
     tracing::error!(
         event = "command_failed",

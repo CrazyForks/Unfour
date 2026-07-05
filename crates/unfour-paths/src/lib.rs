@@ -68,10 +68,7 @@ pub fn default_database_path() -> io::Result<PathBuf> {
 /// stable, predictable, and consistent with developer-tool conventions.
 fn default_roots() -> io::Result<PathRoots> {
     let home = dirs::home_dir().ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::NotFound,
-            "home directory is not available",
-        )
+        io::Error::new(io::ErrorKind::NotFound, "home directory is not available")
     })?;
     Ok(PathRoots::new(home.clone(), Some(home.clone()), Some(home)))
 }
