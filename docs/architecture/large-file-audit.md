@@ -24,7 +24,7 @@ minified outputs. It intentionally does not use a 150-line limit. Categories are
 | P0 | More than 800 lines |
 | P1 | More than 500 lines |
 
-Current summary: 24 files above P1; 6 Critical, 4 P0, 14 P1; 0 contain test
+Current summary: 23 files above P1; 6 Critical, 3 P0, 14 P1; 0 contain test
 code; 0 look like generated/build artifacts.
 
 ## Test File Organization
@@ -60,22 +60,21 @@ TypeScript / React:
 | 6 | `crates/unfour-mcp/src/tools/api.rs` | 1428 | Critical | No | No |
 | 7 | `crates/unfour-mcp/src/tools/database.rs` | 1170 | P0 | No | No |
 | 8 | `crates/unfour-mcp/src/tools/ssh.rs` | 886 | P0 | No | No |
-| 9 | `crates/unfour-app/src/commands.rs` | 854 | P0 | No | No |
-| 10 | `packages/database/src/components/DatabaseConnectionTree.tsx` | 831 | P0 | No | No |
-| 11 | `packages/ui/src/tree-view.tsx` | 793 | P1 | No | No |
-| 12 | `crates/unfour-core/src/models.rs` | 790 | P1 | No | No |
-| 13 | `packages/api-client/src/components/ApiCollectionTree.tsx` | 789 | P1 | No | No |
-| 14 | `packages/ssh-terminal/src/TerminalPage.tsx` | 740 | P1 | No | No |
-| 15 | `packages/api-client/src/model/request-tabs.ts` | 605 | P1 | No | No |
-| 16 | `crates/workspace-engine/src/workspace.rs` | 584 | P1 | No | No |
-| 17 | `crates/unfour-mcp/src/command_bus_adapter.rs` | 582 | P1 | No | No |
-| 18 | `packages/api-client/src/components/ResponseTabs.tsx` | 572 | P1 | No | No |
-| 19 | `packages/api-client/src/request-utils.ts` | 561 | P1 | No | No |
-| 20 | `packages/database/src/components/SqlEditorTab.tsx` | 560 | P1 | No | No |
-| 21 | `packages/command-client/src/types.ts` | 558 | P1 | No | No |
-| 22 | `packages/api-client/src/ApiDebuggerPage.tsx` | 542 | P1 | No | No |
-| 23 | `crates/unfour-mcp/src/tools/policy.rs` | 517 | P1 | No | No |
-| 24 | `packages/ui/src/shell.tsx` | 507 | P1 | No | No |
+| 9 | `packages/database/src/components/DatabaseConnectionTree.tsx` | 831 | P0 | No | No |
+| 10 | `packages/ui/src/tree-view.tsx` | 793 | P1 | No | No |
+| 11 | `crates/unfour-core/src/models.rs` | 790 | P1 | No | No |
+| 12 | `packages/api-client/src/components/ApiCollectionTree.tsx` | 789 | P1 | No | No |
+| 13 | `packages/ssh-terminal/src/TerminalPage.tsx` | 740 | P1 | No | No |
+| 14 | `packages/api-client/src/model/request-tabs.ts` | 605 | P1 | No | No |
+| 15 | `crates/workspace-engine/src/workspace.rs` | 584 | P1 | No | No |
+| 16 | `crates/unfour-mcp/src/command_bus_adapter.rs` | 582 | P1 | No | No |
+| 17 | `packages/api-client/src/components/ResponseTabs.tsx` | 572 | P1 | No | No |
+| 18 | `packages/api-client/src/request-utils.ts` | 561 | P1 | No | No |
+| 19 | `packages/database/src/components/SqlEditorTab.tsx` | 560 | P1 | No | No |
+| 20 | `packages/command-client/src/types.ts` | 558 | P1 | No | No |
+| 21 | `packages/api-client/src/ApiDebuggerPage.tsx` | 542 | P1 | No | No |
+| 22 | `crates/unfour-mcp/src/tools/policy.rs` | 517 | P1 | No | No |
+| 23 | `packages/ui/src/shell.tsx` | 507 | P1 | No | No |
 
 ## Completed Test-Only Splits
 
@@ -101,13 +100,15 @@ MCP tool names/schemas.
 
 ## Completed Business Responsibility Splits
 
-This batch split the frontend Tauri command-client boundary by command domain
-without changing public export names, caller import paths, Rust Tauri command
-names, command argument shapes, or return shapes.
+These batches split adapter boundaries by command domain without changing
+public export names, caller import paths, Rust Tauri command names, command
+argument shapes, return shapes, database schema, or MCP tool names,
+descriptions, and input schemas.
 
 | Original file | New organization |
 | --- | --- |
 | `packages/command-client/src/tauri.ts` | Public facade re-exporting `src/tauri/{api,database,diagnostics,secret-store,ssh,workspace}.ts`; shared invoke/runtime code in `src/tauri/invoke.ts`; browser-dev mocks in `src/tauri/browser-mocks/` with per-domain handlers |
+| `crates/unfour-app/src/commands.rs` | Rust facade re-exporting `src/commands/{api,database,diagnostics,secret_store,ssh,workspace}.rs`; shared command tracing remains in `commands.rs`; existing `invoke_handler` paths remain valid through the facade |
 
 ## Remaining Large Test Files
 
@@ -128,7 +129,6 @@ need future splits by responsibility, not by line count alone.
 | `crates/unfour-mcp/src/tools/api.rs` | Extract API argument parsers, redaction/truncation, and serializers; keep tool registry names unchanged. | High |
 | `crates/unfour-mcp/src/tools/database.rs` | Extract SQL validators, risk classifier, result truncation, and connection summary helpers. | High |
 | `crates/unfour-mcp/src/tools/ssh.rs` | Extract command builders, file operation helpers, workspace resolution, and parsers. | High |
-| `crates/unfour-app/src/commands.rs` | Split Tauri command adapters by domain; keep every command function name and signature stable. | High |
 | `packages/database/src/components/DatabaseConnectionTree.tsx` | Extract tree model builders, context menus, status labels, and generated SQL snippet helpers. | Medium |
 | `packages/ui/src/tree-view.tsx` | Extract flatten/search/typeahead helpers and drag/drop target math; keep `TreeView` public API stable. | Medium |
 | `crates/unfour-core/src/models.rs` | Split models by domain only with a compatibility re-export layer; do not rename fields. | High |
@@ -166,15 +166,15 @@ facade is no longer oversized.
 
 Top remaining business split candidates:
 
-1. `crates/unfour-app/src/commands.rs`
-2. `crates/unfour-command-bus/src/lib.rs`
-3. `packages/database/src/DatabasePage.tsx`
-4. `packages/database/src/components/DatabaseConnectionTree.tsx`
-5. `crates/unfour-mcp/src/tools/api.rs`
-6. `crates/unfour-mcp/src/tools/database.rs`
-7. `crates/unfour-mcp/src/tools/ssh.rs`
-8. `crates/database-engine/src/database.rs`
-9. `crates/ssh-engine/src/ssh.rs`
+1. `crates/unfour-command-bus/src/lib.rs`
+2. `packages/database/src/DatabasePage.tsx`
+3. `packages/database/src/components/DatabaseConnectionTree.tsx`
+4. `crates/unfour-mcp/src/tools/api.rs`
+5. `crates/unfour-mcp/src/tools/database.rs`
+6. `crates/unfour-mcp/src/tools/ssh.rs`
+7. `crates/database-engine/src/database.rs`
+8. `crates/ssh-engine/src/ssh.rs`
+9. `crates/http-engine/src/api_client.rs`
 
 Recommended next test-only cleanup:
 
