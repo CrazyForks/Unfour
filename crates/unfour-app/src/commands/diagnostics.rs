@@ -62,13 +62,12 @@ pub async fn open_diagnostics_dir(app: AppHandle) -> AppResult<()> {
 }
 
 #[tauri::command]
-pub async fn export_diagnostics_bundle() -> AppResult<DiagnosticBundleCommandResult> {
-    trace_command("export_diagnostics_bundle", async {
+pub async fn export_diagnostics_bundle(
+    state: State<'_, AppState>,
+) -> AppResult<DiagnosticBundleCommandResult> {
+    trace_command("export_diagnostics_bundle", async move {
         let paths = unfour_paths::initialize_unfour_storage()?;
-        let request = unfour_diag::DiagnosticBundleRequest::oss_dev(
-            env!("CARGO_PKG_VERSION").to_string(),
-            paths,
-        );
+        let request = crate::diagnostic_bundle_request(&state.config, paths);
         let bundle = unfour_diag::export_diagnostics_bundle(&request)?;
 
         Ok(DiagnosticBundleCommandResult {

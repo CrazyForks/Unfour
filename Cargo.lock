@@ -6244,11 +6244,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-opener",
  "tokio",
- "tracing",
- "tracing-subscriber",
  "unfour-app",
- "unfour-diag",
- "unfour-paths",
 ]
 
 [[package]]

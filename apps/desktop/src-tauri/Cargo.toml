@@ -25,12 +25,8 @@ tauri = { version = "2", features = [] }
 # in `unfour-app`). Any plugin referenced by a capability must be a direct
 # dependency of the binary crate, not only of `unfour-app`.
 tauri-plugin-opener = "2"
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 # Shared composition layer (plugins, command-bus setup, AppState, commands).
 unfour-app = { path = "../../../crates/unfour-app" }
-unfour-diag = { path = "../../../crates/unfour-diag" }
-unfour-paths = { path = "../../../crates/unfour-paths" }
 
 [dev-dependencies]
 sqlx = { version = "0.8", default-features = false, features = ["chrono", "json", "macros", "runtime-tokio-rustls", "sqlite"] }
