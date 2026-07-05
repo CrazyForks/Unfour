@@ -15,7 +15,8 @@ frontend-facing types, and browser-development mock behavior for Tauri commands.
 
 ## Key Files
 
-- `src/tauri.ts` - Tauri invoke wrappers and browser mock implementation.
+- `src/tauri.ts` - public Tauri command wrapper facade.
+- `src/tauri/` - domain Tauri invoke wrappers and browser mock implementation.
 - `src/types.ts` - shared command input/output and frontend domain types.
 - `src/index.ts` - package exports.
 

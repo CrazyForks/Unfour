@@ -24,7 +24,7 @@ minified outputs. It intentionally does not use a 150-line limit. Categories are
 | P0 | More than 800 lines |
 | P1 | More than 500 lines |
 
-Current summary: 26 files above P1; 7 Critical, 4 P0, 15 P1; 1 contains test
+Current summary: 24 files above P1; 6 Critical, 4 P0, 14 P1; 0 contain test
 code; 0 look like generated/build artifacts.
 
 ## Test File Organization
@@ -53,31 +53,29 @@ TypeScript / React:
 | # | Path | Lines | Category | Test code | Suspected artifact |
 | --- | --- | ---: | --- | --- | --- |
 | 1 | `crates/database-engine/src/database.rs` | 3371 | Critical | No | No |
-| 2 | `packages/command-client/src/tauri.ts` | 2195 | Critical | No | No |
-| 3 | `crates/ssh-engine/src/ssh.rs` | 2131 | Critical | No | No |
-| 4 | `crates/http-engine/src/api_client.rs` | 1723 | Critical | No | No |
-| 5 | `crates/unfour-command-bus/src/lib.rs` | 1679 | Critical | No | No |
-| 6 | `packages/database/src/DatabasePage.tsx` | 1649 | Critical | No | No |
-| 7 | `crates/unfour-mcp/src/tools/api.rs` | 1428 | Critical | No | No |
-| 8 | `crates/unfour-mcp/src/tools/database.rs` | 1170 | P0 | No | No |
-| 9 | `crates/unfour-mcp/src/tools/ssh.rs` | 886 | P0 | No | No |
-| 10 | `crates/unfour-app/src/commands.rs` | 854 | P0 | No | No |
-| 11 | `packages/database/src/components/DatabaseConnectionTree.tsx` | 831 | P0 | No | No |
-| 12 | `packages/ui/src/tree-view.tsx` | 793 | P1 | No | No |
-| 13 | `crates/unfour-core/src/models.rs` | 790 | P1 | No | No |
-| 14 | `packages/api-client/src/components/ApiCollectionTree.tsx` | 789 | P1 | No | No |
-| 15 | `packages/ssh-terminal/src/TerminalPage.tsx` | 740 | P1 | No | No |
-| 16 | `packages/api-client/src/model/request-tabs.ts` | 605 | P1 | No | No |
-| 17 | `crates/workspace-engine/src/workspace.rs` | 584 | P1 | No | No |
-| 18 | `crates/unfour-diag/src/lib.rs` | 583 | P1 | Yes | No |
-| 19 | `crates/unfour-mcp/src/command_bus_adapter.rs` | 582 | P1 | No | No |
-| 20 | `packages/api-client/src/components/ResponseTabs.tsx` | 572 | P1 | No | No |
-| 21 | `packages/api-client/src/request-utils.ts` | 561 | P1 | No | No |
-| 22 | `packages/database/src/components/SqlEditorTab.tsx` | 560 | P1 | No | No |
-| 23 | `packages/command-client/src/types.ts` | 558 | P1 | No | No |
-| 24 | `packages/api-client/src/ApiDebuggerPage.tsx` | 542 | P1 | No | No |
-| 25 | `crates/unfour-mcp/src/tools/policy.rs` | 517 | P1 | No | No |
-| 26 | `packages/ui/src/shell.tsx` | 507 | P1 | No | No |
+| 2 | `crates/ssh-engine/src/ssh.rs` | 2131 | Critical | No | No |
+| 3 | `crates/http-engine/src/api_client.rs` | 1723 | Critical | No | No |
+| 4 | `crates/unfour-command-bus/src/lib.rs` | 1679 | Critical | No | No |
+| 5 | `packages/database/src/DatabasePage.tsx` | 1649 | Critical | No | No |
+| 6 | `crates/unfour-mcp/src/tools/api.rs` | 1428 | Critical | No | No |
+| 7 | `crates/unfour-mcp/src/tools/database.rs` | 1170 | P0 | No | No |
+| 8 | `crates/unfour-mcp/src/tools/ssh.rs` | 886 | P0 | No | No |
+| 9 | `crates/unfour-app/src/commands.rs` | 854 | P0 | No | No |
+| 10 | `packages/database/src/components/DatabaseConnectionTree.tsx` | 831 | P0 | No | No |
+| 11 | `packages/ui/src/tree-view.tsx` | 793 | P1 | No | No |
+| 12 | `crates/unfour-core/src/models.rs` | 790 | P1 | No | No |
+| 13 | `packages/api-client/src/components/ApiCollectionTree.tsx` | 789 | P1 | No | No |
+| 14 | `packages/ssh-terminal/src/TerminalPage.tsx` | 740 | P1 | No | No |
+| 15 | `packages/api-client/src/model/request-tabs.ts` | 605 | P1 | No | No |
+| 16 | `crates/workspace-engine/src/workspace.rs` | 584 | P1 | No | No |
+| 17 | `crates/unfour-mcp/src/command_bus_adapter.rs` | 582 | P1 | No | No |
+| 18 | `packages/api-client/src/components/ResponseTabs.tsx` | 572 | P1 | No | No |
+| 19 | `packages/api-client/src/request-utils.ts` | 561 | P1 | No | No |
+| 20 | `packages/database/src/components/SqlEditorTab.tsx` | 560 | P1 | No | No |
+| 21 | `packages/command-client/src/types.ts` | 558 | P1 | No | No |
+| 22 | `packages/api-client/src/ApiDebuggerPage.tsx` | 542 | P1 | No | No |
+| 23 | `crates/unfour-mcp/src/tools/policy.rs` | 517 | P1 | No | No |
+| 24 | `packages/ui/src/shell.tsx` | 507 | P1 | No | No |
 
 ## Completed Test-Only Splits
 
@@ -99,12 +97,21 @@ MCP tool names/schemas.
 | `crates/unfour-mcp/src/tools/database_tests.rs` | `crates/unfour-mcp/src/tools/database_tests/` scenario modules |
 | `crates/unfour-mcp/src/tools/api_tests.rs` | `crates/unfour-mcp/src/tools/api_tests/` scenario modules |
 | `crates/ssh-engine/src/ssh_tests/session.rs` | `crates/ssh-engine/src/ssh_tests/session/` scenario modules |
+| `crates/unfour-diag/src/lib.rs` | `crates/unfour-diag/src/lib_tests.rs` sibling module |
+
+## Completed Business Responsibility Splits
+
+This batch split the frontend Tauri command-client boundary by command domain
+without changing public export names, caller import paths, Rust Tauri command
+names, command argument shapes, or return shapes.
+
+| Original file | New organization |
+| --- | --- |
+| `packages/command-client/src/tauri.ts` | Public facade re-exporting `src/tauri/{api,database,diagnostics,secret-store,ssh,workspace}.ts`; shared invoke/runtime code in `src/tauri/invoke.ts`; browser-dev mocks in `src/tauri/browser-mocks/` with per-domain handlers |
 
 ## Remaining Large Test Files
 
-| Path | Lines | Notes |
-| --- | ---: | --- |
-| `crates/unfour-diag/src/lib.rs` | 583 | Still contains inline tests; not in this batch's explicit target list. Move tests to `src/lib_tests/` or split diagnostic bundle/logging tests in a later test-only batch. |
+No files containing test code currently exceed the P1 threshold.
 
 ## Remaining Business Responsibility Splits
 
@@ -114,7 +121,6 @@ need future splits by responsibility, not by line count alone.
 | Path | Recommended split direction | Risk |
 | --- | --- | --- |
 | `crates/database-engine/src/database.rs` | Keep `DatabaseService` as facade; extract driver modules, query safety, browse, row mutation, and storage conversion helpers. | High |
-| `packages/command-client/src/tauri.ts` | Split command wrappers by domain and move browser mocks into `mocks/`; preserve exported wrapper names. | Medium |
 | `crates/ssh-engine/src/ssh.rs` | Keep `SshService` facade; extract native transport, session registry, persistence conversion, diagnostics, and redaction. | High |
 | `crates/http-engine/src/api_client.rs` | Keep `ApiClientService` facade; extract send/history, environments, saved requests, collections, and folder ordering. | High |
 | `crates/unfour-command-bus/src/lib.rs` | Move read models and domain forwarding methods into modules; re-export through `lib.rs`. | High |
@@ -147,29 +153,29 @@ grandfathered files that are still above the higher thresholds:
 - `crates/database-engine/src/database.rs`
 - `crates/ssh-engine/src/ssh.rs`
 - `crates/http-engine/src/api_client.rs`
-- `packages/command-client/src/tauri.ts`
 - `crates/unfour-command-bus/src/lib.rs`
 - `crates/unfour-mcp/src/tools/database.rs`
 - `crates/unfour-mcp/src/tools/api.rs`
 - `packages/database/src/DatabasePage.tsx`
 
-No test split in this batch required adding a new baseline exception.
+No split in this batch required adding a new baseline exception. The previous
+`packages/command-client/src/tauri.ts` baseline entry was removed because the
+facade is no longer oversized.
 
 ## Priority Notes
 
 Top remaining business split candidates:
 
-1. `packages/command-client/src/tauri.ts`
-2. `crates/unfour-app/src/commands.rs`
-3. `crates/unfour-command-bus/src/lib.rs`
-4. `packages/database/src/DatabasePage.tsx`
-5. `packages/database/src/components/DatabaseConnectionTree.tsx`
-6. `crates/unfour-mcp/src/tools/api.rs`
-7. `crates/unfour-mcp/src/tools/database.rs`
-8. `crates/unfour-mcp/src/tools/ssh.rs`
-9. `crates/database-engine/src/database.rs`
-10. `crates/ssh-engine/src/ssh.rs`
+1. `crates/unfour-app/src/commands.rs`
+2. `crates/unfour-command-bus/src/lib.rs`
+3. `packages/database/src/DatabasePage.tsx`
+4. `packages/database/src/components/DatabaseConnectionTree.tsx`
+5. `crates/unfour-mcp/src/tools/api.rs`
+6. `crates/unfour-mcp/src/tools/database.rs`
+7. `crates/unfour-mcp/src/tools/ssh.rs`
+8. `crates/database-engine/src/database.rs`
+9. `crates/ssh-engine/src/ssh.rs`
 
 Recommended next test-only cleanup:
 
-1. Move `crates/unfour-diag/src/lib.rs` inline tests to a sibling test module.
+1. None currently identified above the P1 threshold.
