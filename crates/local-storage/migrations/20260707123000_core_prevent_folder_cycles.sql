@@ -6,8 +6,9 @@
 -- break tree traversal. These triggers walk the ancestor chain of the proposed
 -- parent and abort the write if the row being modified appears in it.
 --
--- New file (0002) on purpose: it must not alter the 0001 table definitions so
--- it stays independent of any in-flight edits to engine code.
+-- Separate timestamped core migration on purpose: it must not alter the
+-- initial table definitions, so it stays independent of any in-flight edits to
+-- engine code.
 
 CREATE TRIGGER IF NOT EXISTS trg_api_collection_folders_no_cycle_insert
 BEFORE INSERT ON api_collection_folders
