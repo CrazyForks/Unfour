@@ -8,6 +8,8 @@ use std::time::{Duration, SystemTime};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tracing_appender::non_blocking::WorkerGuard;
+use tracing_subscriber::fmt::format::Writer;
+use tracing_subscriber::fmt::time::FormatTime;
 use tracing_subscriber::EnvFilter;
 use unfour_core::redaction::{
     is_sensitive_key, redact_connection_string, redact_url_query, REDACTED_VALUE,
@@ -153,22 +155,36 @@ pub struct LoggingGuard {
     _guard: WorkerGuard,
 }
 
+/// Local-time formatter for the human-readable (non-JSON) log lines.
+struct LocalTimer;
+
+impl FormatTime for LocalTimer {
+    fn format_time(&self, w: &mut Writer<'_>) -> fmt::Result {
+        write!(w, "{}", chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f"))
+    }
+}
+
 pub fn init_logging(config: LoggingConfig) -> io::Result<LoggingGuard> {
     fs::create_dir_all(&config.log_dir)?;
     prune_old_logs(&config.log_dir, config.retention_days)?;
 
     let metadata = LoggingMetadata::from(&config);
-    let file_appender = tracing_appender::rolling::daily(&config.log_dir, "unfour.log");
+    let file_appender = tracing_appender::rolling::RollingFileAppender::builder()
+        .rotation(tracing_appender::rolling::Rotation::DAILY)
+        .filename_prefix("unfour")
+        .filename_suffix("log")
+        .build(&config.log_dir)
+        .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?;
     let (writer, guard) = tracing_appender::non_blocking(file_appender);
     let filter = EnvFilter::try_new(&config.log_level)
         .or_else(|_| EnvFilter::try_from_default_env())
         .unwrap_or_else(|_| EnvFilter::new("info"));
 
     let subscriber = tracing_subscriber::fmt()
-        .json()
-        .flatten_event(true)
         .with_env_filter(filter)
         .with_writer(writer)
+        .with_timer(LocalTimer)
+        .with_ansi(false)
         .finish();
 
     let _ = LOGGING_METADATA.set(metadata.clone());
@@ -236,7 +252,7 @@ pub fn prune_old_logs(log_dir: &Path, retention_days: u64) -> io::Result<()> {
             continue;
         }
         let name = entry.file_name().to_string_lossy().to_string();
-        if !name.starts_with("unfour.log") {
+        if !name.starts_with("unfour-") || !name.ends_with(".log") {
             continue;
         }
         let modified = entry.metadata()?.modified().unwrap_or(SystemTime::now());
@@ -360,10 +376,9 @@ fn copy_recent_logs(source_dir: &Path, target_dir: &Path) -> io::Result<Vec<Stri
         .filter_map(Result::ok)
         .filter(|entry| entry.path().is_file())
         .filter(|entry| {
-            entry
-                .file_name()
-                .to_string_lossy()
-                .starts_with("unfour.log")
+            let file_name = entry.file_name();
+            let name = file_name.to_string_lossy();
+            name.starts_with("unfour-") && name.ends_with(".log")
         })
         .map(|entry| {
             let modified = entry
