@@ -87,6 +87,12 @@ where
 {
     builder
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
         .setup(move |app| {
             let logging_guard = initialize_logging(&config);
             let secret_store_namespace = config.secret_store_namespace.clone();
