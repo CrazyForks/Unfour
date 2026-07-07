@@ -123,6 +123,23 @@ describe("useDatabaseTabs", () => {
     expect(result.current.activeTab).toMatchObject({ kind: "query", sql: "" });
   });
 
+  it("leaves a single sequential Query 2 tab when the last tab closes", () => {
+    const { result } = renderHook(() => useDatabaseTabs());
+
+    act(() => {
+      result.current.closeTab(result.current.activeTabId);
+    });
+
+    // When the only tab is closed, a fresh replacement is auto-created. It must
+    // keep the next sequential index ("Query 2", not a skipped number). The
+    // index is advanced outside the setState updater so it stays correct even
+    // under React.StrictMode (which double-invokes updaters in dev and used to
+    // skip the index, e.g. producing "Query 3").
+    expect(result.current.tabs).toHaveLength(1);
+    expect(result.current.tabs[0].id).toBe("database-query-2");
+    expect(result.current.tabs[0].title).toBe("Query 2");
+  });
+
   it("removes table tabs and unbinds query tabs when a connection is deleted", () => {
     const { result } = renderHook(() => useDatabaseTabs());
 

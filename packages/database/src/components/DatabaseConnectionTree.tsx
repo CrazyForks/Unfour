@@ -1,9 +1,13 @@
-import { Columns3, Copy, Database, Eye, FileText, Pencil, Play, PlusCircle, RefreshCw, Square, Table2, Trash2 } from "lucide-react";
+import { Columns3, Copy, Database, Eye, FileText, MoreVertical, Pencil, Play, PlusCircle, RefreshCw, Square, Table2, Trash2 } from "lucide-react";
 import type { DatabaseConnection, DatabaseSchema, DatabaseTable, SavedSql } from "@unfour/command-client";
 import {
   Badge,
   ConnectionStatus,
   ContextMenuItem,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
   EmptyState,
   IconButton,
   TreeView,
@@ -115,6 +119,26 @@ export function DatabaseConnectionTree({
           onRefreshSchema={onRefreshSchema}
           status={status}
         />
+      ),
+      // Right-aligned "⋯" menu on each row, mirroring the right-click menu so
+      // actions (including delete) are reachable without opening the dialog.
+      // The button reveals on row hover (standard explorer pattern): it stays
+      // mounted with reserved width to avoid layout shift, but is only painted
+      // when the row is hovered or keyboard-focused, which removes the always-on
+      // hover/tooltip repaint that made a single row flicker.
+      actions: (
+        <span className="opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
+          <ConnectionRowMenu
+            connection={connection}
+            onConnect={onConnect}
+            onDeleteConnection={onDeleteConnection}
+            onDisconnect={onDisconnect}
+            onEditConnection={onEditConnection}
+            onNewQuery={onNewQuery}
+            onRefreshSchema={onRefreshSchema}
+            status={status}
+          />
+        </span>
       ),
       children:
         status === "connected"
@@ -801,6 +825,81 @@ function ConnectionContextMenu({
         </ContextMenuItem>
       )}
     </>
+  );
+}
+
+// Right-aligned row menu (the "⋯" button) — kept in sync with
+// ConnectionContextMenu so the inline menu and the right-click menu expose the
+// same actions. Item order matches the context menu for consistency.
+function ConnectionRowMenu({
+  connection,
+  onConnect,
+  onDeleteConnection,
+  onDisconnect,
+  onEditConnection,
+  onNewQuery,
+  onRefreshSchema,
+  status,
+}: {
+  connection: DatabaseConnection;
+  onConnect?: (connection: DatabaseConnection) => void;
+  onDeleteConnection?: (connection: DatabaseConnection) => void;
+  onDisconnect?: (connection: DatabaseConnection) => void;
+  onEditConnection?: (connection: DatabaseConnection) => void;
+  onNewQuery?: (connection?: DatabaseConnection) => void;
+  onRefreshSchema?: (connection: DatabaseConnection) => void;
+  status: DatabaseConnectionStatus;
+}) {
+  const { t } = useI18n();
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <IconButton
+          disableTooltip
+          label={t("database.tree.actionsLabel", { name: connection.name })}
+          size="compact"
+        >
+          <MoreVertical size={14} />
+        </IconButton>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onSelect={() => onConnect?.(connection)}>
+          <Play size={13} />
+          {t("common.actions.connect")}
+        </DropdownMenuItem>
+        <DropdownMenuItem disabled={status === "disconnected"} onSelect={() => onDisconnect?.(connection)}>
+          <Square size={13} />
+          {t("common.actions.disconnect")}
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => onNewQuery?.(connection)}>
+          <PlusCircle size={13} />
+          {t("database.actions.newQuery")}
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => onRefreshSchema?.(connection)}>
+          <RefreshCw size={13} />
+          {t("database.actions.refreshSchema")}
+        </DropdownMenuItem>
+        {onEditConnection && (
+          <DropdownMenuItem onSelect={() => onEditConnection(connection)}>
+            <Pencil size={13} />
+            {t("database.tree.editConnection")}
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuItem onSelect={() => void navigator.clipboard?.writeText(connection.name)}>
+          <Copy size={13} />
+          {t("database.tree.copyName")}
+        </DropdownMenuItem>
+        {onDeleteConnection && (
+          <DropdownMenuItem
+            className="text-[var(--u-color-danger)] data-[highlighted]:bg-[var(--u-color-danger-soft)]"
+            onSelect={() => onDeleteConnection(connection)}
+          >
+            <Trash2 size={13} />
+            {t("database.tree.deleteConnection")}
+          </DropdownMenuItem>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 

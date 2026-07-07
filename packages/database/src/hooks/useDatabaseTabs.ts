@@ -87,9 +87,21 @@ export function useDatabaseTabs(options: DatabaseTabsOptions = {}) {
   }
 
   function closeTab(tabId: DatabaseWorkspaceTabId) {
+    // Decide + allocate the replacement index OUTSIDE the setState updater.
+    // React.StrictMode double-invokes state updaters in dev; mutating
+    // nextQueryIndexRef inside the updater used to increment it twice and skip a
+    // query number (closing the lone "Query 1" produced "Query 3"). Event
+    // handlers are not double-invoked, so advancing here is safe and runs once.
+    const needsFallback = state.tabs.filter((tab) => tab.id !== tabId).length === 0;
+    const fallbackTab = needsFallback
+      ? createQueryTab(nextQueryIndexRef.current, {}, formatQueryTitle)
+      : null;
+    if (fallbackTab) {
+      nextQueryIndexRef.current += 1;
+    }
     setState((current) => {
       const tabs = current.tabs.filter((tab) => tab.id !== tabId);
-      const nextTabs = tabs.length ? tabs : [createQueryTab(nextQueryIndexRef.current++, {}, formatQueryTitle)];
+      const nextTabs = tabs.length ? tabs : fallbackTab ? [fallbackTab] : [createQueryTab(nextQueryIndexRef.current, {}, formatQueryTitle)];
       const activeTabId =
         current.activeTabId === tabId
           ? (nextTabs[Math.max(0, current.tabs.findIndex((tab) => tab.id === tabId) - 1)] ?? nextTabs[0]).id
@@ -146,6 +158,17 @@ export function useDatabaseTabs(options: DatabaseTabsOptions = {}) {
   }
 
   function removeConnectionTabs(connectionId: string) {
+    // See closeTab: allocate the replacement index outside the updater so the
+    // counter is not double-incremented under React.StrictMode.
+    const needsFallback = state.tabs.filter(
+      (tab) => !(tab.kind === "table" && tab.connectionId === connectionId),
+    ).length === 0;
+    const fallbackTab = needsFallback
+      ? createQueryTab(nextQueryIndexRef.current, {}, formatQueryTitle)
+      : null;
+    if (fallbackTab) {
+      nextQueryIndexRef.current += 1;
+    }
     setState((current) => {
       const tabs = current.tabs
         .filter((tab) => !(tab.kind === "table" && tab.connectionId === connectionId))
@@ -161,7 +184,7 @@ export function useDatabaseTabs(options: DatabaseTabsOptions = {}) {
               }
             : tab,
         );
-      const nextTabs = tabs.length ? tabs : [createQueryTab(nextQueryIndexRef.current++, {}, formatQueryTitle)];
+      const nextTabs = tabs.length ? tabs : fallbackTab ? [fallbackTab] : [createQueryTab(nextQueryIndexRef.current, {}, formatQueryTitle)];
       return {
         activeTabId: nextTabs.some((tab) => tab.id === current.activeTabId)
           ? current.activeTabId

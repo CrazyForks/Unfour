@@ -1,4 +1,4 @@
-import { CheckCircle2, Plug, Save, Trash2, XCircle } from "lucide-react";
+import { Plug, Save } from "lucide-react";
 import { FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -33,7 +33,6 @@ import {
   DialogHeader,
   DialogTitle,
   ErrorState,
-  IconButton,
   Input,
   Select,
   useI18n,
@@ -742,6 +741,8 @@ export function DatabasePage({
     selectConnection(null);
     setPassword("");
     setForm({ workspaceId, name: "", driver: "sqlite", sqlitePath: "" });
+    // Clear a previously failed save so its error doesn't leak into the new window.
+    saveMutation.reset();
   }
 
   function refreshConnectionsAndSchema() {
@@ -1221,6 +1222,8 @@ export function DatabasePage({
 
   function handleEditConnection(connection: DatabaseConnection) {
     selectConnection(connection.id);
+    // Clear a previously failed save so its error doesn't leak into this edit window.
+    saveMutation.reset();
     setEditorOpen(true);
   }
 
@@ -1448,12 +1451,6 @@ export function DatabasePage({
         canTest={canTest}
         error={saveMutation.error}
         form={form}
-        onDelete={() => {
-          const target = connections.find((item) => item.id === selectedConnectionId);
-          if (target) {
-            setDeleteConfirm(target);
-          }
-        }}
         onOpenChange={setEditorOpen}
         onPasswordChange={setPassword}
         onSubmit={submitConnection}
@@ -1461,9 +1458,7 @@ export function DatabasePage({
         onUpdate={updateForm}
         open={editorOpen}
         password={password}
-        result={testResult}
         savePending={saveMutation.isPending}
-        selectedConnectionId={selectedConnectionId}
         testPending={testInputMutation.isPending}
       >
         <DatabaseTestResultDialog
@@ -1490,7 +1485,6 @@ function DatabaseConnectionDialog({
   canTest,
   error,
   form,
-  onDelete,
   onOpenChange,
   onPasswordChange,
   onSubmit,
@@ -1498,16 +1492,13 @@ function DatabaseConnectionDialog({
   onUpdate,
   open,
   password,
-  result,
   savePending,
-  selectedConnectionId,
   testPending,
   children,
 }: {
   canTest: boolean;
   error: unknown;
   form: DatabaseConnectionInput;
-  onDelete: () => void;
   onOpenChange: (open: boolean) => void;
   onPasswordChange: (value: string) => void;
   onSubmit: (event: FormEvent) => void;
@@ -1515,9 +1506,7 @@ function DatabaseConnectionDialog({
   onUpdate: (patch: Partial<DatabaseConnectionInput>) => void;
   open: boolean;
   password: string;
-  result: DatabaseTestResult | null;
   savePending: boolean;
-  selectedConnectionId: string | null;
   testPending: boolean;
   children?: ReactNode;
 }) {
@@ -1609,54 +1598,19 @@ function DatabaseConnectionDialog({
                 <DatabaseErrorDetails error={error} />
               </ErrorState>
             ) : null}
-            {result && (
-              <div
-                className={`flex items-start gap-2 rounded-lg border p-3 ${
-                  result.ok
-                    ? "border-[var(--u-color-success)] bg-[var(--u-color-success-background)]"
-                    : "border-[var(--u-color-danger)] bg-[var(--u-color-danger-background)]"
-                }`}
-              >
-                {result.ok ? (
-                  <CheckCircle2 className="mt-0.5 shrink-0" size={16} style={{ color: "var(--u-color-success)" }} />
-                ) : (
-                  <XCircle className="mt-0.5 shrink-0" size={16} style={{ color: "var(--u-color-danger)" }} />
-                )}
-                <div>
-                  <p
-                    className="font-semibold"
-                    style={{
-                      color: result.ok
-                        ? "var(--u-color-success)"
-                        : "var(--u-color-danger)",
-                    }}
-                  >
-                    {result.ok ? t("database.connection.testSuccess") : t("database.connection.testFailed")}
-                  </p>
-                  <p className="mt-1 max-h-[100px] overflow-auto text-[12px] leading-relaxed">
-                    {result.message}
-                  </p>
-                </div>
-              </div>
-            )}
           </DialogBody>
-          <DialogFooter className="justify-between">
-            <IconButton disabled={!selectedConnectionId} label={t("database.connection.deleteLabel", "Delete database connection")} onClick={onDelete}>
-              <Trash2 size={13} />
-            </IconButton>
-            <div className="flex items-center gap-2">
-              <Button onClick={() => onOpenChange(false)} size="sm" type="button" variant="ghost">
-                {t("common.confirm.cancel")}
-              </Button>
-              <Button disabled={!canTest || testPending} onClick={onTest} size="sm" type="button" variant="outline">
-                <Plug size={13} />
-                {testPending ? t("database.connection.testing") : t("database.connection.test")}
-              </Button>
-              <Button disabled={savePending} size="sm" type="submit">
-                <Save size={13} />
-                {t("common.actions.save")}
-              </Button>
-            </div>
+          <DialogFooter>
+            <Button className="mr-auto" disabled={!canTest || testPending} onClick={onTest} size="sm" type="button" variant="outline">
+              <Plug size={13} />
+              {testPending ? t("database.connection.testing") : t("database.connection.test")}
+            </Button>
+            <Button onClick={() => onOpenChange(false)} size="sm" type="button" variant="ghost">
+              {t("common.confirm.cancel")}
+            </Button>
+            <Button disabled={savePending} size="sm" type="submit">
+              <Save size={13} />
+              {t("common.actions.save")}
+            </Button>
           </DialogFooter>
         </form>
         {children}
