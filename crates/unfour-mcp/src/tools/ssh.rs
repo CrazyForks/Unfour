@@ -4,16 +4,13 @@ use unfour_core::models::{SshConnection, SshConnectionInput, SshDiagnosticInput}
 
 use crate::command_bus_adapter::CommandBusAdapter;
 
-#[path = "ssh_risk.rs"]
-mod ssh_risk;
-
+use super::ssh_risk::{
+    build_ssh_exec_command, classify_high_risk_command, is_readonly_ssh_command, is_sensitive_path,
+    parse_optional_u64, redact_command_display, shell_quote,
+};
 use super::{
     confirmation::{ensure_confirmed, is_confirmed},
     object_with_allowed_keys, RegisteredTool, ToolAnnotations, ToolCallError, ToolDefinition,
-};
-use ssh_risk::{
-    classify_high_risk_command, is_readonly_ssh_command, is_sensitive_path, parse_optional_u64,
-    redact_command_display, shell_env_key, shell_quote,
 };
 
 const MAX_DIAGNOSTIC_TIMEOUT_MS: u64 = 60_000;
@@ -375,29 +372,15 @@ fn ssh_exec(command_bus: &dyn CommandBusAdapter, arguments: Value) -> Result<Val
         ],
     )?;
     let connection_id = parse_required_string(&arguments, "connectionId", "unfour.ssh.exec")?;
-    let mut command = parse_required_string(&arguments, "command", "unfour.ssh.exec")?;
+    let raw_command = parse_required_string(&arguments, "command", "unfour.ssh.exec")?;
     let workspace = resolve_workspace(command_bus, &arguments)?;
     let timeout_ms = parse_optional_timeout(&arguments)?;
-
-    if let Some(cwd) = parse_optional_string(&arguments, "cwd")? {
-        command = format!("cd {} && {}", shell_quote(&cwd), command);
-    }
-    if let Some(env) = arguments.get("env").and_then(Value::as_object) {
-        let prefix = env
-            .iter()
-            .map(|(key, value)| {
-                let raw = value
-                    .as_str()
-                    .map(str::to_string)
-                    .unwrap_or_else(|| value.to_string());
-                format!("{}={}", shell_env_key(key), shell_quote(&raw))
-            })
-            .collect::<Vec<_>>()
-            .join(" ");
-        if !prefix.is_empty() {
-            command = format!("{prefix} {command}");
-        }
-    }
+    let cwd = parse_optional_string(&arguments, "cwd")?;
+    let command = build_ssh_exec_command(
+        &raw_command,
+        cwd.as_deref(),
+        arguments.get("env").and_then(Value::as_object),
+    );
 
     if let Some((code, reason)) = classify_high_risk_command(&command) {
         ensure_confirmed(

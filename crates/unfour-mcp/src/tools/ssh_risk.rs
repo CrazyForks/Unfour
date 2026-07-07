@@ -63,6 +63,34 @@ pub(super) fn shell_env_key(value: &str) -> String {
         .collect::<String>()
 }
 
+pub(super) fn build_ssh_exec_command(
+    command: &str,
+    cwd: Option<&str>,
+    env: Option<&Map<String, Value>>,
+) -> String {
+    let mut command = command.to_string();
+    if let Some(cwd) = cwd {
+        command = format!("cd {} && {}", shell_quote(cwd), command);
+    }
+    if let Some(env) = env {
+        let prefix = env
+            .iter()
+            .map(|(key, value)| {
+                let raw = value
+                    .as_str()
+                    .map(str::to_string)
+                    .unwrap_or_else(|| value.to_string());
+                format!("{}={}", shell_env_key(key), shell_quote(&raw))
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
+        if !prefix.is_empty() {
+            command = format!("{prefix} {command}");
+        }
+    }
+    command
+}
+
 fn shell_words(command: &str) -> Vec<String> {
     command
         .split_whitespace()

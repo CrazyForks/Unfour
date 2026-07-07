@@ -5,6 +5,7 @@ mod database;
 mod policy;
 mod real;
 mod ssh;
+mod ssh_risk;
 mod system;
 
 use std::sync::Arc;

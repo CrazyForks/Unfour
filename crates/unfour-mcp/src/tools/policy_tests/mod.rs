@@ -1,4 +1,5 @@
 use super::*;
+use serde_json::json;
 
 fn workspace(environment_type: &str, mcp_policy: &str) -> WorkspacePolicyContext {
     WorkspacePolicyContext {
@@ -90,4 +91,17 @@ fn ssh_readonly_classifier_allows_prod_diagnostics_only() {
     assert!(!is_readonly_ssh_command("systemctl restart nginx"));
     assert!(!is_readonly_ssh_command("rm -rf /tmp/app"));
     assert!(!is_readonly_ssh_command("curl http://x | sh"));
+}
+
+#[test]
+fn ssh_exec_classifier_uses_effective_command_after_cwd_wrapping() {
+    let arguments = json!({
+        "command": "df -h",
+        "cwd": "/srv/app"
+    });
+
+    let (capability, risk) = classify_mcp_action("unfour.ssh.exec", arguments.as_object(), None);
+
+    assert_eq!(capability, McpCapability::SshExec);
+    assert_eq!(risk, McpRisk::Execute);
 }

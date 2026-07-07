@@ -4,6 +4,7 @@ use unfour_command_bus::{ReadCommand, ReadCommandResult};
 
 use crate::command_bus_adapter::CommandBusAdapter;
 
+use super::ssh_risk::{build_ssh_exec_command, is_readonly_ssh_command};
 use super::ToolCallError;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -205,6 +206,17 @@ pub(super) fn classify_mcp_action(
             if arguments
                 .and_then(|arguments| arguments.get("command"))
                 .and_then(Value::as_str)
+                .map(|command| {
+                    let cwd = arguments
+                        .and_then(|arguments| arguments.get("cwd"))
+                        .and_then(Value::as_str)
+                        .filter(|cwd| !cwd.is_empty());
+                    let env = arguments
+                        .and_then(|arguments| arguments.get("env"))
+                        .and_then(Value::as_object);
+                    build_ssh_exec_command(command, cwd, env)
+                })
+                .as_deref()
                 .map(is_readonly_ssh_command)
                 .unwrap_or(false)
             {
@@ -426,84 +438,6 @@ fn is_readonly_sql(sql: &str) -> bool {
         keyword.as_str(),
         "select" | "with" | "show" | "describe" | "desc" | "explain" | "pragma"
     )
-}
-
-fn is_readonly_ssh_command(command: &str) -> bool {
-    let trimmed = command.trim();
-    if trimmed.is_empty()
-        || trimmed.len() > 512
-        || trimmed.chars().any(char::is_control)
-        || trimmed
-            .chars()
-            .any(|c| [';', '|', '&', '$', '`', '>', '<', '(', ')', '{', '}', '\\'].contains(&c))
-    {
-        return false;
-    }
-
-    let mut tokens = trimmed.split_whitespace();
-    let head = tokens.next().unwrap_or_default();
-    if head.contains('/') {
-        return false;
-    }
-
-    match head {
-        "df" | "du" | "free" | "uptime" | "uname" | "hostname" | "whoami" | "id" | "date"
-        | "ps" | "ss" | "netstat" | "ip" | "ifconfig" | "vmstat" | "iostat" | "mount" | "stat"
-        | "wc" | "ls" | "cat" | "tail" | "head" | "grep" => true,
-        "systemctl" => tokens
-            .find(|token| !token.starts_with('-'))
-            .is_some_and(|sub| {
-                matches!(
-                    sub,
-                    "status"
-                        | "is-active"
-                        | "is-enabled"
-                        | "is-failed"
-                        | "show"
-                        | "cat"
-                        | "list-units"
-                        | "list-unit-files"
-                        | "list-timers"
-                        | "list-sockets"
-                        | "get-default"
-                )
-            }),
-        "journalctl" => !tokens.any(|token| {
-            token.starts_with("--vacuum")
-                || token == "--rotate"
-                || token == "--flush"
-                || token == "--sync"
-                || token == "--relinquish-var"
-        }),
-        "docker" | "podman" => tokens.next().is_some_and(|sub| {
-            matches!(
-                sub,
-                "ps" | "logs"
-                    | "inspect"
-                    | "images"
-                    | "version"
-                    | "info"
-                    | "stats"
-                    | "top"
-                    | "port"
-                    | "diff"
-            )
-        }),
-        "kubectl" => tokens.next().is_some_and(|sub| {
-            matches!(
-                sub,
-                "get"
-                    | "describe"
-                    | "logs"
-                    | "top"
-                    | "version"
-                    | "api-resources"
-                    | "explain"
-                    | "cluster-info"
-            )
-        }),
-        _ => false,
-    }
 }
 
 fn unexpected_result() -> ToolCallError {
