@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
+use sqlx::migrate::Migrator;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::SqlitePool;
 use unfour_core::AppResult;
@@ -10,6 +11,10 @@ use unfour_core::AppResult;
 /// can open the same database file concurrently, so a non-zero busy timeout
 /// avoids spurious "database is locked" failures.
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
+#[cfg(test)]
+const CORE_INITIAL_MIGRATION_VERSION: i64 = 20260707110000;
+#[cfg(test)]
+const CORE_FOLDER_CYCLES_MIGRATION_VERSION: i64 = 20260707123000;
 
 #[derive(Clone)]
 pub struct LocalDb {
@@ -146,7 +151,7 @@ impl LocalDb {
             None,
             serde_json::json!({}),
         );
-        let result = sqlx::migrate!("./migrations")
+        let result = core_migrator()
             .run(&self.pool)
             .await
             .map_err(sqlx::Error::from);
@@ -178,6 +183,12 @@ impl LocalDb {
             }
         }
     }
+}
+
+fn core_migrator() -> Migrator {
+    let mut migrator = sqlx::migrate!("./migrations");
+    migrator.set_ignore_missing(true);
+    migrator
 }
 
 #[cfg(test)]

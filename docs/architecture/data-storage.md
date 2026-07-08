@@ -70,12 +70,41 @@ The current SQLite-backed records include:
 - saved SQL (soft-deleted, sync fields reserved);
 - local activity events.
 
-Schema changes live in `crates/local-storage/migrations/`. Because v0.1 has
-not shipped, the historical pre-release migrations are squashed into
-`0001_initial_schema.sql`; future schema changes should add new numbered
-migration files after that. Persistence code belongs in `crates/local-storage`
-or the owning engine crate, not in frontend packages or Tauri command
-adapters.
+Schema changes live in `crates/local-storage/migrations/`. Core and Pro share
+the same SQLite file and sqlx's default `_sqlx_migrations` table, so migration
+versions must be globally unique across both repos. sqlx parses the digits
+before the first `_` as the version; `0001_core_init.sql` and
+`0001_pro_init.sql` both become version `1` and collide.
+
+All new migration files must use a UTC timestamp version plus an edition marker
+inside the description:
+
+```text
+YYYYMMDDHHMMSS_core_description.sql
+YYYYMMDDHHMMSS_pro_description.sql
+```
+
+The version must be pure digits before the first `_`. Do not add local
+`0001_xxx.sql` / `0002_xxx.sql` migrations, and do not put the marker first
+as `core_YYYYMMDDHHMMSS_xxx.sql` because sqlx would parse `core` as the
+version. Both core and Pro migrators must enable sqlx
+`set_ignore_missing(true)` so each edition can ignore the other's records in
+`_sqlx_migrations`. This only handles missing/unknown records; it does not
+permit changing the checksum of an already applied migration.
+
+Do not rename, delete, or edit the content of already-published migrations.
+If a published schema needs correcting, add a new compatible migration instead.
+Before adding or reviewing migrations, run `pnpm run check:migrations`; when
+the Pro repo is outside the default sibling path, set
+`UNFOUR_PRO_MIGRATIONS_DIR` to its migrations directory.
+
+Core migrations manage only the base schema. Pro migrations should prefer
+independent `pro_` tables such as `pro_sync_mappings` for sync state, license,
+cloud mapping, remote IDs, and conflict metadata. Avoid `ALTER TABLE` changes
+that add Pro-only columns to core tables unless there is a strong reason and
+the base edition can safely ignore the change. Persistence code belongs in
+`crates/local-storage` or the owning engine crate, not in frontend packages or
+Tauri command adapters.
 
 ## Syncable Business Records
 
