@@ -699,6 +699,9 @@ impl SshService {
             .append_output(&pending.0, session_id, &pending.1, &pending.2)
             .await
         {
+            // Re-acquire the lock only on the error path so the guard is not
+            // held across the await above (a held `std::sync::MutexGuard` across
+            // an await makes the future non-`Send`).
             if let Ok(mut sessions) = self.sessions.lock() {
                 if let Some(state) = sessions.get_mut(session_id) {
                     state.pending_output.insert_str(0, &pending.2);
@@ -896,9 +899,9 @@ impl SshService {
             serde_json::json!({}),
         );
 
-        // Extract native handle and update state under the lock. A missing entry
-        // means the session was already closed and dropped from memory; the
-        // idempotent path below handles that.
+        // Extract the native handle and mark the session as intentionally closed
+        // while the lock is held. The guard is dropped at the end of this block,
+        // so it is never held across an await.
         #[cfg(feature = "ssh-native")]
         let native_handle: Option<NativeSshHandle> = {
             let mut sessions = self
@@ -917,10 +920,9 @@ impl SshService {
             }
         };
 
-        // Close channel and disconnect native transport outside the mutex lock.
+        // Close the native transport outside the mutex lock.
         #[cfg(feature = "ssh-native")]
         if let Some(native) = native_handle {
-            // Close the channel first so the reader task terminates.
             let _ = native.writer.close().await;
             let handle = native.handle.lock().await;
             let _ = handle
@@ -928,11 +930,9 @@ impl SshService {
                 .await;
         }
 
-        // Mark the session disconnected, persist its terminal output, then drop
-        // the in-memory entry. Removing the entry is the core of the leak fix
-        // (#4): the session map can no longer grow without bound across the
-        // process lifetime. The persisted output survives in `terminal_history`.
-        let summary = {
+        // Mark the session disconnected and read back its summary. The lock block
+        // ends (releasing the guard) before any await, keeping the future `Send`.
+        let found: Option<SshSessionSummary> = {
             let mut sessions = self
                 .sessions
                 .lock()
@@ -947,17 +947,26 @@ impl SshService {
                         state.summary.updated_at = now;
                         state.pending_output.push_str("SSH session closed.\r\n");
                     }
-                    state.summary.clone()
+                    Some(state.summary.clone())
                 }
-                _ => {
-                    // Already closed and dropped from memory: return the persisted
-                    // disconnected summary so repeated closes are idempotent.
-                    return self
-                        .persisted_disconnected_summary(&input.workspace_id, &input.session_id)
-                        .await;
-                }
+                _ => None,
             }
         };
+
+        // Idempotent path: the entry was already closed and dropped from memory,
+        // so return the persisted disconnected summary. The lock is already
+        // released here, so this await does not hold a `std::sync::MutexGuard`.
+        let summary = match found {
+            Some(summary) => summary,
+            None => {
+                return self
+                    .persisted_disconnected_summary(&input.workspace_id, &input.session_id)
+                    .await;
+            }
+        };
+
+        // Persist terminal output and the final summary, then drop the in-memory
+        // entry. None of these holds a `self.sessions` guard across an await.
         self.flush_session_history(&input.session_id).await?;
         self.terminal_history.update_session(&summary).await?;
         self.sessions
