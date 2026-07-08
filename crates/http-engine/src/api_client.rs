@@ -9,7 +9,6 @@ use unfour_core::models::{
 };
 use unfour_core::{AppError, AppResult};
 use unfour_local_storage::LocalDb;
-use uuid::Uuid;
 
 #[path = "helpers.rs"]
 mod helpers;
@@ -228,7 +227,7 @@ impl ApiClientService {
         .fetch_one(self.db.pool())
         .await?;
         let is_active = existing == 0;
-        let id = Uuid::new_v4().to_string();
+        let id = unfour_core::id::new_id();
         let now = Utc::now().to_rfc3339();
 
         sqlx::query(
@@ -548,7 +547,7 @@ impl ApiClientService {
     pub async fn save_request(&self, input: ApiRequestInput) -> AppResult<ApiSavedRequest> {
         validate_workspace_id(&input.workspace_id)?;
         let now = Utc::now().to_rfc3339();
-        let id = Uuid::new_v4().to_string();
+        let id = unfour_core::id::new_id();
         let mut tx = self.db.pool().begin().await?;
         let (name, collection_id, parent_folder_id, sort_order) =
             self.saved_request_fields(&mut tx, &input, &now).await?;
@@ -683,7 +682,7 @@ impl ApiClientService {
             .get_saved_request_for_workspace(&workspace_id, &request_id)
             .await?;
         let now = Utc::now().to_rfc3339();
-        let id = Uuid::new_v4().to_string();
+        let id = unfour_core::id::new_id();
         let name = format!("{} Copy", source.name);
 
         sqlx::query(
@@ -779,7 +778,7 @@ impl ApiClientService {
                 "collection name cannot be empty".to_string(),
             ));
         }
-        let id = Uuid::new_v4().to_string();
+        let id = unfour_core::id::new_id();
         let now = Utc::now().to_rfc3339();
 
         sqlx::query(
@@ -905,7 +904,7 @@ impl ApiClientService {
             }
         }
         let now = Utc::now().to_rfc3339();
-        let id = Uuid::new_v4().to_string();
+        let id = unfour_core::id::new_id();
         let sort_order = self
             .next_folder_sort_order_tx(
                 &mut tx,
@@ -1240,7 +1239,7 @@ impl ApiClientService {
             return Ok(id);
         }
 
-        let id = Uuid::new_v4().to_string();
+        let id = unfour_core::id::new_id();
         sqlx::query(
             r#"
             INSERT INTO api_collections (
@@ -1681,7 +1680,7 @@ impl ApiClientService {
         response_body: &str,
     ) -> AppResult<String> {
         let now = Utc::now().to_rfc3339();
-        let id = Uuid::new_v4().to_string();
+        let id = unfour_core::id::new_id();
         let body_preview = response_body.chars().take(20_000).collect::<String>();
 
         sqlx::query(

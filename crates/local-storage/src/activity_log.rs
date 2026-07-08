@@ -2,7 +2,6 @@ use crate::LocalDb;
 use chrono::Utc;
 use serde_json::Value;
 use unfour_core::AppResult;
-use uuid::Uuid;
 
 /// A single persisted activity-trail row, returned verbatim from storage. The
 /// `details_json` payload is the redacted summary recorded by `record`; callers
@@ -42,7 +41,7 @@ impl ActivityLogService {
             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
             "#,
         )
-        .bind(Uuid::new_v4().to_string())
+        .bind(unfour_core::id::new_id())
         .bind(workspace_id)
         .bind(action)
         .bind(target)

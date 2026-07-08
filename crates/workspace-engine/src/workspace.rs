@@ -3,7 +3,6 @@ use serde::{Deserialize, Serialize};
 use unfour_core::models::{Workspace, WorkspaceLayout, WorkspaceLayoutTab, WorkspaceState};
 use unfour_core::{AppError, AppResult};
 use unfour_local_storage::LocalDb;
-use uuid::Uuid;
 
 const DEFAULT_ENVIRONMENT_TYPE: &str = "dev";
 const DEFAULT_MCP_POLICY: &str = "auto";
@@ -29,7 +28,7 @@ impl WorkspaceService {
         }
 
         let now = Utc::now().to_rfc3339();
-        let id = Uuid::new_v4().to_string();
+        let id = unfour_core::id::new_id();
 
         sqlx::query(
             r#"
@@ -115,7 +114,7 @@ impl WorkspaceService {
         let environment_type = normalize_environment_type(environment_type)?;
         let mcp_policy = normalize_mcp_policy(mcp_policy)?;
         let now = Utc::now().to_rfc3339();
-        let id = Uuid::new_v4().to_string();
+        let id = unfour_core::id::new_id();
 
         sqlx::query(
             r#"

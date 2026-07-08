@@ -280,7 +280,7 @@ impl SshService {
             return self.get_connection(&input.workspace_id, id).await;
         }
 
-        let id = Uuid::new_v4().to_string();
+        let id = unfour_core::id::new_id();
         sqlx::query(
             r#"
             INSERT INTO connections (
@@ -1331,7 +1331,7 @@ impl SshService {
         input: &SshConnectInput,
     ) -> AppResult<SshSessionSummary> {
         let now = Utc::now().to_rfc3339();
-        let session_id = Uuid::new_v4().to_string();
+        let session_id = unfour_core::id::new_id();
         let cols = input.cols.unwrap_or(120).clamp(20, 300);
         let rows = input.rows.unwrap_or(32).clamp(8, 100);
         let summary = SshSessionSummary {
@@ -1382,7 +1382,7 @@ impl SshService {
         input: &SshConnectInput,
     ) -> AppResult<SshSessionSummary> {
         let now = Utc::now().to_rfc3339();
-        let session_id = Uuid::new_v4().to_string();
+        let session_id = unfour_core::id::new_id();
         let cols = input.cols.unwrap_or(120).clamp(20, 300);
         let rows = input.rows.unwrap_or(32).clamp(8, 100);
         let native_handle = self

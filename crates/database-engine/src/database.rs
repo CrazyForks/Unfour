@@ -17,7 +17,6 @@ use unfour_core::redaction::redact_connection_string;
 use unfour_core::{AppError, AppResult};
 use unfour_local_storage::LocalDb;
 use unfour_secret_store::SecretStore;
-use uuid::Uuid;
 
 #[derive(Clone)]
 pub struct DatabaseService {
@@ -165,7 +164,7 @@ impl DatabaseService {
             return self.get_connection(&input.workspace_id, id).await;
         }
 
-        let id = Uuid::new_v4().to_string();
+        let id = unfour_core::id::new_id();
         sqlx::query(
             r#"
             INSERT INTO connections (
@@ -1044,7 +1043,7 @@ impl DatabaseService {
             return self.get_saved_sql(&input.workspace_id, id).await;
         }
 
-        let id = Uuid::new_v4().to_string();
+        let id = unfour_core::id::new_id();
         sqlx::query(
             r#"
             INSERT INTO saved_sql (
