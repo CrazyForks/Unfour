@@ -2,6 +2,7 @@ import * as React from "react";
 import { cn } from "./utils";
 import { clampResizablePaneSize } from "./shell-utils";
 import { ResizableSplitPane } from "./adapters/resizable-panels";
+import { usePlatform } from "./platform";
 
 export function AppShellFrame({
   activityBar,
@@ -78,6 +79,7 @@ export function GlobalToolbar({
   onDragRegionMouseDown?: React.MouseEventHandler<HTMLDivElement>;
   right?: React.ReactNode;
 }) {
+  const isMac = usePlatform() === "macos";
   return (
     <header
       className={cn(
@@ -85,7 +87,12 @@ export function GlobalToolbar({
         className,
       )}
     >
-      <div className="flex h-full shrink-0 items-center gap-1 px-2">{left}</div>
+      <div
+        className="flex h-full shrink-0 items-center gap-1 px-2"
+        style={isMac ? { paddingLeft: 72 } : undefined}
+      >
+        {left}
+      </div>
       <div
         className="flex h-full min-w-0 flex-1 items-center justify-center px-3"
         onMouseDown={onDragRegionMouseDown}

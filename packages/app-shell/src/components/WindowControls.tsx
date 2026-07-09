@@ -1,24 +1,19 @@
 import { Minus, Square, Copy, X } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useState } from "react";
-import { cn } from "@unfour/ui";
+import { cn, usePlatform } from "@unfour/ui";
 import { isTauriRuntime } from "./module-helpers";
 
 export function WindowControls() {
-  if (!isTauriRuntime()) {
-    return (
-      <div className="ml-1 flex items-center gap-1 text-[var(--u-color-text-soft)]">
-        <Minus size={15} />
-        <Square size={13} />
-        <X size={15} />
-      </div>
-    );
-  }
-
-  const appWindow = getCurrentWindow();
+  const isMac = usePlatform() === "macos";
+  const isTauri = isTauriRuntime();
   const [isMaximized, setIsMaximized] = useState(false);
+  const appWindow = isTauri ? getCurrentWindow() : null;
 
   useEffect(() => {
+    if (!appWindow) {
+      return;
+    }
     let unlisten: (() => void) | undefined;
     void appWindow.isMaximized().then(setIsMaximized);
     void appWindow
@@ -33,12 +28,29 @@ export function WindowControls() {
     };
   }, [appWindow]);
 
+  // Browser preview: keep placeholder controls so the layout stays reviewable.
+  if (!isTauri) {
+    return (
+      <div className="ml-1 flex items-center gap-1 text-[var(--u-color-text-soft)]">
+        <Minus size={15} />
+        <Square size={13} />
+        <X size={15} />
+      </div>
+    );
+  }
+
+  // On macOS the native traffic lights handle window controls; custom buttons
+  // would duplicate them.
+  if (isMac) {
+    return null;
+  }
+
   return (
     <div className="ml-1 flex items-center">
       <TitlebarWindowButton
         ariaLabel="Minimize"
         icon={<Minus size={16} />}
-        onClick={() => void appWindow.minimize()}
+        onClick={() => void appWindow!.minimize()}
       />
       <TitlebarWindowButton
         ariaLabel={isMaximized ? "Restore" : "Maximize"}
@@ -49,13 +61,13 @@ export function WindowControls() {
             <Square size={14} />
           )
         }
-        onClick={() => void appWindow.toggleMaximize()}
+        onClick={() => void appWindow!.toggleMaximize()}
       />
       <TitlebarWindowButton
         ariaLabel="Close"
         className="hover:bg-[var(--u-color-danger)] hover:text-[var(--u-color-text-on-color)]"
         icon={<X size={16} />}
-        onClick={() => void appWindow.close()}
+        onClick={() => void appWindow!.close()}
       />
     </div>
   );

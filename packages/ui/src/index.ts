@@ -84,6 +84,7 @@ export {
   useTheme,
   type Theme,
   type ThemeContextValue,
+  type ThemeMode,
 } from "./theme";
 export { initializeTheme } from "./theme-init";
 export {
@@ -101,3 +102,4 @@ export {
   type TreeViewItem,
 } from "./tree-view";
 export { cn } from "./utils";
+export { usePlatform, type Platform } from "./platform";
