@@ -1,6 +1,6 @@
 use unfour_command_bus::{ConnectionType, ReadCommand, ReadCommandResult};
 
-use super::{CommandBusAdapterError, LocalCommandBusAdapter};
+use super::{CommandBusAdapter, CommandBusAdapterError, LocalCommandBusAdapter};
 use unfour_command_bus::CommandBus;
 use unfour_core::models::SshConnectionInput;
 use unfour_core::AppError;

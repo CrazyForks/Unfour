@@ -187,7 +187,7 @@ where
 {
     let command_bus = LocalCommandBusAdapter::default_storage()
         .map_err(|error| io::Error::other(format!("{}: {}", error.code, error.message)))?;
-    let server = McpServer::new(command_bus);
+    let server = McpServer::new(command_bus.clone());
     unfour_diag::log_operation_event(
         "mcp_server_started",
         "mcp",
@@ -197,7 +197,29 @@ where
         None,
         json!({ "transport": "stdio" }),
     );
-    run_stdio_with_server(&server, reader, &mut writer)
+    let result = run_stdio_with_server(&server, reader, &mut writer);
+    // Bounded graceful shutdown of any background tokio tasks (SSH/DB/API,
+    // flush tasks) before the process returns, so a lingering task never blocks
+    // exit. Idempotent with the explicit `run_stdio_with_adapter` path.
+    command_bus.shutdown();
+    result
+}
+
+/// Drive the stdio loop with a caller-owned adapter so the caller can perform a
+/// bounded shutdown after the loop ends (Codex closes stdin, broken pipe, etc.).
+pub fn run_stdio_with_adapter<R, W>(
+    adapter: Arc<LocalCommandBusAdapter>,
+    reader: R,
+    mut writer: W,
+) -> io::Result<()>
+where
+    R: BufRead,
+    W: Write,
+{
+    let server = McpServer::new(adapter.clone());
+    let result = run_stdio_with_server(&server, reader, &mut writer);
+    adapter.shutdown();
+    result
 }
 
 /// Drive the stdio read/write loop with an already-built server. Splitting this
@@ -215,8 +237,21 @@ where
         }
 
         if let Some(response) = server.handle_line(&line) {
-            writeln!(writer, "{response}")?;
-            writer.flush()?;
+            // A broken stdout pipe means the client (e.g. Codex) already went
+            // away. Treat that as a clean shutdown, not a failure that would
+            // otherwise turn into a non-zero exit and a lingering process.
+            if let Err(error) = writeln!(writer, "{response}") {
+                if error.kind() == io::ErrorKind::BrokenPipe {
+                    return Ok(());
+                }
+                return Err(error);
+            }
+            if let Err(error) = writer.flush() {
+                if error.kind() == io::ErrorKind::BrokenPipe {
+                    return Ok(());
+                }
+                return Err(error);
+            }
         }
     }
 

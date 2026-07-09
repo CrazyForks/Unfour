@@ -1,5 +1,7 @@
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::Mutex;
+use std::time::Duration;
 
 use tokio::runtime::{Builder, Runtime};
 use unfour_command_bus::{CommandBus, ReadCommand, ReadCommandResult};
@@ -219,11 +221,16 @@ pub struct CommandBusAdapterError {
 }
 
 pub struct LocalCommandBusAdapter {
-    runtime: Runtime,
+    // Wrapped in an `Option` behind a `Mutex` so `shutdown` can take
+    // ownership of the runtime for a *bounded* shutdown. The default
+    // `Runtime::Drop` blocks until every spawned task finishes, which is what
+    // lets a lingering SSH supervisor / pool keep-alive hang the process after
+    // the stdio loop ends. Taking it out lets us call `shutdown_timeout`.
+    runtime: Mutex<Option<Runtime>>,
     bus: CommandBus,
 }
 
-type AdapterResult = Result<Arc<dyn CommandBusAdapter>, CommandBusAdapterError>;
+type AdapterResult = Result<Arc<LocalCommandBusAdapter>, CommandBusAdapterError>;
 
 impl LocalCommandBusAdapter {
     pub fn default_storage_read_only() -> AdapterResult {
@@ -258,7 +265,57 @@ impl LocalCommandBusAdapter {
             .block_on(command_bus)
             .map_err(|_| CommandBusAdapterError::initialization_failed())?;
 
-        Ok(Arc::new(Self { runtime, bus }))
+        Ok(Arc::new(Self {
+            runtime: Mutex::new(Some(runtime)),
+            bus,
+        }))
+    }
+}
+
+impl LocalCommandBusAdapter {
+    /// Run a future to completion on the internal multi-thread runtime. Every
+    /// adapter method goes through this so the `Runtime` stays behind an
+    /// interior-mutable `Option`, which lets [`LocalCommandBusAdapter::shutdown`]
+    /// take ownership of it for a bounded shutdown.
+    fn run<F: std::future::Future>(&self, future: F) -> F::Output {
+        self.runtime
+            .lock()
+            .expect("command-bus runtime lock poisoned")
+            .as_ref()
+            .expect("command-bus runtime already shut down")
+            .block_on(future)
+    }
+
+    /// Cancel all background tokio tasks (SSH supervisors, DB/API pool
+    /// keep-alives, fire-and-forget flush tasks) and stop the runtime, bounded
+    /// so a stuck task can never block process exit. Idempotent: a second call
+    /// is a no-op.
+    ///
+    /// This is the unified shutdown signal for the stdio process: it releases
+    /// SSH sessions, database connections, and the API runtime before the
+    /// adapter is dropped.
+    pub fn shutdown(&self) {
+        if let Some(runtime) = self
+            .runtime
+            .lock()
+            .expect("command-bus runtime lock poisoned")
+            .take()
+        {
+            runtime.shutdown_timeout(Duration::from_secs(2));
+        }
+    }
+}
+
+impl Drop for LocalCommandBusAdapter {
+    fn drop(&mut self) {
+        // Bounded backstop: if `shutdown` was never called (e.g. a panic
+        // before the normal exit path), still guarantee the runtime cannot hang
+        // the process on a lingering background task.
+        if let Ok(guard) = self.runtime.get_mut() {
+            if let Some(runtime) = guard.take() {
+                runtime.shutdown_timeout(Duration::from_secs(2));
+            }
+        }
     }
 }
 
@@ -267,8 +324,7 @@ impl CommandBusAdapter for LocalCommandBusAdapter {
         &self,
         command: ReadCommand,
     ) -> Result<ReadCommandResult, CommandBusAdapterError> {
-        self.runtime
-            .block_on(self.bus.execute_read(command))
+        self.run(self.bus.execute_read(command))
             .map_err(|e| {
                 CommandBusAdapterError::from_app_error("The command-bus read operation failed.", &e)
             })
@@ -279,8 +335,7 @@ impl CommandBusAdapter for LocalCommandBusAdapter {
         request_id: &str,
         timeout_ms: Option<u64>,
     ) -> Result<ApiResponse, CommandBusAdapterError> {
-        self.runtime
-            .block_on(self.bus.execute_saved_api_request(request_id, timeout_ms))
+        self.run(self.bus.execute_saved_api_request(request_id, timeout_ms))
             .map_err(|e| {
                 CommandBusAdapterError::from_app_error(
                     "The command-bus API send operation failed.",
@@ -295,8 +350,7 @@ impl CommandBusAdapter for LocalCommandBusAdapter {
         request_id: &str,
         timeout_ms: Option<u64>,
     ) -> Result<ApiResponse, CommandBusAdapterError> {
-        self.runtime
-            .block_on(self.bus.execute_saved_api_request_in_workspace(
+        self.run(self.bus.execute_saved_api_request_in_workspace(
                 workspace_id.map(str::to_string),
                 request_id,
                 timeout_ms,
@@ -313,8 +367,7 @@ impl CommandBusAdapter for LocalCommandBusAdapter {
         &self,
         input: ApiRequestInput,
     ) -> Result<ApiResponse, CommandBusAdapterError> {
-        self.runtime
-            .block_on(self.bus.send_api_request(input))
+        self.run(self.bus.send_api_request(input))
             .map_err(|e| {
                 CommandBusAdapterError::from_app_error(
                     "The command-bus API send operation failed.",
@@ -327,8 +380,7 @@ impl CommandBusAdapter for LocalCommandBusAdapter {
         &self,
         input: ApiRequestInput,
     ) -> Result<ApiSavedRequest, CommandBusAdapterError> {
-        self.runtime
-            .block_on(self.bus.save_api_request(input))
+        self.run(self.bus.save_api_request(input))
             .map_err(|e| {
                 CommandBusAdapterError::from_app_error(
                     "The command-bus API request save operation failed.",
@@ -343,8 +395,7 @@ impl CommandBusAdapter for LocalCommandBusAdapter {
         request_id: &str,
         input: ApiRequestInput,
     ) -> Result<ApiSavedRequest, CommandBusAdapterError> {
-        self.runtime
-            .block_on(self.bus.update_api_request(
+        self.run(self.bus.update_api_request(
                 workspace_id.to_string(),
                 request_id.to_string(),
                 input,
@@ -362,8 +413,7 @@ impl CommandBusAdapter for LocalCommandBusAdapter {
         workspace_id: &str,
         request_id: &str,
     ) -> Result<Vec<ApiSavedRequest>, CommandBusAdapterError> {
-        self.runtime
-            .block_on(
+        self.run(
                 self.bus
                     .delete_api_request(workspace_id.to_string(), request_id.to_string()),
             )
@@ -380,8 +430,7 @@ impl CommandBusAdapter for LocalCommandBusAdapter {
         workspace_id: &str,
         name: &str,
     ) -> Result<ApiCollection, CommandBusAdapterError> {
-        self.runtime
-            .block_on(
+        self.run(
                 self.bus
                     .api_collection_create(workspace_id.to_string(), name.to_string()),
             )
@@ -399,8 +448,7 @@ impl CommandBusAdapter for LocalCommandBusAdapter {
         collection_id: &str,
         name: &str,
     ) -> Result<ApiCollection, CommandBusAdapterError> {
-        self.runtime
-            .block_on(self.bus.api_collection_rename(
+        self.run(self.bus.api_collection_rename(
                 workspace_id.to_string(),
                 collection_id.to_string(),
                 name.to_string(),
@@ -418,8 +466,7 @@ impl CommandBusAdapter for LocalCommandBusAdapter {
         workspace_id: &str,
         collection_id: &str,
     ) -> Result<Vec<ApiCollection>, CommandBusAdapterError> {
-        self.runtime
-            .block_on(
+        self.run(
                 self.bus
                     .api_collection_delete(workspace_id.to_string(), collection_id.to_string()),
             )
@@ -435,8 +482,7 @@ impl CommandBusAdapter for LocalCommandBusAdapter {
         &self,
         workspace_id: &str,
     ) -> Result<Vec<DatabaseConnection>, CommandBusAdapterError> {
-        self.runtime
-            .block_on(self.bus.list_database_connections(workspace_id.to_string()))
+        self.run(self.bus.list_database_connections(workspace_id.to_string()))
             .map_err(|e| {
                 CommandBusAdapterError::from_app_error(
                     "The command-bus database list operation failed.",
@@ -449,8 +495,7 @@ impl CommandBusAdapter for LocalCommandBusAdapter {
         &self,
         input: DatabaseConnectionInput,
     ) -> Result<DatabaseConnection, CommandBusAdapterError> {
-        self.runtime
-            .block_on(self.bus.save_database_connection(input))
+        self.run(self.bus.save_database_connection(input))
             .map_err(|e| {
                 CommandBusAdapterError::from_app_error(
                     "The command-bus database connection save failed.",
@@ -463,8 +508,7 @@ impl CommandBusAdapter for LocalCommandBusAdapter {
         &self,
         input: CredentialCreateInput,
     ) -> Result<CredentialMetadata, CommandBusAdapterError> {
-        self.runtime
-            .block_on(self.bus.create_credential(input))
+        self.run(self.bus.create_credential(input))
             .map_err(|e| {
                 CommandBusAdapterError::from_app_error(
                     "The command-bus credential create operation failed.",
@@ -478,8 +522,7 @@ impl CommandBusAdapter for LocalCommandBusAdapter {
         workspace_id: &str,
         connection_id: &str,
     ) -> Result<DatabaseSchema, CommandBusAdapterError> {
-        self.runtime
-            .block_on(self.bus.database_schema(
+        self.run(self.bus.database_schema(
                 workspace_id.to_string(),
                 connection_id.to_string(),
                 None,
@@ -496,8 +539,7 @@ impl CommandBusAdapter for LocalCommandBusAdapter {
         &self,
         input: DatabaseQueryInput,
     ) -> Result<DatabaseQueryResult, CommandBusAdapterError> {
-        self.runtime
-            .block_on(self.bus.execute_database_query(input))
+        self.run(self.bus.execute_database_query(input))
             .map_err(|e| {
                 CommandBusAdapterError::from_app_error(
                     "The command-bus database query operation failed.",
@@ -511,8 +553,7 @@ impl CommandBusAdapter for LocalCommandBusAdapter {
         workspace_id: &str,
         connection_id: &str,
     ) -> Result<DatabaseTestResult, CommandBusAdapterError> {
-        self.runtime
-            .block_on(
+        self.run(
                 self.bus
                     .test_database_connection(workspace_id.to_string(), connection_id.to_string()),
             )
@@ -525,8 +566,7 @@ impl CommandBusAdapter for LocalCommandBusAdapter {
     }
 
     fn system_health(&self) -> Result<SystemHealth, CommandBusAdapterError> {
-        self.runtime
-            .block_on(self.bus.system_health())
+        self.run(self.bus.system_health())
             .map_err(|e| {
                 CommandBusAdapterError::from_app_error(
                     "The command-bus system health read failed.",
@@ -539,8 +579,7 @@ impl CommandBusAdapter for LocalCommandBusAdapter {
         &self,
         input: SshDiagnosticInput,
     ) -> Result<SshDiagnosticResult, CommandBusAdapterError> {
-        self.runtime
-            .block_on(self.bus.run_ssh_diagnostic(input))
+        self.run(self.bus.run_ssh_diagnostic(input))
             .map_err(|e| {
                 CommandBusAdapterError::from_ssh_app_error(
                     "The command-bus SSH diagnostic failed.",
@@ -553,8 +592,7 @@ impl CommandBusAdapter for LocalCommandBusAdapter {
         &self,
         workspace_id: &str,
     ) -> Result<Vec<SshConnection>, CommandBusAdapterError> {
-        self.runtime
-            .block_on(self.bus.list_ssh_connections(workspace_id.to_string()))
+        self.run(self.bus.list_ssh_connections(workspace_id.to_string()))
             .map_err(|e| {
                 CommandBusAdapterError::from_app_error(
                     "The command-bus SSH connection list operation failed.",
@@ -567,8 +605,7 @@ impl CommandBusAdapter for LocalCommandBusAdapter {
         &self,
         input: SshConnectionInput,
     ) -> Result<SshConnection, CommandBusAdapterError> {
-        self.runtime
-            .block_on(self.bus.save_ssh_connection(input))
+        self.run(self.bus.save_ssh_connection(input))
             .map_err(|e| {
                 CommandBusAdapterError::from_app_error(
                     "The command-bus SSH connection save operation failed.",
@@ -581,8 +618,7 @@ impl CommandBusAdapter for LocalCommandBusAdapter {
         &self,
         input: SshDiagnosticInput,
     ) -> Result<SshDiagnosticResult, CommandBusAdapterError> {
-        self.runtime
-            .block_on(self.bus.run_ssh_command(input))
+        self.run(self.bus.run_ssh_command(input))
             .map_err(|e| {
                 CommandBusAdapterError::from_ssh_app_error(
                     "The command-bus SSH command failed.",
