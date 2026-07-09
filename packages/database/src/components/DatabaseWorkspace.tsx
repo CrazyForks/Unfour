@@ -148,6 +148,7 @@ export function DatabaseWorkspace({
                   editing={tableEditing}
                   error={renderTable.error}
                   executePending={executePending}
+                  loading={Boolean(renderTable.loading)}
                   onPageChange={onTablePageChange}
                   onRefresh={() =>
                     renderTable.tableView &&
@@ -157,6 +158,7 @@ export function DatabaseWorkspace({
                   onTableFilter={onTableFilter}
                   onTableSort={onTableSort}
                   result={renderTable.queryResult}
+                  table={renderTable.table}
                   tableFilter={renderTable.tableQuery.filter}
                   tableSort={
                     renderTable.tableQuery.orderBy

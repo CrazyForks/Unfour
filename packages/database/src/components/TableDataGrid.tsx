@@ -1,6 +1,6 @@
 import { ArrowDown, ArrowUp, ChevronsUpDown, Clipboard, Search, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
-import type { DatabaseCellValue, DatabaseQueryResult } from "@unfour/command-client";
+import type { DatabaseCellValue, DatabaseQueryResult, DatabaseTableColumn } from "@unfour/command-client";
 import {
   Button,
   ConfirmDialog,
@@ -39,11 +39,19 @@ type ServerControls = {
 };
 
 export function TableDataGrid({
+  columns,
   editing,
+  loading,
   result,
   server,
 }: {
+  // Optional table schema used to render the loading skeleton (Navicat-style):
+  // the grid paints real column headers immediately while rows stream in.
+  columns?: DatabaseTableColumn[] | null;
   editing?: TableEditing | null;
+  // Skeleton mode: when true (with `columns`), the grid renders placeholder rows
+  // instead of waiting for `result`, so the frame never pops in empty.
+  loading?: boolean;
   result: DatabaseQueryResult;
   // When present (table browse), sort and filter are applied server-side across
   // the whole table; the grid reflects state and delegates instead of doing its
@@ -68,6 +76,23 @@ export function TableDataGrid({
     map["__row_actions"] = editing ? 72 : 48;
     return map;
   });
+
+  const isSkeleton = Boolean(loading && columns && columns.length > 0);
+  const skeletonRowCount = 12;
+
+  const skeletonRows = useMemo<Array<Array<string | null>>>(() => {
+    if (!isSkeleton || !columns) {
+      return [];
+    }
+    return buildSkeletonRows(columns, skeletonRowCount);
+  }, [isSkeleton, columns, skeletonRowCount]);
+
+  const skeletonColumns = useMemo<DataTableColumn<Array<string | null>>[]>(() => {
+    if (!isSkeleton || !columns) {
+      return [];
+    }
+    return buildSkeletonColumns(columns, columnsWidths);
+  }, [isSkeleton, columns, columnsWidths]);
 
   function buildPrimaryKey(row: DataRow): DatabaseCellValue[] {
     return (editing?.primaryKeyColumns ?? []).map((name) => {
@@ -172,7 +197,7 @@ export function TableDataGrid({
     width: columnsWidths["__row_actions"] ?? (editing ? 72 : 48),
   };
 
-  const columns: DataTableColumn<Array<string | null>>[] = [
+  const dataColumns: DataTableColumn<Array<string | null>>[] = [
     rowActionColumn,
     ...result.columns.map((column, columnIndex) => ({
       cell: (row: Array<string | null>, rowIndex: number) => {
@@ -243,6 +268,9 @@ export function TableDataGrid({
     })),
   ];
 
+  const gridColumns = isSkeleton ? skeletonColumns : dataColumns;
+  const gridRows = isSkeleton ? skeletonRows : visibleRows;
+
   const totalAfterFilter = processedRows.length;
 
   return (
@@ -252,6 +280,7 @@ export function TableDataGrid({
         <Input
           aria-label={t("database.grid.filterPlaceholder")}
           className="h-6 max-w-[260px]"
+          disabled={isSkeleton}
           onChange={(event) => (server ? server.onFilter(event.target.value) : setFilter(event.target.value))}
           placeholder={t("database.grid.filterPlaceholder")}
           value={server ? server.filter : filter}
@@ -268,23 +297,25 @@ export function TableDataGrid({
       </div>
       <DataTable
         className="flex-1"
-        columns={columns}
+        columns={gridColumns}
         empty={(server ? server.filter : filter) ? t("database.grid.noMatches") : t("database.grid.empty")}
         getRowKey={(_, index) => index}
         onColumnResize={(columnId, width) => {
           setColumnsWidths((prev) => ({ ...prev, [columnId]: width }));
         }}
         onSelectionChange={setSelection}
-        rows={visibleRows}
+        rows={gridRows}
         selection={selection}
       />
       <div className="flex h-7 shrink-0 items-center justify-between border-t border-[var(--u-color-border)] px-2 text-[11px] text-[var(--u-color-text-soft)]">
         <span>{copyStatusLabel(copyStatus, t)}</span>
-        <span>
-          {totalAfterFilter > visibleRows.length
-            ? t("database.grid.showingFirst", { shown: visibleRows.length, total: totalAfterFilter })
-            : t("database.grid.rowsRendered", { count: totalAfterFilter })}
-        </span>
+        {isSkeleton ? null : (
+          <span>
+            {totalAfterFilter > visibleRows.length
+              ? t("database.grid.showingFirst", { shown: visibleRows.length, total: totalAfterFilter })
+              : t("database.grid.rowsRendered", { count: totalAfterFilter })}
+          </span>
+        )}
       </div>
       <Dialog onOpenChange={(open) => !open && setViewer(null)} open={viewer !== null}>
         <DialogContent title={t("database.grid.valueViewer")}>
@@ -372,6 +403,37 @@ export function TableDataGrid({
   );
 }
 
+function buildSkeletonRows(columns: DatabaseTableColumn[], count: number): Array<Array<string | null>> {
+  return Array.from({ length: count }, () => columns.map(() => ""));
+}
+
+function buildSkeletonColumns(
+  columns: DatabaseTableColumn[],
+  columnsWidths: Record<string, number>,
+): DataTableColumn<Array<string | null>>[] {
+  return [
+    {
+      header: "#",
+      id: "__row_actions",
+      width: columnsWidths["__row_actions"] ?? 48,
+    },
+    ...columns.map((column, columnIndex) => {
+      const id = column.name || `column-${columnIndex}`;
+      return {
+        header: (
+          <span className="truncate" title={column.name}>
+            {column.name}
+          </span>
+        ),
+        id,
+        meta: column.dataType,
+        width: columnsWidths[id] ?? Math.min(Math.max(column.name.length * 9 + 96, 140), 360),
+        cell: () => <SkeletonCell />,
+      } satisfies DataTableColumn<Array<string | null>>;
+    }),
+  ];
+}
+
 function truncatePreview(value: string) {
   const text = value.length === 0 ? "''" : value;
   return text.length > 120 ? `${text.slice(0, 120)}…` : text;
@@ -445,4 +507,12 @@ function copyStatusLabel(
     default:
       return t("database.grid.copyHint");
   }
+}
+
+function SkeletonCell() {
+  return (
+    <div className="flex h-full items-center px-1">
+      <div className="h-3 w-full animate-pulse rounded bg-[var(--u-color-border)]" />
+    </div>
+  );
 }
