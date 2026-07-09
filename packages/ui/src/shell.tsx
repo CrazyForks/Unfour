@@ -70,13 +70,11 @@ export function GlobalToolbar({
   center,
   className,
   left,
-  onDragRegionMouseDown,
   right,
 }: {
   center?: React.ReactNode;
   className?: string;
   left?: React.ReactNode;
-  onDragRegionMouseDown?: React.MouseEventHandler<HTMLDivElement>;
   right?: React.ReactNode;
 }) {
   const isMac = usePlatform() === "macos";
@@ -95,7 +93,7 @@ export function GlobalToolbar({
       </div>
       <div
         className="flex h-full min-w-0 flex-1 items-center justify-center px-3"
-        onMouseDown={onDragRegionMouseDown}
+        data-tauri-drag-region=""
       >
         {center}
       </div>

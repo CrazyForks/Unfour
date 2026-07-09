@@ -1,5 +1,4 @@
 import { Settings } from "lucide-react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { Workspace } from "@unfour/command-client";
 import { useState } from "react";
 import {
@@ -7,7 +6,6 @@ import {
   IconButton,
   useI18n,
 } from "@unfour/ui";
-import { isTauriRuntime } from "./module-helpers";
 import { SettingsDialog } from "./settings/SettingsDialog";
 import { WindowControls } from "./WindowControls";
 import { WorkspaceMenu } from "./WorkspaceMenu";
@@ -24,17 +22,6 @@ export function AppTitleBar({
   const { t } = useI18n();
   const [settingsOpen, setSettingsOpen] = useState(false);
 
-  async function dragWindow(event: React.MouseEvent<HTMLDivElement>) {
-    if ((event.target as HTMLElement).closest("button,input,select,a")) {
-      return;
-    }
-    if (event.button !== 0 || !isTauriRuntime()) {
-      return;
-    }
-
-    await getCurrentWindow().startDragging();
-  }
-
   return (
     <>
       <GlobalToolbar
@@ -45,7 +32,6 @@ export function AppTitleBar({
             workspaces={workspaces}
           />
         }
-        onDragRegionMouseDown={dragWindow}
         right={
           <>
             <IconButton label={t("app.titlebar.settings")} onClick={() => setSettingsOpen(true)}>

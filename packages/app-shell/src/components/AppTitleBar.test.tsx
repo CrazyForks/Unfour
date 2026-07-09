@@ -7,6 +7,21 @@ import type { Workspace } from "@unfour/command-client";
 import { I18nProvider, ThemeProvider } from "@unfour/ui";
 import { AppTitleBar } from "./AppTitleBar";
 
+const { mockWindow } = vi.hoisted(() => ({
+  mockWindow: {
+    isMaximized: vi.fn().mockResolvedValue(false),
+    onResized: vi.fn().mockResolvedValue(vi.fn()),
+    minimize: vi.fn(),
+    toggleMaximize: vi.fn().mockResolvedValue(undefined),
+    startDragging: vi.fn().mockResolvedValue(undefined),
+    close: vi.fn(),
+  },
+}));
+
+vi.mock("@tauri-apps/api/window", () => ({
+  getCurrentWindow: () => mockWindow,
+}));
+
 afterEach(cleanup);
 
 function workspace(): Workspace {
