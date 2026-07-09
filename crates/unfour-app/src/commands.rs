@@ -1,6 +1,7 @@
 pub mod api;
 pub mod database;
 pub mod diagnostics;
+pub mod mcp;
 pub mod secret_store;
 pub mod ssh;
 pub mod workspace;
@@ -8,6 +9,7 @@ pub mod workspace;
 pub use api::*;
 pub use database::*;
 pub use diagnostics::*;
+pub use mcp::*;
 pub use secret_store::*;
 pub use ssh::*;
 pub use workspace::*;

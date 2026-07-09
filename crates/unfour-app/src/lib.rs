@@ -176,6 +176,7 @@ macro_rules! generate_handlers {
         tauri::generate_handler![
             unfour_app::commands::export_diagnostics_bundle,
             unfour_app::commands::frontend_log,
+            unfour_app::commands::mcp_binary_path,
             unfour_app::commands::open_diagnostics_dir,
             unfour_app::commands::open_log_dir,
             unfour_app::commands::system_health,

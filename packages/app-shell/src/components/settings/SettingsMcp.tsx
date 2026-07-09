@@ -3,6 +3,10 @@ import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { Button, StatusBadge, useI18n } from "@unfour/ui";
 import {
+  getMcpBinaryPath,
+  type McpBinaryPathResult,
+} from "@unfour/command-client";
+import {
   MCP_DOCS_PATH,
   MCP_DOCS_URL,
   formatMcpClientConfig,
@@ -13,10 +17,39 @@ type CopyTarget = "command" | "config";
 
 export function SettingsMcp() {
   const { t } = useI18n();
-  const command = useMemo(() => getMcpCommand(), []);
-  const config = useMemo(() => formatMcpClientConfig(command), [command]);
+  const [mcp, setMcp] = useState<McpBinaryPathResult | null>(null);
+  const [mcpError, setMcpError] = useState(false);
   const [copied, setCopied] = useState<CopyTarget | null>(null);
   const [copyFailed, setCopyFailed] = useState<CopyTarget | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    getMcpBinaryPath()
+      .then((result) => {
+        if (active) setMcp(result);
+      })
+      .catch(() => {
+        if (active) setMcpError(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // Prefer the runtime-resolved path; fall back to the platform placeholder
+  // only when the backend call itself fails (e.g. unsupported runtime).
+  const command = useMemo(
+    () => mcp?.path ?? getMcpCommand(),
+    [mcp],
+  );
+  const config = useMemo(() => formatMcpClientConfig(command), [command]);
+
+  const statusTone = !mcp && !mcpError ? "neutral" : mcp?.found ? "success" : "warning";
+  const statusText = !mcp && !mcpError
+    ? t("app.settings.mcp.statusChecking")
+    : mcp?.found
+      ? t("app.settings.mcp.statusValue")
+      : t("app.settings.mcp.statusUnavailable");
 
   useEffect(() => {
     if (!copied && !copyFailed) {
@@ -52,8 +85,19 @@ export function SettingsMcp() {
       </div>
 
       <InfoBlock label={t("app.settings.mcp.statusLabel")}>
-        <StatusBadge tone="success">{t("app.settings.mcp.statusValue")}</StatusBadge>
+        <StatusBadge tone={statusTone}>{statusText}</StatusBadge>
       </InfoBlock>
+
+      {mcp && !mcp.found && (
+        <div className="rounded-[var(--u-radius-sm)] border border-[var(--u-color-warning)] bg-[var(--u-color-warning-soft)] p-3 text-[12px] text-[var(--u-color-warning)]">
+          <p className="font-semibold">{t("app.settings.mcp.notFoundTitle")}</p>
+          <p className="mt-1 leading-5">
+            {mcp.buildKind === "dev"
+              ? t("app.settings.mcp.notFoundDev")
+              : t("app.settings.mcp.notFoundRelease")}
+          </p>
+        </div>
+      )}
 
       <InfoBlock
         action={

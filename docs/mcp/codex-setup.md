@@ -40,16 +40,20 @@ SQLite database has not been created yet.
 
 ## Codex Configuration
 
-Use an absolute path to the built executable.
+Use the absolute path to the built executable. The exact path depends on your
+build/install location and is shown automatically in the app under
+**Settings → MCP** (the "MCP command" value). For a release install it is the
+sidecar bundled next to the app; for a dev build it is the `target/debug`
+binary. A dev build looks like:
 
 ```toml
 [mcp_servers.unfour]
-command = "D:\\Program Files\\Unfour\\unfour-mcp.exe"
+command = "D:\\project\\Unfour\\apps\\desktop\\target\\debug\\unfour-mcp.exe"
 args = []
 ```
 
 On non-Windows platforms, use the absolute path to the platform-specific
-`unfour-mcp` binary.
+`unfour-mcp` binary shown in Settings → MCP.
 
 ## Example Prompts
 

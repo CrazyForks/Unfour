@@ -1,6 +1,7 @@
 import { handleApiMock } from "./api";
 import { handleDatabaseMock } from "./database";
 import { handleDiagnosticsMock } from "./diagnostics";
+import { handleMcpMock } from "./mcp";
 import { handleSecretStoreMock } from "./secret-store";
 import { handleSshMock } from "./ssh";
 import { handleWorkspaceMock } from "./workspace";
@@ -13,6 +14,7 @@ const mockHandlers: MockCommandHandler[] = [
   handleSecretStoreMock,
   handleDatabaseMock,
   handleSshMock,
+  handleMcpMock,
 ];
 
 export async function mockInvoke<T>(
