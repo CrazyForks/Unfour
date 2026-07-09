@@ -14,5 +14,10 @@
         "hiddenTitle": true
       }
     ]
+  },
+  "bundle": {
+    "macOS": {
+      "bundleVersion": "1"
+    }
   }
 }
