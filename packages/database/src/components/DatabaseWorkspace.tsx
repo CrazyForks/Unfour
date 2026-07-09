@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type {
   DatabaseConnection,
   DatabaseSchema,
@@ -97,6 +98,30 @@ export function DatabaseWorkspace({
 }) {
   const activeQuery = activeTab?.kind === "query" ? activeTab : null;
   const activeTable = activeTab?.kind === "table" ? activeTab : null;
+
+  // Keep-alive: remember the last active query/table so their component trees
+  // (especially the Monaco editor inside SqlEditorTab) stay mounted when the
+  // other tab type is active.  This prevents the white flash that occurs when
+  // React unmounts one branch and mounts a fresh one (e.g. switching from a
+  // table tab to a new query tab).
+  const [lastQuery, setLastQuery] = useState(activeQuery);
+  if (activeQuery && activeQuery !== lastQuery) {
+    setLastQuery(activeQuery);
+  }
+  const [lastTable, setLastTable] = useState(activeTable);
+  if (activeTable && activeTable !== lastTable) {
+    setLastTable(activeTable);
+  }
+
+  // Use the active tab when available; fall back to the last-seen tab so the
+  // branch keeps rendering (hidden) with valid props instead of unmounting.
+  const renderQuery = activeQuery ?? lastQuery;
+  const renderTable = activeTable ?? lastTable;
+
+  const showQuery = Boolean(activeQuery);
+  const showTable = Boolean(activeTable);
+  const hasTabs = tabs.length > 0;
+
   const workspaceTabs: WorkspaceTab[] = tabs.map((tab) => ({
     id: tab.id,
     loading: Boolean(tab.loading),
@@ -114,85 +139,94 @@ export function DatabaseWorkspace({
         tabs={workspaceTabs}
       />
       <div className="flex min-h-0 flex-1 flex-col">
-        {activeTable ? (
-          <>
-            {activeTable.segment === "data" ? (
-              <TableDataTab
-                editing={tableEditing}
-                error={activeTable.error}
+        {/* Table branch — keep mounted, toggle visibility to avoid remount flash */}
+        <div className={showTable ? "flex min-h-0 flex-1 flex-col" : "hidden"}>
+          {renderTable && (
+            <>
+              {renderTable.segment === "data" ? (
+                <TableDataTab
+                  editing={tableEditing}
+                  error={renderTable.error}
+                  executePending={executePending}
+                  onPageChange={onTablePageChange}
+                  onRefresh={() =>
+                    renderTable.tableView &&
+                    onTablePageChange(renderTable.tableView.pageIndex, renderTable.tableView.pageSize)
+                  }
+                  onSwitchToStructure={() => onSelectTableSegment("structure")}
+                  onTableFilter={onTableFilter}
+                  onTableSort={onTableSort}
+                  result={renderTable.queryResult}
+                  tableFilter={renderTable.tableQuery.filter}
+                  tableSort={
+                    renderTable.tableQuery.orderBy
+                      ? {
+                          column: renderTable.tableQuery.orderBy,
+                          descending: renderTable.tableQuery.orderDescending,
+                        }
+                      : null
+                  }
+                  tableView={renderTable.tableView}
+                />
+              ) : (
+                <TableInspector
+                  activeTab={renderTable.structureTab}
+                  error={renderTable.error ?? structureError ?? schemaError}
+                  loading={Boolean(structureLoading)}
+                  onPreview={onPreviewSelectedTable}
+                  onRefresh={onRefreshSchema}
+                  onSelectTab={onSelectStructureTab}
+                  onSwitchToData={() => onSelectTableSegment("data")}
+                  previewPending={executePending}
+                  structure={structure}
+                  table={renderTable.table}
+                />
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Query branch — keep mounted, toggle visibility to avoid remount flash */}
+        <div className={showQuery ? "flex min-h-0 flex-1" : "hidden"}>
+          {renderQuery && (
+            <SplitPane className="min-h-0 flex-1" defaultRatio={62} minPaneSize={220} orientation="vertical" resizable>
+              <SqlEditorTab
+                catalogOptions={catalogOptions}
+                connections={connections}
                 executePending={executePending}
-                onPageChange={onTablePageChange}
-                onRefresh={() =>
-                  activeTable.tableView &&
-                  onTablePageChange(activeTable.tableView.pageIndex, activeTable.tableView.pageSize)
-                }
-                onSwitchToStructure={() => onSelectTableSegment("structure")}
-                onTableFilter={onTableFilter}
-                onTableSort={onTableSort}
-                result={activeTable.queryResult}
-                tableFilter={activeTable.tableQuery.filter}
-                tableSort={
-                  activeTable.tableQuery.orderBy
-                    ? {
-                        column: activeTable.tableQuery.orderBy,
-                        descending: activeTable.tableQuery.orderDescending,
-                      }
-                    : null
-                }
-                tableView={activeTable.tableView}
+                onChangeQueryContext={onChangeQueryContext}
+                onClearSql={onClearSql}
+                onRun={onRun}
+                onSelectConnection={onSelectConnection}
+                onShowHistory={onShowHistory}
+                onSqlChange={onSqlChange}
+                onStop={onStop}
+                pendingConfirmation={renderQuery.pendingConfirmation}
+                queryCatalog={queryCatalog}
+                querySchema={querySchema}
+                schema={schema}
+                schemaOptions={schemaOptions}
+                selectedConnectionId={renderQuery.connectionId}
+                sql={renderQuery.sql}
+                workspaceId={workspaceId}
               />
-            ) : (
-              <TableInspector
-                activeTab={activeTable.structureTab}
-                error={activeTable.error ?? structureError ?? schemaError}
-                loading={Boolean(structureLoading)}
-                onPreview={onPreviewSelectedTable}
-                onRefresh={onRefreshSchema}
-                onSelectTab={onSelectStructureTab}
-                onSwitchToData={() => onSelectTableSegment("data")}
-                previewPending={executePending}
-                structure={structure}
-                table={activeTable.table}
+              <QueryResultPanel
+                activeTab={renderQuery.resultTab}
+                error={renderQuery.error}
+                history={history}
+                isPending={executePending}
+                onClearHistory={onClearHistory}
+                onSelectHistory={onSelectHistory}
+                onSelectTab={onSelectResultTab}
+                pendingConfirmation={renderQuery.pendingConfirmation}
+                result={renderQuery.result}
               />
-            )}
-          </>
-        ) : activeQuery ? (
-          <SplitPane className="min-h-0 flex-1" defaultRatio={62} minPaneSize={220} orientation="vertical" resizable>
-            <SqlEditorTab
-              catalogOptions={catalogOptions}
-              connections={connections}
-              executePending={executePending}
-              onChangeQueryContext={onChangeQueryContext}
-              onClearSql={onClearSql}
-              onRun={onRun}
-              onSelectConnection={onSelectConnection}
-              onShowHistory={onShowHistory}
-              onSqlChange={onSqlChange}
-              onStop={onStop}
-              pendingConfirmation={activeQuery.pendingConfirmation}
-              queryCatalog={queryCatalog}
-              querySchema={querySchema}
-              schema={schema}
-              schemaOptions={schemaOptions}
-              selectedConnectionId={activeQuery.connectionId}
-              sql={activeQuery.sql}
-              workspaceId={workspaceId}
-            />
-            <QueryResultPanel
-              activeTab={activeQuery.resultTab}
-              error={activeQuery.error}
-              history={history}
-              isPending={executePending}
-              onClearHistory={onClearHistory}
-              onSelectHistory={onSelectHistory}
-              onSelectTab={onSelectResultTab}
-              pendingConfirmation={activeQuery.pendingConfirmation}
-              result={activeQuery.result}
-            />
-          </SplitPane>
-        ) : (
-          <EmptyWorkspace />
-        )}
+            </SplitPane>
+          )}
+        </div>
+
+        {/* Empty state — shown only when no tabs exist at all */}
+        {!hasTabs && <EmptyWorkspace />}
       </div>
     </div>
   );
