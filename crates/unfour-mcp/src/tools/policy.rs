@@ -136,8 +136,18 @@ pub struct McpPolicyDenial {
     pub environment_type: String,
     pub mcp_policy: String,
     pub resolved_policy: String,
+    /// The *capability* required by the blocked action, e.g.
+    /// `db:data:write` or `ssh:exec`. Distinct from `risk` / `risk_level`.
     pub capability: &'static str,
+    /// The *category* (kind) of the blocked action: `read` / `write` /
+    /// `execute` / `destructive` / `secret_reveal`. This is the kind of
+    /// operation — NOT its severity. The severity bucket is `risk_level`.
     pub risk: &'static str,
+    /// The *severity* of the blocked action, bucketed as `low` / `medium` /
+    /// `high`. This is the same scale as the response envelope's top-level
+    /// `risk_level` and is derived from `risk` exactly once here, so the two
+    /// can never diverge. Do NOT re-derive severity from `risk` elsewhere.
+    pub risk_level: &'static str,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -288,6 +298,7 @@ pub(super) fn check_mcp_permission(
             resolved_policy: resolved.as_str().to_string(),
             capability: capability.as_str(),
             risk: risk.as_str(),
+            risk_level: risk.risk_level(),
         }),
         None => Ok(()),
     }

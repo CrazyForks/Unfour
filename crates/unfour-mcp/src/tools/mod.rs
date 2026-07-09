@@ -180,7 +180,7 @@ impl ToolRegistry {
             Err(ToolCallError::PolicyBlocked(denial)) => Ok(structured_policy_error(
                 name,
                 &denial.environment_type,
-                policy.risk.risk_level(),
+                denial.risk_level,
                 started.elapsed().as_millis(),
                 serde_json::to_value(denial.clone()).map_err(|_| ToolCallError::Execution {
                     code: "TOOL_RESULT_SERIALIZATION_FAILED",
@@ -209,7 +209,7 @@ fn policy_or_execution_error(
         ToolCallError::PolicyBlocked(denial) => Ok(structured_policy_error(
             tool_name,
             &denial.environment_type,
-            denial_risk_level(&denial),
+            denial.risk_level,
             duration_ms,
             serde_json::to_value(denial.clone()).map_err(|_| ToolCallError::Execution {
                 code: "TOOL_RESULT_SERIALIZATION_FAILED",
@@ -225,14 +225,6 @@ fn policy_or_execution_error(
             message,
         )),
         other => Err(other),
-    }
-}
-
-fn denial_risk_level(denial: &McpPolicyDenial) -> &'static str {
-    match denial.risk {
-        "read" => "low",
-        "write" | "execute" => "medium",
-        _ => "high",
     }
 }
 

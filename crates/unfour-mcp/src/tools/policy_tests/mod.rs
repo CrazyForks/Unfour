@@ -58,6 +58,7 @@ fn check_mcp_permission_enforces_read_only_boundaries() {
         assert_eq!(denial.resolved_policy, "read_only");
         assert_eq!(denial.capability, capability.as_str());
         assert_eq!(denial.risk, risk.as_str());
+        assert_eq!(denial.risk_level, risk.risk_level());
     }
 }
 
