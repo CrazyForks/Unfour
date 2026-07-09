@@ -1,5 +1,6 @@
-import { Maximize2, Minus, Square, X } from "lucide-react";
+import { Minus, Square, Copy, X } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { useEffect, useState } from "react";
 import { cn } from "@unfour/ui";
 import { isTauriRuntime } from "./module-helpers";
 
@@ -15,6 +16,22 @@ export function WindowControls() {
   }
 
   const appWindow = getCurrentWindow();
+  const [isMaximized, setIsMaximized] = useState(false);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    void appWindow.isMaximized().then(setIsMaximized);
+    void appWindow
+      .onResized(() => {
+        void appWindow.isMaximized().then(setIsMaximized);
+      })
+      .then((fn) => {
+        unlisten = fn;
+      });
+    return () => {
+      unlisten?.();
+    };
+  }, [appWindow]);
 
   return (
     <div className="ml-1 flex items-center">
@@ -24,8 +41,14 @@ export function WindowControls() {
         onClick={() => void appWindow.minimize()}
       />
       <TitlebarWindowButton
-        ariaLabel="Maximize"
-        icon={<Maximize2 size={14} />}
+        ariaLabel={isMaximized ? "Restore" : "Maximize"}
+        icon={
+          isMaximized ? (
+            <Copy size={14} style={{ transform: "scaleX(-1)" }} />
+          ) : (
+            <Square size={14} />
+          )
+        }
         onClick={() => void appWindow.toggleMaximize()}
       />
       <TitlebarWindowButton

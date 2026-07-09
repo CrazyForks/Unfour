@@ -25,6 +25,11 @@ tauri = { version = "2", features = [] }
 # in `unfour-app`). Any plugin referenced by a capability must be a direct
 # dependency of the binary crate, not only of `unfour-app`.
 tauri-plugin-opener = "2"
+# Direct dependency (same reason as opener): tauri-build must resolve this
+# plugin's permission manifest for `capabilities/`. The runtime `.plugin()`
+# call lives in `unfour-app`; any plugin referenced by a capability must be a
+# direct dependency of this binary crate, not only of `unfour-app`.
+tauri-plugin-window-state = "2"
 # Shared composition layer (plugins, command-bus setup, AppState, commands).
 unfour-app = { path = "../../../crates/unfour-app" }
 
