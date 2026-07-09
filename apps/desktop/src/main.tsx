@@ -20,7 +20,7 @@ const initialTheme = initializeTheme();
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
-      <ThemeProvider defaultTheme={initialTheme}>
+      <ThemeProvider defaultThemeMode={initialTheme}>
         <I18nProvider>
           <DesktopErrorBoundary>
             <App />

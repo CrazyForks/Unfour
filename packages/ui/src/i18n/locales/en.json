@@ -42,7 +42,8 @@
     "theme": {
       "dark": "Dark",
       "label": "Theme",
-      "light": "Light"
+      "light": "Light",
+      "system": "System"
     },
     "titlebar": {
       "moreActions": "More actions",

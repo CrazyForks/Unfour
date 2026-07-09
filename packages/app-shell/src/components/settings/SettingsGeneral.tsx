@@ -5,12 +5,12 @@ import {
   useI18n,
   useTheme,
   type Locale,
-  type Theme,
+  type ThemeMode,
 } from "@unfour/ui";
 
 export function SettingsGeneral() {
   const { locale, locales, setLocale, t } = useI18n();
-  const { setTheme, theme } = useTheme();
+  const { setThemeMode, themeMode } = useTheme();
 
   return (
     <div className="space-y-4">
@@ -37,12 +37,13 @@ export function SettingsGeneral() {
         control={
           <Select
             aria-label={t("app.settings.general.themeLabel")}
-            onChange={(event) => setTheme(event.target.value as Theme)}
+            onChange={(event) => setThemeMode(event.target.value as ThemeMode)}
             options={[
+              { label: t("app.theme.system"), value: "system" },
               { label: t("app.theme.light"), value: "light" },
               { label: t("app.theme.dark"), value: "dark" },
             ]}
-            value={theme}
+            value={themeMode}
           />
         }
         description={t("app.settings.general.themeDescription")}

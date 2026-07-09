@@ -42,7 +42,8 @@
     "theme": {
       "dark": "深色",
       "label": "主题",
-      "light": "浅色"
+      "light": "浅色",
+      "system": "跟随系统"
     },
     "titlebar": {
       "moreActions": "更多操作",

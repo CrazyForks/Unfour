@@ -1,59 +1,83 @@
 import * as React from "react";
-import { applyTheme, readStoredTheme, writeStoredTheme } from "./theme-internal";
+import {
+  applyTheme,
+  readStoredThemeMode,
+  resolveTheme,
+  writeStoredThemeMode,
+} from "./theme-internal";
 
 export type Theme = "light" | "dark";
+export type ThemeMode = "light" | "dark" | "system";
 
 export type ThemeContextValue = {
-  setTheme: (theme: Theme) => void;
+  setThemeMode: (mode: ThemeMode) => void;
   theme: Theme;
-  toggleTheme: () => void;
+  themeMode: ThemeMode;
 };
 
-const DEFAULT_THEME: Theme = "dark";
+const DEFAULT_THEME_MODE: ThemeMode = "dark";
 const DEFAULT_STORAGE_KEY = "unfour.theme";
+const SYSTEM_MEDIA_QUERY = "(prefers-color-scheme: dark)";
 
 const ThemeContext = React.createContext<ThemeContextValue>({
-  setTheme: () => undefined,
-  theme: DEFAULT_THEME,
-  toggleTheme: () => undefined,
+  setThemeMode: () => undefined,
+  theme: DEFAULT_THEME_MODE,
+  themeMode: DEFAULT_THEME_MODE,
 });
 
 export function ThemeProvider({
   children,
-  defaultTheme = DEFAULT_THEME,
+  defaultThemeMode = DEFAULT_THEME_MODE,
   storageKey = DEFAULT_STORAGE_KEY,
 }: {
   children: React.ReactNode;
-  defaultTheme?: Theme;
+  defaultThemeMode?: ThemeMode;
   storageKey?: string;
 }) {
-  const [theme, setThemeState] = React.useState<Theme>(
-    () => readStoredTheme(storageKey) ?? defaultTheme,
+  const [themeMode, setThemeModeState] = React.useState<ThemeMode>(
+    () => readStoredThemeMode(storageKey) ?? defaultThemeMode,
+  );
+  const [theme, setTheme] = React.useState<Theme>(
+    () => resolveTheme(themeMode),
   );
 
+  // Resolve and apply the theme whenever the user preference changes.
   React.useLayoutEffect(() => {
-    applyTheme(theme);
-  }, [theme]);
+    const resolved = resolveTheme(themeMode);
+    setTheme(resolved);
+    applyTheme(resolved);
+  }, [themeMode]);
 
-  const setTheme = React.useCallback(
-    (nextTheme: Theme) => {
-      setThemeState(nextTheme);
-      writeStoredTheme(storageKey, nextTheme);
+  // While in "system" mode, follow the webview's color scheme live. Uses the
+  // webview `matchMedia` API (fast) instead of any native OS theme query.
+  React.useEffect(() => {
+    if (themeMode !== "system") {
+      return;
+    }
+    const mql = globalThis.matchMedia?.(SYSTEM_MEDIA_QUERY);
+    if (!mql) {
+      return;
+    }
+    const handleChange = () => {
+      const resolved = resolveTheme("system");
+      setTheme(resolved);
+      applyTheme(resolved);
+    };
+    mql.addEventListener("change", handleChange);
+    return () => mql.removeEventListener("change", handleChange);
+  }, [themeMode]);
+
+  const setThemeMode = React.useCallback(
+    (nextMode: ThemeMode) => {
+      setThemeModeState(nextMode);
+      writeStoredThemeMode(storageKey, nextMode);
     },
     [storageKey],
   );
 
-  const toggleTheme = React.useCallback(() => {
-    setThemeState((current) => {
-      const next: Theme = current === "dark" ? "light" : "dark";
-      writeStoredTheme(storageKey, next);
-      return next;
-    });
-  }, [storageKey]);
-
   const value = React.useMemo<ThemeContextValue>(
-    () => ({ setTheme, theme, toggleTheme }),
-    [setTheme, theme, toggleTheme],
+    () => ({ setThemeMode, theme, themeMode }),
+    [setThemeMode, theme, themeMode],
   );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;

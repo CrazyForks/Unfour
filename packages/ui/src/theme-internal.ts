@@ -1,21 +1,42 @@
-import type { Theme } from "./theme";
+import type { Theme, ThemeMode } from "./theme";
 
 export function applyTheme(theme: Theme) {
   globalThis.document?.documentElement.setAttribute("data-theme", theme);
 }
 
-export function readStoredTheme(storageKey: string): Theme | null {
+/**
+ * Reads the webview's preferred color scheme via the standard
+ * `prefers-color-scheme` media query. This runs inside the webview and is
+ * fast; it deliberately avoids any native OS theme API (which can stall the
+ * UI on Windows).
+ */
+export function getSystemTheme(): Theme {
+  if (typeof globalThis.matchMedia !== "function") {
+    return "light";
+  }
+  return globalThis.matchMedia("(prefers-color-scheme: dark)").matches
+    ? "dark"
+    : "light";
+}
+
+export function resolveTheme(mode: ThemeMode): Theme {
+  return mode === "system" ? getSystemTheme() : mode;
+}
+
+export function readStoredThemeMode(storageKey: string): ThemeMode | null {
   try {
     const stored = globalThis.localStorage?.getItem(storageKey);
-    return stored === "light" || stored === "dark" ? stored : null;
+    return stored === "light" || stored === "dark" || stored === "system"
+      ? stored
+      : null;
   } catch {
     return null;
   }
 }
 
-export function writeStoredTheme(storageKey: string, theme: Theme) {
+export function writeStoredThemeMode(storageKey: string, mode: ThemeMode) {
   try {
-    globalThis.localStorage?.setItem(storageKey, theme);
+    globalThis.localStorage?.setItem(storageKey, mode);
   } catch {
     // Ignore storage failures; theme still applies for the current session.
   }

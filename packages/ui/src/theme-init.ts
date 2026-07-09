@@ -1,17 +1,22 @@
-import { applyTheme, readStoredTheme } from "./theme-internal";
-import type { Theme } from "./theme";
+import {
+  applyTheme,
+  readStoredThemeMode,
+  resolveTheme,
+} from "./theme-internal";
+import type { Theme, ThemeMode } from "./theme";
 
-const DEFAULT_THEME: Theme = "dark";
+const DEFAULT_THEME_MODE: ThemeMode = "dark";
 const DEFAULT_STORAGE_KEY = "unfour.theme";
 
 export function initializeTheme({
-  defaultTheme = DEFAULT_THEME,
+  defaultThemeMode = DEFAULT_THEME_MODE,
   storageKey = DEFAULT_STORAGE_KEY,
 }: {
-  defaultTheme?: Theme;
+  defaultThemeMode?: ThemeMode;
   storageKey?: string;
 } = {}): Theme {
-  const theme = readStoredTheme(storageKey) ?? defaultTheme;
+  const mode = readStoredThemeMode(storageKey) ?? defaultThemeMode;
+  const theme = resolveTheme(mode);
   applyTheme(theme);
   return theme;
 }

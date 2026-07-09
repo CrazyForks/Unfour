@@ -33,7 +33,7 @@ function createWrapper() {
   return function Wrapper({ children }: { children: ReactNode }) {
     return (
       <QueryClientProvider client={client}>
-        <ThemeProvider defaultTheme="dark" storageKey="test.theme">
+        <ThemeProvider defaultThemeMode="dark" storageKey="test.theme">
           <I18nProvider initialLocale="en" storageKey="test.locale">
             {children}
           </I18nProvider>
