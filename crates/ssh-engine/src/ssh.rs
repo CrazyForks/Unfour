@@ -1372,9 +1372,9 @@ impl SshService {
                 state.summary.status = "disconnected".to_string();
                 state.summary.reconnect_attempt = 0;
                 state.summary.updated_at = now.clone();
-                state.pending_output.push_str(
-                    "SSH session closed because the connection was deleted.\r\n",
-                );
+                state
+                    .pending_output
+                    .push_str("SSH session closed because the connection was deleted.\r\n");
                 ids.push(state.summary.session_id.clone());
             }
             ids
@@ -2076,16 +2076,19 @@ impl SshService {
             state.summary.status = status.to_string();
             state.summary.reconnect_attempt = attempt;
             state.summary.updated_at = now.clone();
-            record_session_event(state, SshSessionEvent {
-                session_id: session_id.to_string(),
-                kind: if status == "disconnected" || status == "failed" {
-                    "close".to_string()
-                } else {
-                    "output".to_string()
+            record_session_event(
+                state,
+                SshSessionEvent {
+                    session_id: session_id.to_string(),
+                    kind: if status == "disconnected" || status == "failed" {
+                        "close".to_string()
+                    } else {
+                        "output".to_string()
+                    },
+                    data: message.to_string(),
+                    created_at: now,
                 },
-                data: message.to_string(),
-                created_at: now,
-            });
+            );
             state.pending_output.push_str(message);
         }
         self.emit_terminal_payload(session_id, message, Some(status), attempt);

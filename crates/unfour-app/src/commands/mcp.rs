@@ -80,7 +80,10 @@ fn target_triple() -> &'static str {
 }
 
 fn current_exe_dir() -> Option<std::path::PathBuf> {
-    std::env::current_exe().ok()?.parent().map(|p| p.to_path_buf())
+    std::env::current_exe()
+        .ok()?
+        .parent()
+        .map(|p| p.to_path_buf())
 }
 
 fn resolve_mcp_binary_path(build_kind: McpBuildKind) -> McpBinaryPathResult {

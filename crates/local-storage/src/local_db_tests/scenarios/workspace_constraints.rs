@@ -69,7 +69,10 @@ async fn workspace_name_must_be_unique_globally() {
     .execute(db.pool())
     .await;
 
-    assert!(duplicate.is_err(), "workspace names must be unique globally");
+    assert!(
+        duplicate.is_err(),
+        "workspace names must be unique globally"
+    );
 
     let case_variant = sqlx::query(
         r#"

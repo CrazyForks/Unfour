@@ -62,10 +62,9 @@ fn install_signal_handlers(shutdown: Shutdown, adapter: Arc<LocalCommandBusAdapt
                 .build()
                 .expect("unfour-mcp signal runtime");
             runtime.block_on(async {
-                let mut sigterm = tokio::signal::unix::signal(
-                    tokio::signal::unix::SignalKind::terminate(),
-                )
-                .expect("install SIGTERM handler");
+                let mut sigterm =
+                    tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                        .expect("install SIGTERM handler");
                 tokio::select! {
                     _ = tokio::signal::ctrl_c() => {}
                     _ = sigterm.recv() => {}

@@ -1330,9 +1330,7 @@ impl CommandBus {
         input: DatabaseConnectionInput,
         secret: Option<String>,
     ) -> AppResult<DatabaseTestResult> {
-        self.database
-            .test_connection_input(input, secret)
-            .await
+        self.database.test_connection_input(input, secret).await
     }
 
     pub async fn database_schema(

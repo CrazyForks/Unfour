@@ -160,7 +160,11 @@ struct LocalTimer;
 
 impl FormatTime for LocalTimer {
     fn format_time(&self, w: &mut Writer<'_>) -> fmt::Result {
-        write!(w, "{}", chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f"))
+        write!(
+            w,
+            "{}",
+            chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f")
+        )
     }
 }
 

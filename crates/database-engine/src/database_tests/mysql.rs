@@ -132,9 +132,7 @@ fn mysql_access_denied_message_is_preserved() {
     ));
     let message = error.to_string();
 
-    assert!(message.contains(
-        "Access denied for user 'testuser'@'localhost' (using password: YES)"
-    ));
+    assert!(message.contains("Access denied for user 'testuser'@'localhost' (using password: YES)"));
     assert!(!message.contains("<redacted>"));
     assert!(!message.contains("details redacted"));
 }

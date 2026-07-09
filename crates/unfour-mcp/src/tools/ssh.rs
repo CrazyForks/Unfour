@@ -4,6 +4,7 @@ use unfour_core::models::{SshConnection, SshConnectionInput, SshDiagnosticInput}
 
 use crate::command_bus_adapter::CommandBusAdapter;
 
+use super::policy::ToolPolicyEvaluation;
 use super::ssh_risk::{
     build_ssh_exec_command, classify_high_risk_command, is_readonly_ssh_command, is_sensitive_path,
     parse_optional_u64, redact_command_display, shell_quote,
@@ -12,7 +13,6 @@ use super::{
     confirmation::{ensure_confirmed_if_guarded, is_confirmed},
     object_with_allowed_keys, RegisteredTool, ToolAnnotations, ToolCallError, ToolDefinition,
 };
-use super::policy::ToolPolicyEvaluation;
 
 const MAX_DIAGNOSTIC_TIMEOUT_MS: u64 = 60_000;
 const MAX_ONE_SHOT_COMMAND_CHARS: usize = 4096;
@@ -391,7 +391,8 @@ fn ssh_exec(
     );
 
     if let Some((code, reason)) = classify_high_risk_command(&command) {
-        ensure_confirmed_if_guarded(evaluation,
+        ensure_confirmed_if_guarded(
+            evaluation,
             &arguments,
             code,
             reason,
@@ -517,7 +518,8 @@ fn ssh_write_file(
     let workspace = resolve_workspace(command_bus, &arguments)?;
     let timeout_ms = parse_optional_timeout(&arguments)?;
     if workspace.environment_type == "test" || is_sensitive_path(&path) {
-        ensure_confirmed_if_guarded(evaluation,
+        ensure_confirmed_if_guarded(
+            evaluation,
             &arguments,
             "SSH_WRITE_FILE",
             "Writing remote files in test or sensitive paths requires confirmation.",
@@ -608,7 +610,8 @@ fn ssh_patch_file(
         &multi_match_payload,
     );
     if workspace.environment_type == "test" || is_sensitive_path(&path) {
-        ensure_confirmed_if_guarded(evaluation,
+        ensure_confirmed_if_guarded(
+            evaluation,
             &arguments,
             "SSH_PATCH_FILE",
             "Patching remote files in test or sensitive paths requires confirmation.",
@@ -642,7 +645,8 @@ fn ssh_patch_file(
         })?;
     let matches = parse_match_count(&result.stdout);
     if result.exit_status == Some(3) && matches.unwrap_or(0) > 1 {
-        ensure_confirmed_if_guarded(evaluation,
+        ensure_confirmed_if_guarded(
+            evaluation,
             &arguments,
             "SSH_PATCH_MULTIPLE_MATCHES",
             "Patching multiple remote matches requires confirmation.",

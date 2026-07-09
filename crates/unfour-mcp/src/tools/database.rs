@@ -4,11 +4,11 @@ use unfour_core::models::{DatabaseConnection, DatabaseQueryInput};
 
 use crate::command_bus_adapter::CommandBusAdapter;
 
+use super::policy::ToolPolicyEvaluation;
 use super::{
     confirmation::ensure_confirmed_if_guarded, object_with_allowed_keys, RegisteredTool,
     ToolAnnotations, ToolCallError, ToolDefinition,
 };
-use super::policy::ToolPolicyEvaluation;
 
 #[path = "database_create.rs"]
 mod database_create;
@@ -612,7 +612,8 @@ fn db_execute(
     let risk = classify_sql_risk(&sql);
 
     if risk.requires_confirmation {
-        ensure_confirmed_if_guarded(evaluation,
+        ensure_confirmed_if_guarded(
+            evaluation,
             &arguments,
             risk.confirmation_code,
             risk.reason,

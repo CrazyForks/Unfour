@@ -8,11 +8,11 @@ use crate::sanitize::{
     truncate_body, MAX_BODY_PREVIEW_BYTES,
 };
 
+use super::policy::ToolPolicyEvaluation;
 use super::{
     confirmation::ensure_confirmed_if_guarded, object_with_allowed_keys, RegisteredTool,
     ToolAnnotations, ToolCallError, ToolDefinition,
 };
-use super::policy::ToolPolicyEvaluation;
 
 pub(super) fn registered_tools() -> Vec<RegisteredTool> {
     vec![

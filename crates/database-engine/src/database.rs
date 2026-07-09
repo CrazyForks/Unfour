@@ -323,7 +323,8 @@ impl DatabaseService {
             remote_id: None,
         };
         let password_override = secret.as_deref().filter(|value| !value.is_empty());
-        self.test_connection_inner(connection, password_override).await
+        self.test_connection_inner(connection, password_override)
+            .await
     }
 
     async fn test_connection_inner(
@@ -357,7 +358,9 @@ impl DatabaseService {
                 })
             }
             "postgres" => {
-                let pool = self.postgres_pool_with_secret(&connection, password_override).await?;
+                let pool = self
+                    .postgres_pool_with_secret(&connection, password_override)
+                    .await?;
                 let row: (String,) = sqlx::query_as("SELECT version()")
                     .fetch_one(&pool)
                     .await
@@ -370,7 +373,9 @@ impl DatabaseService {
                 })
             }
             "mysql" => {
-                let pool = self.mysql_pool_with_secret(&connection, password_override).await?;
+                let pool = self
+                    .mysql_pool_with_secret(&connection, password_override)
+                    .await?;
                 let row: (String,) = sqlx::query_as("SELECT VERSION()")
                     .fetch_one(&pool)
                     .await
@@ -1731,7 +1736,8 @@ impl DatabaseService {
         connection: &DatabaseConnection,
         password_override: Option<&str>,
     ) -> AppResult<sqlx::PgPool> {
-        let options = pg_connect_options(connection, self.secret_store.as_ref(), password_override).await?;
+        let options =
+            pg_connect_options(connection, self.secret_store.as_ref(), password_override).await?;
         PgPoolOptions::new()
             .max_connections(4)
             .connect_with(options)
@@ -1754,7 +1760,9 @@ impl DatabaseService {
         connection: &DatabaseConnection,
         password_override: Option<&str>,
     ) -> AppResult<sqlx::MySqlPool> {
-        let options = mysql_connect_options(connection, self.secret_store.as_ref(), password_override).await?;
+        let options =
+            mysql_connect_options(connection, self.secret_store.as_ref(), password_override)
+                .await?;
         MySqlPoolOptions::new()
             .max_connections(4)
             .acquire_timeout(Duration::from_secs(5))

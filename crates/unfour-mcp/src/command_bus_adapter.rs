@@ -324,10 +324,9 @@ impl CommandBusAdapter for LocalCommandBusAdapter {
         &self,
         command: ReadCommand,
     ) -> Result<ReadCommandResult, CommandBusAdapterError> {
-        self.run(self.bus.execute_read(command))
-            .map_err(|e| {
-                CommandBusAdapterError::from_app_error("The command-bus read operation failed.", &e)
-            })
+        self.run(self.bus.execute_read(command)).map_err(|e| {
+            CommandBusAdapterError::from_app_error("The command-bus read operation failed.", &e)
+        })
     }
 
     fn execute_saved_api_request(
@@ -351,42 +350,34 @@ impl CommandBusAdapter for LocalCommandBusAdapter {
         timeout_ms: Option<u64>,
     ) -> Result<ApiResponse, CommandBusAdapterError> {
         self.run(self.bus.execute_saved_api_request_in_workspace(
-                workspace_id.map(str::to_string),
-                request_id,
-                timeout_ms,
-            ))
-            .map_err(|e| {
-                CommandBusAdapterError::from_app_error(
-                    "The command-bus API send operation failed.",
-                    &e,
-                )
-            })
+            workspace_id.map(str::to_string),
+            request_id,
+            timeout_ms,
+        ))
+        .map_err(|e| {
+            CommandBusAdapterError::from_app_error("The command-bus API send operation failed.", &e)
+        })
     }
 
     fn send_api_request(
         &self,
         input: ApiRequestInput,
     ) -> Result<ApiResponse, CommandBusAdapterError> {
-        self.run(self.bus.send_api_request(input))
-            .map_err(|e| {
-                CommandBusAdapterError::from_app_error(
-                    "The command-bus API send operation failed.",
-                    &e,
-                )
-            })
+        self.run(self.bus.send_api_request(input)).map_err(|e| {
+            CommandBusAdapterError::from_app_error("The command-bus API send operation failed.", &e)
+        })
     }
 
     fn save_api_request(
         &self,
         input: ApiRequestInput,
     ) -> Result<ApiSavedRequest, CommandBusAdapterError> {
-        self.run(self.bus.save_api_request(input))
-            .map_err(|e| {
-                CommandBusAdapterError::from_app_error(
-                    "The command-bus API request save operation failed.",
-                    &e,
-                )
-            })
+        self.run(self.bus.save_api_request(input)).map_err(|e| {
+            CommandBusAdapterError::from_app_error(
+                "The command-bus API request save operation failed.",
+                &e,
+            )
+        })
     }
 
     fn update_api_request(
@@ -396,16 +387,16 @@ impl CommandBusAdapter for LocalCommandBusAdapter {
         input: ApiRequestInput,
     ) -> Result<ApiSavedRequest, CommandBusAdapterError> {
         self.run(self.bus.update_api_request(
-                workspace_id.to_string(),
-                request_id.to_string(),
-                input,
-            ))
-            .map_err(|e| {
-                CommandBusAdapterError::from_app_error(
-                    "The command-bus API request update operation failed.",
-                    &e,
-                )
-            })
+            workspace_id.to_string(),
+            request_id.to_string(),
+            input,
+        ))
+        .map_err(|e| {
+            CommandBusAdapterError::from_app_error(
+                "The command-bus API request update operation failed.",
+                &e,
+            )
+        })
     }
 
     fn delete_api_request(
@@ -414,15 +405,15 @@ impl CommandBusAdapter for LocalCommandBusAdapter {
         request_id: &str,
     ) -> Result<Vec<ApiSavedRequest>, CommandBusAdapterError> {
         self.run(
-                self.bus
-                    .delete_api_request(workspace_id.to_string(), request_id.to_string()),
+            self.bus
+                .delete_api_request(workspace_id.to_string(), request_id.to_string()),
+        )
+        .map_err(|e| {
+            CommandBusAdapterError::from_app_error(
+                "The command-bus API request delete operation failed.",
+                &e,
             )
-            .map_err(|e| {
-                CommandBusAdapterError::from_app_error(
-                    "The command-bus API request delete operation failed.",
-                    &e,
-                )
-            })
+        })
     }
 
     fn create_api_collection(
@@ -431,15 +422,15 @@ impl CommandBusAdapter for LocalCommandBusAdapter {
         name: &str,
     ) -> Result<ApiCollection, CommandBusAdapterError> {
         self.run(
-                self.bus
-                    .api_collection_create(workspace_id.to_string(), name.to_string()),
+            self.bus
+                .api_collection_create(workspace_id.to_string(), name.to_string()),
+        )
+        .map_err(|e| {
+            CommandBusAdapterError::from_app_error(
+                "The command-bus API collection create operation failed.",
+                &e,
             )
-            .map_err(|e| {
-                CommandBusAdapterError::from_app_error(
-                    "The command-bus API collection create operation failed.",
-                    &e,
-                )
-            })
+        })
     }
 
     fn update_api_collection(
@@ -449,16 +440,16 @@ impl CommandBusAdapter for LocalCommandBusAdapter {
         name: &str,
     ) -> Result<ApiCollection, CommandBusAdapterError> {
         self.run(self.bus.api_collection_rename(
-                workspace_id.to_string(),
-                collection_id.to_string(),
-                name.to_string(),
-            ))
-            .map_err(|e| {
-                CommandBusAdapterError::from_app_error(
-                    "The command-bus API collection update operation failed.",
-                    &e,
-                )
-            })
+            workspace_id.to_string(),
+            collection_id.to_string(),
+            name.to_string(),
+        ))
+        .map_err(|e| {
+            CommandBusAdapterError::from_app_error(
+                "The command-bus API collection update operation failed.",
+                &e,
+            )
+        })
     }
 
     fn delete_api_collection(
@@ -467,15 +458,15 @@ impl CommandBusAdapter for LocalCommandBusAdapter {
         collection_id: &str,
     ) -> Result<Vec<ApiCollection>, CommandBusAdapterError> {
         self.run(
-                self.bus
-                    .api_collection_delete(workspace_id.to_string(), collection_id.to_string()),
+            self.bus
+                .api_collection_delete(workspace_id.to_string(), collection_id.to_string()),
+        )
+        .map_err(|e| {
+            CommandBusAdapterError::from_app_error(
+                "The command-bus API collection delete operation failed.",
+                &e,
             )
-            .map_err(|e| {
-                CommandBusAdapterError::from_app_error(
-                    "The command-bus API collection delete operation failed.",
-                    &e,
-                )
-            })
+        })
     }
 
     fn list_db_connections(
@@ -508,13 +499,12 @@ impl CommandBusAdapter for LocalCommandBusAdapter {
         &self,
         input: CredentialCreateInput,
     ) -> Result<CredentialMetadata, CommandBusAdapterError> {
-        self.run(self.bus.create_credential(input))
-            .map_err(|e| {
-                CommandBusAdapterError::from_app_error(
-                    "The command-bus credential create operation failed.",
-                    &e,
-                )
-            })
+        self.run(self.bus.create_credential(input)).map_err(|e| {
+            CommandBusAdapterError::from_app_error(
+                "The command-bus credential create operation failed.",
+                &e,
+            )
+        })
     }
 
     fn get_db_schema(
@@ -523,16 +513,16 @@ impl CommandBusAdapter for LocalCommandBusAdapter {
         connection_id: &str,
     ) -> Result<DatabaseSchema, CommandBusAdapterError> {
         self.run(self.bus.database_schema(
-                workspace_id.to_string(),
-                connection_id.to_string(),
-                None,
-            ))
-            .map_err(|e| {
-                CommandBusAdapterError::from_app_error(
-                    "The command-bus database schema operation failed.",
-                    &e,
-                )
-            })
+            workspace_id.to_string(),
+            connection_id.to_string(),
+            None,
+        ))
+        .map_err(|e| {
+            CommandBusAdapterError::from_app_error(
+                "The command-bus database schema operation failed.",
+                &e,
+            )
+        })
     }
 
     fn execute_db_query(
@@ -554,38 +544,30 @@ impl CommandBusAdapter for LocalCommandBusAdapter {
         connection_id: &str,
     ) -> Result<DatabaseTestResult, CommandBusAdapterError> {
         self.run(
-                self.bus
-                    .test_database_connection(workspace_id.to_string(), connection_id.to_string()),
+            self.bus
+                .test_database_connection(workspace_id.to_string(), connection_id.to_string()),
+        )
+        .map_err(|e| {
+            CommandBusAdapterError::from_app_error(
+                "The command-bus database connection test failed.",
+                &e,
             )
-            .map_err(|e| {
-                CommandBusAdapterError::from_app_error(
-                    "The command-bus database connection test failed.",
-                    &e,
-                )
-            })
+        })
     }
 
     fn system_health(&self) -> Result<SystemHealth, CommandBusAdapterError> {
-        self.run(self.bus.system_health())
-            .map_err(|e| {
-                CommandBusAdapterError::from_app_error(
-                    "The command-bus system health read failed.",
-                    &e,
-                )
-            })
+        self.run(self.bus.system_health()).map_err(|e| {
+            CommandBusAdapterError::from_app_error("The command-bus system health read failed.", &e)
+        })
     }
 
     fn run_ssh_diagnostic(
         &self,
         input: SshDiagnosticInput,
     ) -> Result<SshDiagnosticResult, CommandBusAdapterError> {
-        self.run(self.bus.run_ssh_diagnostic(input))
-            .map_err(|e| {
-                CommandBusAdapterError::from_ssh_app_error(
-                    "The command-bus SSH diagnostic failed.",
-                    &e,
-                )
-            })
+        self.run(self.bus.run_ssh_diagnostic(input)).map_err(|e| {
+            CommandBusAdapterError::from_ssh_app_error("The command-bus SSH diagnostic failed.", &e)
+        })
     }
 
     fn list_ssh_connections(
@@ -605,26 +587,21 @@ impl CommandBusAdapter for LocalCommandBusAdapter {
         &self,
         input: SshConnectionInput,
     ) -> Result<SshConnection, CommandBusAdapterError> {
-        self.run(self.bus.save_ssh_connection(input))
-            .map_err(|e| {
-                CommandBusAdapterError::from_app_error(
-                    "The command-bus SSH connection save operation failed.",
-                    &e,
-                )
-            })
+        self.run(self.bus.save_ssh_connection(input)).map_err(|e| {
+            CommandBusAdapterError::from_app_error(
+                "The command-bus SSH connection save operation failed.",
+                &e,
+            )
+        })
     }
 
     fn run_ssh_command(
         &self,
         input: SshDiagnosticInput,
     ) -> Result<SshDiagnosticResult, CommandBusAdapterError> {
-        self.run(self.bus.run_ssh_command(input))
-            .map_err(|e| {
-                CommandBusAdapterError::from_ssh_app_error(
-                    "The command-bus SSH command failed.",
-                    &e,
-                )
-            })
+        self.run(self.bus.run_ssh_command(input)).map_err(|e| {
+            CommandBusAdapterError::from_ssh_app_error("The command-bus SSH command failed.", &e)
+        })
     }
 }
 
