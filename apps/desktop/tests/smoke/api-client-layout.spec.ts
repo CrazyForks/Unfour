@@ -31,16 +31,12 @@ test("api client keeps a Postman-like vertical workbench layout", async ({
   await expect(page.getByText("Search or run command")).toHaveCount(0);
   await expect(page.getByText(/^unsaved$/i)).toHaveCount(0);
 
-  const requestHelp = page.getByText(
-    "Query parameters appended to the request URL.",
-  );
-  const responseEmptyState = page.getByText(
-    "Send a request to inspect the response",
-  );
-  await expect(requestHelp).toBeVisible();
+  const requestAnchor = page.getByLabel("Request URL");
+  const responseEmptyState = page.getByText("No response yet");
+  await expect(requestAnchor).toBeVisible();
   await expect(responseEmptyState).toBeVisible();
 
-  const requestBox = await requestHelp.boundingBox();
+  const requestBox = await requestAnchor.boundingBox();
   const responseBox = await responseEmptyState.boundingBox();
   expect(requestBox).not.toBeNull();
   expect(responseBox).not.toBeNull();

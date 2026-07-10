@@ -27,13 +27,17 @@ test("app shell renders and module switching stays stable", async ({ page }) => 
     "title",
     "SSH Terminal",
   );
-  await expect(moduleNav.getByRole("button", { name: "DB" })).toHaveAttribute(
-    "title",
-    "Database",
-  );
+  await expect(
+    moduleNav.getByRole("button", { name: "Database" }),
+  ).toHaveAttribute("title", "Database");
 
-  for (const moduleName of ["SSH", "DB", "API"]) {
-    await moduleNav.getByRole("button", { name: moduleName }).click();
+  const moduleLabels: Record<string, string> = {
+    API: "API Client",
+    SSH: "SSH Terminal",
+    DB: "Database",
+  };
+  for (const label of Object.values(moduleLabels)) {
+    await moduleNav.getByRole("button", { name: label }).click();
     await expect(page.locator(".app-shell")).toBeVisible();
   }
 
