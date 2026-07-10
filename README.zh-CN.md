@@ -14,12 +14,11 @@
 </div>
 
 > [!NOTE]
-> Unfour `v0.1.0` 是 early pre-release（早期预发布版），不建议用于生产环境。安装包尚未签名，
-> 可能触发 SmartScreen 或其他操作系统安全警告；请根据自己的要求验证此版本。
+> Unfour `v0.1.0`。安装包尚未签名，可能触发 SmartScreen 或其他操作系统安全警告；请根据自己的要求验证此版本。
 
 ## 下载
 
-请从 [GitHub Releases 下载当前的 `v0.1.0` pre-release](https://github.com/zyqzyq/Unfour/releases/tag/v0.1.0)。
+请从 [GitHub Releases 下载 `v0.1.0`](https://github.com/zyqzyq/Unfour/releases/tag/v0.1.0)。
 
 - Windows：普通用户推荐 NSIS `.exe`；偏好 MSI 或需要软件部署管理的用户可使用 MSI `.msi`。
   两种格式安装的是同一个 Unfour 版本，请二选一。
@@ -102,7 +101,7 @@ pnpm run tauri build    # 生成 Tauri 发布包
 
 ## 发布状态
 
-当前已发布 `v0.1.0 pre-release`。这是一个 early pre-release（早期预发布版），发布就绪程度受以下验证证据限制：
+当前已发布 `v0.1.0`。发布就绪程度受以下验证证据限制：
 
 - `docs/testing/release-verification.md`
 - `docs/testing/manual-test-cases.md`
@@ -111,7 +110,7 @@ pnpm run tauri build    # 生成 Tauri 发布包
 - `docs/release/signing.md`
 
 Windows 当前同时提供 NSIS `.exe` 与 MSI `.msi`：普通用户推荐 NSIS，偏好 MSI 或需要软件部署管理的用户选择 MSI。
-两种格式应二选一。安装包尚未签名，可能触发 SmartScreen；不建议将此 pre-release 用于生产环境。
+两种格式应二选一。安装包尚未签名，可能触发 SmartScreen。
 macOS 与 Linux 在完成真实设备冒烟检查前仍是 experimental/unverified（实验性/未验证）。除非发布检查确实成功执行，
 或有当前仓库证据支撑，否则不得声称其通过。
 

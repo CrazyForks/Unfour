@@ -1,7 +1,7 @@
 # Release Verification
 
-This is the release verification matrix for the published `v0.1.0
-pre-release`. Results below reflect the current repository state and the checks
+This is the release verification matrix for the published `v0.1.0`
+release. Results below reflect the current repository state and the checks
 run for this release follow-up. Do not treat an artifact build as proof of
 platform, live-service, or credential-store verification.
 
@@ -88,7 +88,7 @@ Historical references inside `docs/archive/` may remain as archived context.
 Record release evidence in release notes or a release-candidate checklist:
 
 ```text
-Release candidate: v0.1.0 pre-release
+Release candidate: v0.1.0
 Commit: 7b5a499 (working tree includes this documentation follow-up)
 Platform: Windows host used for local checks; clean NSIS and MSI bundles rebuilt here
 

@@ -14,13 +14,13 @@
 </div>
 
 > [!WARNING]
-> Unfour `v0.1.0` is an early pre-release. It is not recommended for production
-> use. Installers are unsigned and may trigger SmartScreen or other operating-
-> system security warnings; validate the release against your own requirements.
+> Unfour `v0.1.0`. Installers are unsigned and may trigger SmartScreen or other
+> operating-system security warnings; validate the release against your own
+> requirements.
 
 ## Download
 
-Download the current [`v0.1.0` pre-release from GitHub Releases](https://github.com/zyqzyq/Unfour/releases/tag/v0.1.0).
+Download [`v0.1.0` from GitHub Releases](https://github.com/zyqzyq/Unfour/releases/tag/v0.1.0).
 
 - Windows: NSIS `.exe` is recommended for ordinary users. MSI `.msi` is also
   available for users who prefer MSI or need software deployment management;
@@ -112,8 +112,7 @@ map.
 
 ## Release Status
 
-The current published version is `v0.1.0 pre-release`. This is an early
-pre-release, and release readiness is limited by the verification evidence in:
+The current published version is `v0.1.0`. Release readiness is documented in:
 
 - `docs/testing/release-verification.md`
 - `docs/testing/manual-test-cases.md`
@@ -124,7 +123,7 @@ pre-release, and release readiness is limited by the verification evidence in:
 Windows distribution provides NSIS `.exe` and MSI `.msi`. NSIS is recommended
 for ordinary users; MSI is for MSI preference or software deployment
 management. Choose one format. Installers are unsigned and may trigger
-SmartScreen. Do not use this pre-release in production. macOS and Linux remain
+SmartScreen. macOS and Linux remain
 experimental/unverified until real-device smoke checks are complete.
 Do not claim a release check passes unless it was run successfully for the
 target platform or is backed by current repository evidence.

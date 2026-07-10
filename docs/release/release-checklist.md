@@ -1,6 +1,6 @@
 # Release Checklist
 
-This checklist is for the published `v0.1.0 pre-release`.
+This checklist is for the published `v0.1.0` release.
 
 ## Release candidate setup
 
@@ -11,7 +11,7 @@ This checklist is for the published `v0.1.0 pre-release`.
   follow-up work.
 - Review `README.md`, `README.zh-CN.md`, `CHANGELOG.md`, `SECURITY.md`, and
   `LICENSE`.
-- Confirm release notes call this an early pre-release and do not claim
+- Confirm release notes describe this as a release and do not claim
   unverified platforms or live-service checks are supported.
 
 ## Required automated verification
@@ -68,5 +68,5 @@ asset set must contain both the NSIS `.exe` and MSI `.msi` for the same version.
 ## Go / no-go
 
 Do not publish if a required automated verification step is `FAIL`. A
-`NOT RUN` or `NOT VERIFIED` item requires an explicit early-pre-release scope
-and maintainer acceptance; it must not be rewritten as `PASS`.
+`NOT RUN` or `NOT VERIFIED` item requires maintainer acceptance; it must not be
+rewritten as `PASS`.

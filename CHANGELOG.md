@@ -8,7 +8,7 @@ This file is the user-facing change history for Unfour, following
 
 ## [0.1.0] - 2026-07-09
 
-First public pre-release.
+First public release.
 
 ### Added
 
@@ -34,7 +34,6 @@ First public pre-release.
 ### Known limitations
 
 - Signing is not yet complete; unsigned artifacts may trigger OS warnings.
-- `v0.1.0` is an early pre-release and is not recommended for production use.
 - Windows distributes both NSIS `.exe` and MSI `.msi` for the same version. NSIS
   is recommended for ordinary users; MSI is available for MSI preference or
   software deployment management. Choose one format because installing both

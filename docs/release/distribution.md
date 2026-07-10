@@ -1,7 +1,7 @@
 # Distribution
 
 This document describes the public distribution format and release-asset
-verification for Unfour `v0.1.0 pre-release`.
+verification for Unfour `v0.1.0`.
 
 ## Release workflow
 
@@ -13,7 +13,7 @@ GitHub Actions runs the release workflow in three gates:
    Windows matrix keeps the shared Tauri `bundle.targets: "all"` configuration
    and stages both Windows installer formats.
 3. `checksum-release` downloads all platform artifacts, generates one
-   `SHA256SUMS.txt` from the actual files, and creates the pre-release with the
+   `SHA256SUMS.txt` from the actual files, and creates the release with the
    installers and checksum manifest.
 
 If `verify` fails, the build jobs do not run and no release assets are created.
@@ -25,7 +25,7 @@ For local builds, use `pnpm run tauri build`. On Windows, the shared
 
 | Platform | Official distribution status | Format |
 | --- | --- | --- |
-| Windows x64 | Official pre-release distribution; choose one format | NSIS `.exe` or MSI `.msi` |
+| Windows x64 | Official distribution; choose one format | NSIS `.exe` or MSI `.msi` |
 | macOS arm64/x64 | Experimental / unverified until real-device smoke checks | Existing Tauri `.dmg` and archive outputs |
 | Linux x64 | Experimental / unverified until real-device smoke checks | Existing Tauri `.AppImage`, `.deb`, and available package outputs |
 
@@ -60,7 +60,6 @@ Get-FileHash -Algorithm SHA256 .\Unfour-*.exe
 
 ## Release caveats
 
-- `v0.1.0` is an early pre-release and is not recommended for production use.
 - Installers are unsigned and may trigger SmartScreen or other operating-system
   warnings.
 - macOS and Linux must remain labeled experimental/unverified until real-device
