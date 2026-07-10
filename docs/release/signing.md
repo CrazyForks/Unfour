@@ -11,9 +11,9 @@ must provide checksums for manual verification.
 
 ## Windows
 
-Expected production posture:
+Expected production posture for the published Windows formats:
 
-- code-sign `.msi` and `.exe` artifacts with an Authenticode certificate;
+- code-sign the NSIS `.exe` and MSI `.msi` artifacts with an Authenticode certificate;
 - verify signatures after build;
 - record SmartScreen behavior during installer smoke.
 

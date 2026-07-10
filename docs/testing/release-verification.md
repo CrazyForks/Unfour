@@ -1,10 +1,9 @@
 # Release Verification
 
-This is the release verification matrix for the `v0.1.0` public release.
-
-Do not mark a verification item as passing unless the command or manual check
-was run successfully for the release candidate, or the result is backed by
-current repository evidence cited in the release notes.
+This is the release verification matrix for the published `v0.1.0
+pre-release`. Results below reflect the current repository state and the checks
+run for this release follow-up. Do not treat an artifact build as proof of
+platform, live-service, or credential-store verification.
 
 ## Status Labels
 
@@ -23,17 +22,22 @@ Run from the repository root.
 
 | Area | Command | Required for v0.1.0 | Result |
 | --- | --- | --- | --- |
-| Working tree | `git status --short` | Yes | PASS (clean) |
-| Patch hygiene | `git diff --check` | Yes | PASS |
-| Frontend build | `pnpm run build` | Yes | PASS |
-| Large-file guard | `pnpm run check:large-files` | Yes | PASS (pre-existing P1 warnings, non-blocking) |
+| Working tree | `git status --short` | Yes | NOT RUN (working tree contains this task's changes; not a clean release candidate) |
+| Patch hygiene | `git diff --check` | Yes | PASS (only line-ending normalization warnings) |
+| Dependency installation | `pnpm install --frozen-lockfile` | Yes | PASS (lockfile up to date) |
+| Frontend build | `pnpm run build` | Yes | PASS (executed inside `pnpm run check`) |
+| Large-file guard | `pnpm run check:large-files` | Yes | FAIL (6 critical, 5 P0, and 14 P1 findings; 5 blocking findings) |
 | Frontend lint | `pnpm run lint` | Yes, warnings must be reviewed | PASS (0 errors, 40 warnings) |
-| Frontend unit tests | `pnpm run test` | Yes | PASS (303 passed) |
-| Playwright smoke | `pnpm run test:e2e` | Yes | NOT RUN (no Playwright browser provisioned in this environment) |
-| Rust workspace check | `pnpm run check:rust` | Yes | PASS |
+| Frontend unit tests | `pnpm run test` | Yes | PASS (58 files, 303 tests) |
+| Playwright browser install | `pnpm exec playwright install chromium` | When E2E is enabled | PASS |
+| Playwright smoke | `pnpm run test:e2e` | Yes | FAIL (2 smoke tests failed on existing UI selectors) |
+| Rust workspace check | `pnpm run check:rust` | Yes | PASS (executed inside `pnpm run check`) |
 | Rust SSH feature check | `pnpm run check:rust:ssh` | Yes | PASS |
-| Rust tests | `pnpm run test:rust` | Yes | PENDING |
-| Tauri release bundle | `pnpm run tauri build` | Yes, per target platform | PENDING |
+| Aggregate repository check | `pnpm run check` | Yes | FAIL (build and Rust check passed; large-file guard failed) |
+| Rust tests | `pnpm run test:rust` | Yes | PASS (all executed tests passed; platform keychain test ignored) |
+| Windows NSIS + MSI bundles | `pnpm run tauri build` with `bundle.targets: "all"` | Yes | PASS (clean output produced `target/release/bundle/nsis/Unfour_0.1.0_x64-setup.exe` and `target/release/bundle/msi/Unfour_0.1.0_x64_en-US.msi`) |
+| Explicit multi-bundle CLI experiment | `pnpm run tauri build --bundles nsis,msi` | Informational | FAIL (pnpm/PowerShell forwarded `nsis msi` as one invalid value; workflow intentionally relies on the tested shared `bundle.targets: "all"` configuration) |
+| macOS/Linux Tauri release bundle | `pnpm run tauri build` | Yes, per target platform | NOT VERIFIED (no macOS/Linux release runner) |
 
 If `pnpm run check` is used, record the subcommands it ran and still record
 any checks not included in that aggregate command.
@@ -42,9 +46,10 @@ any checks not included in that aggregate command.
 
 | Platform | Required checks | Result |
 | --- | --- | --- |
-| Windows | Release bundle builds, installer launches cleanly, first viewport renders, OS credential create/read/delete works for release credential categories, uninstall does not leave a broken install state. | NOT VERIFIED (no release artifact / OS smoke in this environment) |
-| macOS | Bundle builds, app launches, notarization/signing status is recorded, Apple Keychain create/read/delete is verified, first viewport renders. | NOT VERIFIED |
-| Linux | AppImage/deb or selected package builds, app launches, Linux Secret Service create/read/delete is verified, first viewport renders. | NOT VERIFIED |
+| Windows | Both NSIS/MSI release bundles, installer launch, first viewport, OS credential behavior, uninstall and upgrade. | PARTIAL: PASS (user-reported Windows NSIS install and app launch); NOT VERIFIED (MSI install and remaining Windows smoke not run here) |
+| Windows shortcut diagnosis | Standalone NSIS one shortcut, standalone MSI one shortcut, both formats causing two icons. | NOT VERIFIED for standalone counts; PASS for user-reported NSIS+MSI duplicate icons and source search finding no project-owned duplicate shortcut code |
+| macOS | Bundle builds, app launches, notarization/signing status, Apple Keychain, first viewport. | NOT VERIFIED (no real macOS device) |
+| Linux | AppImage/deb or selected package builds, app launches, Secret Service, first viewport. | NOT VERIFIED (no real Linux device) |
 
 Platform checks that cannot be run must be recorded as `NOT VERIFIED` with a
 reason.
@@ -83,32 +88,44 @@ Historical references inside `docs/archive/` may remain as archived context.
 Record release evidence in release notes or a release-candidate checklist:
 
 ```text
-Release candidate: v0.1.0
-Commit: aeeed0e (release commit to be set when docs are committed)
-Platform: Windows x64 (primary build target in this environment)
+Release candidate: v0.1.0 pre-release
+Commit: 7b5a499 (working tree includes this documentation follow-up)
+Platform: Windows host used for local checks; clean NSIS and MSI bundles rebuilt here
 
 Automated checks:
-- git status --short: PASS (clean)
-- git diff --check: PASS
-- pnpm run build: PASS
-- pnpm run lint: PASS (0 errors, 40 warnings — pre-existing style warnings reviewed)
-- pnpm run test: PASS (303 passed)
-- pnpm run test:e2e: NOT RUN (no Playwright Chromium browser provisioned: ~/.cache/ms-playwright absent; run `npx playwright install chromium` then re-run)
-- pnpm run check:rust: PASS
+- pnpm install --frozen-lockfile: PASS
+- pnpm run build: PASS (as part of `pnpm run check`)
+- pnpm run lint: PASS (0 errors, 40 warnings)
+- pnpm run test: PASS (58 files, 303 tests)
+- pnpm exec playwright install chromium: PASS
+- pnpm run test:e2e: FAIL (2 existing selector assertions failed)
+- pnpm run check:rust: PASS (as part of `pnpm run check`)
 - pnpm run check:rust:ssh: PASS
-- pnpm run test:rust: PENDING
-- pnpm run tauri build: PENDING
+- pnpm run check: FAIL (large-file guard blocked the aggregate check)
+- pnpm run test:rust: PASS (all executed tests passed; OS keychain test ignored)
+- pnpm run tauri build: PASS (clean Windows output contains both NSIS and MSI)
+- explicit `--bundles nsis,msi` experiment: FAIL (argument forwarding issue; not used by workflow)
+- YAML lint for `.github/workflows/release.yml`: PASS
 
 Manual checks:
-- API Client: NOT VERIFIED
+- Windows NSIS install: PASS (user-reported)
+- Windows MSI install: NOT VERIFIED (no standalone MSI install evidence)
+- Application startup: PASS (user-reported after NSIS install)
+- NSIS + MSI duplicate shortcuts: PASS (user-reported observation)
+- Standalone NSIS one shortcut: NOT VERIFIED
+- Standalone MSI one shortcut: NOT VERIFIED
+- API Client: NOT VERIFIED as a release manual smoke
 - SSH Terminal: NOT VERIFIED (no live SSH host)
 - Database: NOT VERIFIED (no live DB engines)
-- Workspace: NOT VERIFIED
+- Workspace: NOT VERIFIED as a release manual smoke
 - MCP: NOT VERIFIED
-- Installer: NOT VERIFIED
-- Signing/notarization: NOT VERIFIED (unsigned; see docs/release/signing.md)
+- Windows uninstall/upgrade: NOT VERIFIED
+- macOS/Linux installer smoke: NOT VERIFIED
+- Signing/notarization: NOT VERIFIED; installers are unsigned and may trigger SmartScreen
 
 Known unresolved risks:
-- Signing/notarization incomplete; unsigned artifacts may trigger OS warnings.
-- Playwright e2e, live SSH/DB gates, and per-platform installer smoke not run in this environment.
+- `pnpm run check` is currently blocked by the repository's existing large-file guard findings.
+- Playwright smoke currently fails on two existing selectors and therefore blocks the release workflow.
+- macOS/Linux release bundle generation and real-device smoke remain unverified here.
+- Signing/notarization, live SSH/DB gates, and system credential-store checks are not complete.
 ```

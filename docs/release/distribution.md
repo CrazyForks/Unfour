@@ -1,95 +1,78 @@
 # Distribution
 
-This document describes how public release artifacts should be built, named,
-and verified.
+This document describes the public distribution format and release-asset
+verification for Unfour `v0.1.0 pre-release`.
 
-## Build Command
+## Release workflow
 
-From the repository root:
+GitHub Actions runs the release workflow in three gates:
 
-```bash
-pnpm run tauri build
-```
+1. `verify` installs the frozen dependency graph and runs lint, unit tests,
+   repository checks, Rust tests, and Playwright Chromium smoke tests.
+2. The platform matrix builds the existing macOS and Linux targets. The
+   Windows matrix keeps the shared Tauri `bundle.targets: "all"` configuration
+   and stages both Windows installer formats.
+3. `checksum-release` downloads all platform artifacts, generates one
+   `SHA256SUMS.txt` from the actual files, and creates the pre-release with the
+   installers and checksum manifest.
 
-Run the full release verification matrix before publishing artifacts. A bundle
-that builds successfully is not automatically release-ready.
+If `verify` fails, the build jobs do not run and no release assets are created.
 
-## Target Artifacts
+For local builds, use `pnpm run tauri build`. On Windows, the shared
+`bundle.targets: "all"` configuration produces both installer formats.
 
-Expected Tauri artifact types depend on the target platform and local Tauri
-configuration:
+## Target artifacts
 
-| Platform | Typical artifact types |
-| --- | --- |
-| Windows | `.msi`, `.exe` |
-| macOS | `.dmg`, `.app` bundle, optional archive |
-| Linux | `.AppImage`, `.deb`, optional `.rpm` depending on configuration |
+| Platform | Official distribution status | Format |
+| --- | --- | --- |
+| Windows x64 | Official pre-release distribution; choose one format | NSIS `.exe` or MSI `.msi` |
+| macOS arm64/x64 | Experimental / unverified until real-device smoke checks | Existing Tauri `.dmg` and archive outputs |
+| Linux x64 | Experimental / unverified until real-device smoke checks | Existing Tauri `.AppImage`, `.deb`, and available package outputs |
 
-Record the exact artifact names produced for the release candidate.
+Windows NSIS and MSI install the same Unfour version. NSIS `.exe` is the
+recommended choice for ordinary users. MSI `.msi` is provided for users who
+prefer MSI or need software deployment management. Users should choose one.
 
-## Naming
+Installing both formats on the same device is not recommended because it may
+lead to duplicate desktop shortcuts, duplicate uninstall entries, and
+confusing upgrade paths. Cross-format detection, automatic uninstall, and
+NSIS/MSI cross-upgrade are not implemented at this stage.
 
-Artifact names should make the target obvious:
-
-```text
-Unfour-<version>-windows-x64.<ext>
-Unfour-<version>-macos-arm64.<ext>
-Unfour-<version>-macos-x64.<ext>
-Unfour-<version>-linux-x64.<ext>
-```
-
-If Tauri produces different default names, the release page should still label
-the platform and architecture clearly.
+The repository was checked for application code or installer hooks that create
+desktop shortcuts. No such project-owned shortcut creation code was found.
+The available user evidence shows two icons when NSIS and MSI are installed
+together; this is attributed to the two installer packages, not to an extra
+shortcut created by the application. Standalone NSIS and standalone MSI
+shortcut counts still require separate clean-device smoke checks.
 
 ## Checksums
 
-Generate a checksum for every published artifact. SHA-256 is the default:
+The final `checksum-release` job generates a single `SHA256SUMS.txt` using
+`sha256sum` over the exact staged release assets. It uploads that file to the
+same GitHub Release as the installers. Each line contains the SHA-256 followed
+by the exact installer filename.
 
-```bash
-sha256sum <artifact>
-```
-
-On Windows PowerShell:
+PowerShell can verify a downloaded Windows installer with:
 
 ```powershell
-Get-FileHash -Algorithm SHA256 <artifact>
+Get-FileHash -Algorithm SHA256 .\Unfour-*.exe
 ```
 
-Publish checksums with the release notes.
+## Release caveats
 
-## Installer Smoke
+- `v0.1.0` is an early pre-release and is not recommended for production use.
+- Installers are unsigned and may trigger SmartScreen or other operating-system
+  warnings.
+- macOS and Linux must remain labeled experimental/unverified until real-device
+  launch and smoke checks are recorded; a successful CI bundle build is not
+  platform verification.
+- Real SSH, PostgreSQL, MySQL/MariaDB, and system Keychain/Secret Service checks
+  are not represented as automated passes unless they were run against those
+  real systems.
 
-For each release artifact:
+## Installer smoke
 
-- install on a clean or disposable test profile;
-- launch the app;
-- confirm the first viewport renders;
-- switch between API Client, SSH Terminal, and Database;
-- quit and relaunch;
-- uninstall or remove the artifact;
-- record warnings from the OS, especially for unsigned builds.
-
-## Upgrade Smoke
-
-When a previous build exists:
-
-- install the previous build;
-- create a disposable workspace with sample API, SSH, and Database metadata;
-- install the release candidate over it;
-- confirm the app launches and existing local data is still readable;
-- confirm no secrets are exposed in SQLite or logs.
-
-## Release Notes
-
-Release notes should include:
-
-- version and commit;
-- supported platforms;
-- artifact checksums;
-- signing/notarization status;
-- verification summary;
-- known limitations;
-- security reporting link;
-- warning if live SSH, database, or platform smoke checks are not complete.
-
-Do not describe unverified behavior as passing.
+For each platform that is claimed as verified, use a clean or disposable test
+profile to install, launch, render the first viewport, exercise the documented
+module navigation, quit and relaunch, and uninstall. Record OS warnings,
+signing status, and upgrade behavior in the release verification matrix.

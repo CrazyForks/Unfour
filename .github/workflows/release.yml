@@ -10,8 +10,64 @@ permissions:
   contents: write
 
 jobs:
+  verify:
+    name: Verify release candidate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Tauri system dependencies (Linux)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libgtk-3-dev \
+            libsoup-3.0-dev \
+            libjavascriptcoregtk-4.1-dev
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: '. -> target'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Lint
+        run: pnpm run lint
+
+      - name: Frontend unit tests
+        run: pnpm run test
+
+      - name: Repository checks
+        run: pnpm run check
+
+      - name: Rust SSH feature check
+        run: pnpm run check:rust:ssh
+
+      - name: Rust tests
+        run: pnpm run test:rust
+
+      - name: Playwright smoke tests
+        run: pnpm run test:e2e
+
   build:
     name: Build (${{ matrix.platform }})
+    needs: verify
     strategy:
       fail-fast: false
       matrix:
@@ -64,16 +120,100 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build and release
-        uses: tauri-apps/tauri-action@v0
+      - name: Clean cached Windows bundle output
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          $bundleRoot = Join-Path $env:GITHUB_WORKSPACE 'target/release/bundle'
+          if (Test-Path -LiteralPath $bundleRoot) {
+            Remove-Item -LiteralPath $bundleRoot -Recurse -Force
+          }
+
+      - name: Build bundles
+        run: pnpm run tauri build ${{ matrix.args }}
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           UNFOUR_TAURI_TARGET: ${{ matrix.target }}
+
+      - name: Collect Windows NSIS and MSI assets
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          $bundleFiles = Get-ChildItem -Path "target" -Recurse -File |
+            Where-Object { $_.FullName -match '[\\/]release[\\/]bundle[\\/]' }
+          $nsisAssets = @($bundleFiles | Where-Object { $_.Extension -ieq '.exe' })
+          $msiAssets = @($bundleFiles | Where-Object { $_.Extension -ieq '.msi' })
+          if ($nsisAssets.Count -eq 0 -or $msiAssets.Count -eq 0) {
+            throw 'Windows release must produce both an NSIS .exe and an MSI .msi asset.'
+          }
+          New-Item -ItemType Directory -Force -Path release-assets | Out-Null
+          foreach ($asset in @($nsisAssets + $msiAssets)) {
+            Copy-Item -LiteralPath $asset.FullName -Destination (Join-Path 'release-assets' $asset.Name)
+          }
+
+      - name: Collect macOS and Linux assets
+        if: matrix.platform != 'windows-latest'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          find target -type f -path '*/release/bundle/*' \
+            \( -iname '*.dmg' -o -iname '*.tar.gz' -o -iname '*.appimage' -o -iname '*.deb' -o -iname '*.rpm' \) \
+            -exec cp {} release-assets/ \;
+          test -n "$(find release-assets -maxdepth 1 -type f -print -quit)"
+
+      - name: Upload release assets for aggregation
+        uses: actions/upload-artifact@v4
         with:
-          projectPath: apps/desktop
-          tagName: ${{ github.ref_name }}
-          releaseName: 'Unfour ${{ github.ref_name }}'
-          releaseBody: 'See the assets below to download and install this version. This is an early alpha build — see the README for caveats.'
-          releaseDraft: false
+          name: release-assets-${{ matrix.target }}
+          path: release-assets/*
+          if-no-files-found: error
+
+  checksum-release:
+    name: Generate checksums and publish release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download build assets
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-assets-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Generate SHA-256 manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$(find release-assets -maxdepth 1 -type f -print -quit)"
+          (
+            cd release-assets
+            sha256sum -- *
+          ) > SHA256SUMS.txt
+          test -s SHA256SUMS.txt
+
+      - name: Create release and upload assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Unfour ${{ github.ref_name }}
           prerelease: true
-          args: ${{ matrix.args }}
+          body: |
+            Unfour `${{ github.ref_name }}` is an early pre-release. Do not use it in production without your own validation.
+
+            This release is unsigned and may trigger SmartScreen or other operating-system security warnings.
+
+            Windows provides two installers for the same Unfour version: NSIS `.exe` is recommended for ordinary users; MSI `.msi` is for users who prefer MSI or need software deployment management. Choose one format.
+
+            Do not install both Windows formats on the same device: doing so may create duplicate shortcuts or uninstall entries and can make upgrade paths confusing. Cross-format detection, automatic uninstall, and NSIS/MSI cross-upgrade are not implemented at this stage.
+
+            macOS and Linux artifacts are experimental and unverified until real-device smoke checks are recorded; they must not be treated as supported or verified platforms yet.
+
+            SHA-256 values for all published installers are in `SHA256SUMS.txt`.
+
+            - [README](https://github.com/zyqzyq/Unfour/blob/main/README.md)
+            - [CHANGELOG](https://github.com/zyqzyq/Unfour/blob/main/CHANGELOG.md)
+            - [SECURITY](https://github.com/zyqzyq/Unfour/blob/main/SECURITY.md)
+          files: |
+            release-assets/*
+            SHA256SUMS.txt
+          fail_on_unmatched_files: true
