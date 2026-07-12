@@ -28,13 +28,29 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "..");
 
 const uiStylesDir = join(root, "packages", "ui", "src", "styles");
+const appShellPackagePath = join(root, "packages", "app-shell", "package.json");
+const appShellStylesPath = join(root, "packages", "app-shell", "src", "styles", "index.css");
 const appsDir = join(root, "apps");
 
 // Prefixes that are always considered shared, regardless of whether the exact
 // name was seen in @unfour/ui (covers any future --u-*/--panel-*/--app-* token).
 const FORBIDDEN_PREFIXES = ["--u-", "--panel-", "--app-"];
-// Pro edition is allowed to own its own --pro-* namespace.
-const ALLOWED_PREFIXES = ["--pro-"];
+const APP_SHELL_SELECTORS = [
+  ".app-shell",
+  ".u-statusbar",
+  ".surface-panel",
+  ".surface-header",
+  ".empty-state",
+  ".sidebar-shell",
+  ".sidebar-divider",
+  ".workspace-card",
+  ".subpanel",
+  ".form-band",
+  ".data-table",
+  "::-webkit-scrollbar",
+  ".u-dialog-overlay",
+  ".u-dialog-content",
+];
 
 /** Strip /* ... *\/ block comments so commented-out tokens aren't flagged. */
 function stripComments(src) {
@@ -110,15 +126,40 @@ function main() {
   }
 
   const violations = [];
+  if (!existsSync(appShellStylesPath)) {
+    violations.push({ file: appShellStylesPath, line: 1, name: "missing shared AppShell style entry" });
+  }
+
+  if (!existsSync(appShellPackagePath)) {
+    violations.push({ file: appShellPackagePath, line: 1, name: "missing AppShell package manifest" });
+  } else {
+    const appShellPackage = JSON.parse(readFileSync(appShellPackagePath, "utf8"));
+    if (appShellPackage.exports?.["./styles.css"] !== "./src/styles/index.css") {
+      violations.push({ file: appShellPackagePath, line: 1, name: "invalid ./styles.css export" });
+    }
+  }
+
   for (const entry of readdirSync(appsDir)) {
     const srcDir = join(appsDir, entry, "src");
     if (!existsSync(srcDir)) continue;
     for (const hostStyles of listCssFiles(srcDir)) {
-      const decls = collectDeclarations(readFileSync(hostStyles, "utf8"));
+      const hostSource = readFileSync(hostStyles, "utf8");
+      const decls = collectDeclarations(hostSource);
       for (const { name, line } of decls) {
         if (isForbidden(name, canonical)) {
           violations.push({ file: hostStyles, line, name });
         }
+      }
+      const cleanSource = stripComments(hostSource);
+      const duplicatedSelectors = APP_SHELL_SELECTORS.filter((selector) =>
+        cleanSource.includes(selector),
+      );
+      if (duplicatedSelectors.length >= 3) {
+        violations.push({
+          file: hostStyles,
+          line: 1,
+          name: `duplicates ${duplicatedSelectors.length} shared AppShell selectors`,
+        });
       }
     }
   }
@@ -131,7 +172,7 @@ function main() {
   }
 
   console.error(
-    "\n[check-shared-tokens] FAILED — host app(s) redefine shared design tokens.",
+    "\n[check-shared-tokens] FAILED — shared style ownership violation.",
   );
   console.error(
     "Shared tokens must come ONLY from @unfour/ui/styles.css. Host apps may",

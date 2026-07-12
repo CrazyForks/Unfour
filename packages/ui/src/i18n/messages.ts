@@ -11,9 +11,11 @@ export type TFunction = (
   fallback?: string,
 ) => string;
 
-type TranslationTree = {
+export type TranslationTree = {
   [key: string]: string | TranslationTree;
 };
+
+export type I18nResources = Partial<Record<Locale, TranslationTree>>;
 
 export const defaultLocale: Locale = "en";
 
@@ -60,21 +62,48 @@ export function translate(
   key: string,
   paramsOrFallback?: TranslationParams | string,
   fallback?: string,
+  resources?: I18nResources,
 ) {
   const params = typeof paramsOrFallback === "string" ? undefined : paramsOrFallback;
   const explicitFallback = typeof paramsOrFallback === "string" ? paramsOrFallback : fallback;
   const value =
-    findMessage(localeMessages[locale], key) ??
-    (locale === defaultLocale ? undefined : findMessage(localeMessages[defaultLocale], key)) ??
+    findMessage(getMessages(locale, resources), key) ??
+    (locale === defaultLocale
+      ? undefined
+      : findMessage(getMessages(defaultLocale, resources), key)) ??
     explicitFallback ??
     key;
 
   return interpolate(value, params);
 }
 
-export function createTranslator(locale: Locale): TFunction {
+export function createTranslator(locale: Locale, resources?: I18nResources): TFunction {
   return (key, paramsOrFallback, fallback) =>
-    translate(locale, key, paramsOrFallback, fallback);
+    translate(locale, key, paramsOrFallback, fallback, resources);
+}
+
+function getMessages(locale: Locale, resources: I18nResources | undefined) {
+  const additionalMessages = resources?.[locale];
+  return additionalMessages
+    ? mergeTranslationTrees(localeMessages[locale], additionalMessages)
+    : localeMessages[locale];
+}
+
+function mergeTranslationTrees(
+  base: TranslationTree,
+  overrides: TranslationTree,
+): TranslationTree {
+  const merged: TranslationTree = { ...base };
+
+  for (const [key, override] of Object.entries(overrides)) {
+    const current = merged[key];
+    merged[key] =
+      typeof current === "object" && typeof override === "object"
+        ? mergeTranslationTrees(current, override)
+        : override;
+  }
+
+  return merged;
 }
 
 function findMessage(messages: TranslationTree, key: string) {

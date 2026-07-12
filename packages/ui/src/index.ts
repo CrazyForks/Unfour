@@ -25,9 +25,11 @@ export {
   useI18n,
   useT,
   type I18nContextValue,
+  type I18nResources,
   type Locale,
   type TFunction,
   type TranslationParams,
+  type TranslationTree,
 } from "./i18n";
 export { Input } from "./input";
 export {

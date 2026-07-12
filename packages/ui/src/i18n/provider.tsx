@@ -5,16 +5,19 @@ import {
   isSupportedLocale,
   normalizeLocale,
   supportedLocales,
+  type I18nResources,
   type Locale,
 } from "./messages";
 
 export function I18nProvider({
   children,
   initialLocale,
+  resources,
   storageKey = "unfour.locale",
 }: {
   children: React.ReactNode;
   initialLocale?: Locale;
+  resources?: I18nResources;
   storageKey?: string;
 }) {
   const [locale, setLocaleState] = React.useState<Locale>(
@@ -27,7 +30,10 @@ export function I18nProvider({
     },
     [storageKey],
   );
-  const t = React.useMemo(() => createTranslator(locale), [locale]);
+  const t = React.useMemo(
+    () => createTranslator(locale, resources),
+    [locale, resources],
+  );
   const value = React.useMemo<I18nContextValue>(
     () => ({
       locale,
