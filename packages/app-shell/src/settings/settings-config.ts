@@ -39,21 +39,48 @@ export function formatMcpClientConfig(command = getMcpCommand()) {
   return JSON.stringify(createMcpClientConfig(command), null, 2);
 }
 
+export type VersionInfoApp = {
+  name: string;
+  version: string;
+  edition: string;
+  distribution?: string;
+  channel?: string;
+  commit?: string | null;
+};
+
 export function createVersionInfo(
   environment = getVersionEnvironment(),
-  app: { name: string; version: string; edition: string } = {
+  app: VersionInfoApp = {
     name: APP_NAME,
     version: APP_VERSION,
     edition: "community",
   },
 ) {
+  // Support reports need the complete identity: edition, version, distribution,
+  // channel, and commit. Fields that were not supplied are omitted rather than
+  // printed as "undefined".
   return [
     `${app.name} ${app.version} (${app.edition})`,
+    ...(app.distribution ? [`Distribution: ${app.distribution}`] : []),
+    ...(app.channel ? [`Channel: ${app.channel}`] : []),
+    ...(app.commit ? [`Commit: ${app.commit}`] : []),
     `Platform: ${environment.platform}`,
     `User agent: ${environment.userAgent}`,
     `Website: ${APP_WEBSITE_URL}`,
     `GitHub: ${APP_GITHUB_URL}`,
   ].join("\n");
+}
+
+// Format the commit for display: keep up to 12 leading hex chars and preserve
+// the `-dirty` marker that build.rs appends for modified working trees.
+export function formatShortCommit(commit: string | null | undefined): string {
+  if (!commit) {
+    return "";
+  }
+  const dirtySuffix = commit.endsWith("-dirty") ? "-dirty" : "";
+  const base = dirtySuffix ? commit.slice(0, commit.length - dirtySuffix.length) : commit;
+  const short = base.slice(0, 12);
+  return `${short}${dirtySuffix}`;
 }
 
 function getRuntimePlatform() {

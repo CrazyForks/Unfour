@@ -12,7 +12,67 @@ fn default_logging_config_keeps_seven_days_of_logs() {
     assert_eq!(DEFAULT_LOG_RETENTION_DAYS, 7);
     assert_eq!(config.retention_days, 7);
     assert_eq!(config.edition.as_str(), "oss");
-    assert_eq!(config.channel.as_str(), "dev");
+    assert_eq!(config.channel.as_str(), "test");
+    assert_eq!(config.package_kind.as_str(), "github");
+}
+
+#[test]
+fn channel_and_package_kind_have_only_two_stable_values_each() {
+    assert_eq!(Channel::Test.as_str(), "test");
+    assert_eq!(Channel::Stable.as_str(), "stable");
+    assert_eq!(serde_json::to_string(&Channel::Test).unwrap(), "\"test\"");
+    assert_eq!(
+        serde_json::to_string(&Channel::Stable).unwrap(),
+        "\"stable\""
+    );
+
+    assert_eq!(PackageKind::GitHub.as_str(), "github");
+    assert_eq!(PackageKind::Website.as_str(), "website");
+    assert_eq!(
+        serde_json::to_string(&PackageKind::GitHub).unwrap(),
+        "\"github\""
+    );
+    assert_eq!(
+        serde_json::to_string(&PackageKind::Website).unwrap(),
+        "\"website\""
+    );
+}
+
+#[test]
+fn diagnostic_manifest_carries_full_identity_and_commit() {
+    let root = std::env::temp_dir().join(format!(
+        "unfour-diag-identity-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let product_data_dir = root.join("Unfour");
+    let paths = UnfourPaths {
+        product_data_dir: product_data_dir.clone(),
+        database_path: product_data_dir.join("unfour.sqlite"),
+        config_dir: product_data_dir.join("config"),
+        cache_dir: product_data_dir.join("cache"),
+        backups_dir: product_data_dir.join("backups"),
+        logs_dir: product_data_dir.join("logs"),
+        diagnostics_dir: product_data_dir.join("diagnostics"),
+    };
+    std::fs::create_dir_all(&paths.logs_dir).expect("create logs dir");
+    std::fs::create_dir_all(&paths.diagnostics_dir).expect("create diagnostics dir");
+
+    let mut request = DiagnosticBundleRequest::oss_dev("0.1.0".to_string(), paths);
+    request.channel = Channel::Stable;
+    request.package_kind = PackageKind::GitHub;
+    request.commit = Some("0123456789abcdef0123456789abcdef01234567".to_string());
+    let bundle = export_diagnostics_bundle(&request).expect("export bundle");
+    let manifest = std::fs::read_to_string(bundle.manifest_path).expect("read manifest");
+
+    assert!(manifest.contains("\"channel\": \"stable\""));
+    assert!(manifest.contains("\"packageKind\": \"github\""));
+    assert!(manifest.contains("0123456789abcdef0123456789abcdef01234567"));
+
+    let _ = std::fs::remove_dir_all(root);
 }
 
 #[test]

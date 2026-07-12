@@ -13,7 +13,15 @@ export type DiagnosticBundleResult = {
 
 export type AppEdition = "community" | "pro";
 
+export type AppDistribution = "github" | "website";
+
+export type AppChannel = "test" | "stable";
+
 export type AppInfo = {
+  name: string;
   version: string;
   edition: AppEdition;
+  distribution: AppDistribution;
+  channel: AppChannel;
+  commit: string | null;
 };

@@ -98,6 +98,10 @@
         "editionCommunity": "Community",
         "editionPro": "Pro",
         "version": "Version",
+        "distribution": "Distribution",
+        "distributionGithub": "GitHub Release",
+        "distributionWebsite": "Website",
+        "commit": "Commit",
         "website": "Website",
         "github": "GitHub",
         "copyVersionInfo": "Copy version info"

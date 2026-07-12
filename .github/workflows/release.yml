@@ -10,6 +10,42 @@ permissions:
   contents: write
 
 jobs:
+  identity:
+    name: Resolve release identity
+    runs-on: ubuntu-latest
+    outputs:
+      channel: ${{ steps.resolve.outputs.channel }}
+      prerelease: ${{ steps.resolve.outputs.prerelease }}
+    steps:
+      - name: Resolve channel and prerelease flag
+        id: resolve
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Community GitHub releases are currently pre-releases on the Test
+          # channel. A future formal release switches CHANNEL to "stable" and
+          # PRERELEASE to "false" (one place, kept in lockstep here).
+          CHANNEL="test"
+          PRERELEASE="true"
+
+          # Build contract: Stable must not ship as a pre-release, and Test must
+          # ship as a pre-release. This guards against a channel/prerelease mismatch.
+          if [ "$CHANNEL" = "stable" ] && [ "$PRERELEASE" != "false" ]; then
+            echo "::error::Stable channel must publish a formal (non-prerelease) GitHub Release."
+            exit 1
+          fi
+          if [ "$CHANNEL" = "test" ] && [ "$PRERELEASE" != "true" ]; then
+            echo "::error::Test channel must publish a GitHub pre-release."
+            exit 1
+          fi
+          if [ "$CHANNEL" != "test" ] && [ "$CHANNEL" != "stable" ]; then
+            echo "::error::Release channel must be exactly 'test' or 'stable'."
+            exit 1
+          fi
+
+          echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
+
   verify:
     name: Verify release candidate
     runs-on: ubuntu-latest
@@ -70,7 +106,7 @@ jobs:
 
   build:
     name: Build (${{ matrix.platform }})
-    needs: verify
+    needs: [identity, verify]
     strategy:
       fail-fast: false
       matrix:
@@ -136,6 +172,11 @@ jobs:
         run: pnpm run tauri build ${{ matrix.args }}
         env:
           UNFOUR_TAURI_TARGET: ${{ matrix.target }}
+          # Explicitly inject the release identity. The channel is decided by the
+          # identity job (never inferred from the cargo profile), and the commit
+          # is pinned to the exact SHA being built.
+          UNFOUR_RELEASE_CHANNEL: ${{ needs.identity.outputs.channel }}
+          UNFOUR_BUILD_COMMIT: ${{ github.sha }}
 
       - name: Collect Windows NSIS assets
         if: matrix.platform == 'windows-latest'
@@ -172,7 +213,7 @@ jobs:
 
   checksum-release:
     name: Generate checksums and publish release
-    needs: build
+    needs: [identity, build]
     runs-on: ubuntu-latest
     steps:
       - name: Download build assets
@@ -198,7 +239,7 @@ jobs:
         with:
           tag_name: ${{ github.ref_name }}
           name: Unfour ${{ github.ref_name }}
-          prerelease: true
+          prerelease: ${{ needs.identity.outputs.prerelease }}
           body: |
             Unfour `${{ github.ref_name }}` is an early pre-release. Do not use it in production without your own validation.
 

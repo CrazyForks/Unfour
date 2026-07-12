@@ -6,6 +6,7 @@ import {
   MCP_DOCS_PATH,
   createMcpClientConfig,
   createVersionInfo,
+  formatShortCommit,
   getMcpCommand,
 } from "./settings-config";
 
@@ -41,5 +42,30 @@ describe("settings config", () => {
     expect(createVersionInfo({ platform: "Win32", userAgent: "Vitest" })).toContain(
       "Platform: Win32",
     );
+  });
+
+  it("includes the full identity (edition, version, distribution, channel, commit) when provided", () => {
+    const info = createVersionInfo(
+      { platform: "Win32", userAgent: "Vitest" },
+      {
+        name: "Unfour",
+        version: "0.1.0",
+        edition: "community",
+        distribution: "github",
+        channel: "test",
+        commit: "0123456789abcdef",
+      },
+    );
+    expect(info).toContain("Unfour 0.1.0 (community)");
+    expect(info).toContain("Distribution: github");
+    expect(info).toContain("Channel: test");
+    expect(info).toContain("Commit: 0123456789abcdef");
+  });
+
+  it("shortens commits to 12 chars and preserves the dirty marker", () => {
+    expect(formatShortCommit("0123456789abcdef0123456789abcdef")).toBe("0123456789ab");
+    expect(formatShortCommit("0123456789abcdef-dirty")).toBe("0123456789ab-dirty");
+    expect(formatShortCommit(null)).toBe("");
+    expect(formatShortCommit(undefined)).toBe("");
   });
 });

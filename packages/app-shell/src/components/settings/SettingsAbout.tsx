@@ -7,15 +7,24 @@ import {
   APP_NAME,
   APP_WEBSITE_URL,
   createVersionInfo,
+  formatShortCommit,
 } from "../../settings/settings-config";
 import { getAppInfo } from "@unfour/command-client";
+import type { AppInfo } from "@unfour/command-client";
+
+const FALLBACK_APP_INFO: AppInfo = {
+  name: APP_NAME,
+  version: "",
+  edition: "community",
+  distribution: "github",
+  channel: "test",
+  commit: null,
+};
 
 export function SettingsAbout() {
   const { t } = useI18n();
   const [copyState, setCopyState] = useState<"copied" | "failed" | null>(null);
-  const [appInfo, setAppInfo] = useState<{ version: string; edition: "community" | "pro" } | null>(
-    null,
-  );
+  const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
 
   useEffect(() => {
     if (!copyState) {
@@ -35,7 +44,7 @@ export function SettingsAbout() {
       })
       .catch(() => {
         if (!cancelled) {
-          setAppInfo({ version: "", edition: "community" });
+          setAppInfo(FALLBACK_APP_INFO);
         }
       });
     return () => {
@@ -48,14 +57,24 @@ export function SettingsAbout() {
       ? t("app.settings.about.editionPro")
       : t("app.settings.about.editionCommunity");
 
+  const distributionLabel =
+    appInfo?.distribution === "website"
+      ? t("app.settings.about.distributionWebsite")
+      : t("app.settings.about.distributionGithub");
+
+  const shortCommit = formatShortCommit(appInfo?.commit);
+
   async function copyVersionInfo() {
-    const version = appInfo?.version || "";
+    const info = appInfo ?? FALLBACK_APP_INFO;
     try {
       await navigator.clipboard.writeText(
         createVersionInfo(undefined, {
-          name: APP_NAME,
-          version,
-          edition: appInfo?.edition ?? "community",
+          name: info.name || APP_NAME,
+          version: info.version,
+          edition: info.edition,
+          distribution: info.distribution,
+          channel: info.channel,
+          commit: info.commit,
         }),
       );
       setCopyState("copied");
@@ -79,6 +98,13 @@ export function SettingsAbout() {
         <InfoRow label={t("app.settings.about.appName")} value={APP_NAME} />
         <InfoRow label={t("app.settings.about.edition")} value={editionLabel} />
         <InfoRow label={t("app.settings.about.version")} value={appInfo?.version || ""} />
+        <InfoRow label={t("app.settings.about.distribution")} value={distributionLabel} />
+        {shortCommit ? (
+          <InfoRow
+            label={t("app.settings.about.commit")}
+            value={<span className="font-mono">{shortCommit}</span>}
+          />
+        ) : null}
         <InfoRow
           label={t("app.settings.about.website")}
           value={<ExternalLinkValue href={APP_WEBSITE_URL} label={APP_WEBSITE_URL} />}

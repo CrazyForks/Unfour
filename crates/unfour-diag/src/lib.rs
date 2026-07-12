@@ -46,19 +46,21 @@ impl fmt::Display for Edition {
     }
 }
 
+/// Release channel of a build. Only two channels exist project-wide:
+/// `Test` (pre-release / local dev builds) and `Stable` (formal releases).
+/// The channel is decided at build time by the host binary and must never be
+/// inferred from `debug_assertions` or the cargo profile.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "lowercase")]
 pub enum Channel {
-    Dev,
-    Beta,
+    Test,
     Stable,
 }
 
 impl Channel {
     pub fn as_str(self) -> &'static str {
         match self {
-            Channel::Dev => "dev",
-            Channel::Beta => "beta",
+            Channel::Test => "test",
             Channel::Stable => "stable",
         }
     }
@@ -70,22 +72,20 @@ impl fmt::Display for Channel {
     }
 }
 
+/// Distribution channel of a build. Only two package kinds exist project-wide:
+/// `GitHub` (GitHub Releases) and `Website` (direct website downloads).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "lowercase")]
 pub enum PackageKind {
-    Dev,
+    GitHub,
     Website,
-    MicrosoftStore,
-    Winget,
 }
 
 impl PackageKind {
     pub fn as_str(self) -> &'static str {
         match self {
-            PackageKind::Dev => "dev",
+            PackageKind::GitHub => "github",
             PackageKind::Website => "website",
-            PackageKind::MicrosoftStore => "microsoft_store",
-            PackageKind::Winget => "winget",
         }
     }
 }
@@ -114,8 +114,8 @@ impl LoggingConfig {
         Self {
             app_name: "Unfour".to_string(),
             edition: Edition::Oss,
-            channel: Channel::Dev,
-            package_kind: PackageKind::Dev,
+            channel: Channel::Test,
+            package_kind: PackageKind::GitHub,
             version: env!("CARGO_PKG_VERSION").to_string(),
             commit: None,
             log_level: if cfg!(debug_assertions) {
@@ -199,10 +199,12 @@ pub fn init_logging(config: LoggingConfig) -> io::Result<LoggingGuard> {
             module = "diag",
             operation = "init_logging",
             status = "ok",
+            app_name = %metadata.app_name,
             edition = %metadata.edition,
             channel = %metadata.channel,
             package_kind = %metadata.package_kind,
             app_version = %metadata.version,
+            commit = metadata.commit.as_deref().unwrap_or(""),
             retention_days = config.retention_days,
             log_dir = %safe_path_display(&config.log_dir),
         );
@@ -283,7 +285,7 @@ pub fn log_command_started(command: &str, command_id: &str) {
         command_id = command_id,
         status = "started",
         edition = meta.map(|m| m.edition.as_str()).unwrap_or("oss"),
-        package_kind = meta.map(|m| m.package_kind.as_str()).unwrap_or("dev"),
+        package_kind = meta.map(|m| m.package_kind.as_str()).unwrap_or("github"),
     );
 }
 
@@ -297,7 +299,7 @@ pub fn log_command_completed(command: &str, command_id: &str, duration_ms: u128)
         duration_ms = duration_ms,
         status = "ok",
         edition = meta.map(|m| m.edition.as_str()).unwrap_or("oss"),
-        package_kind = meta.map(|m| m.package_kind.as_str()).unwrap_or("dev"),
+        package_kind = meta.map(|m| m.package_kind.as_str()).unwrap_or("github"),
     );
 }
 
@@ -312,7 +314,7 @@ pub fn log_command_failed(command: &str, command_id: &str, duration_ms: u128, er
         status = "error",
         error_kind = error_kind,
         edition = meta.map(|m| m.edition.as_str()).unwrap_or("oss"),
-        package_kind = meta.map(|m| m.package_kind.as_str()).unwrap_or("dev"),
+        package_kind = meta.map(|m| m.package_kind.as_str()).unwrap_or("github"),
     );
 }
 
@@ -340,7 +342,7 @@ pub fn log_operation_event(
             status = status,
             error_kind = error_kind,
             edition = meta.map(|m| m.edition.as_str()).unwrap_or("oss"),
-            package_kind = meta.map(|m| m.package_kind.as_str()).unwrap_or("dev"),
+            package_kind = meta.map(|m| m.package_kind.as_str()).unwrap_or("github"),
             fields = %fields,
         );
     } else {
@@ -352,7 +354,7 @@ pub fn log_operation_event(
             status = status,
             error_kind = error_kind,
             edition = meta.map(|m| m.edition.as_str()).unwrap_or("oss"),
-            package_kind = meta.map(|m| m.package_kind.as_str()).unwrap_or("dev"),
+            package_kind = meta.map(|m| m.package_kind.as_str()).unwrap_or("github"),
             fields = %fields,
         );
     }

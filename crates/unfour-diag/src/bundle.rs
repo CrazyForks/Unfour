@@ -26,8 +26,8 @@ impl DiagnosticBundleRequest {
             app_name: "Unfour".to_string(),
             version,
             edition: Edition::Oss,
-            channel: Channel::Dev,
-            package_kind: PackageKind::Dev,
+            channel: Channel::Test,
+            package_kind: PackageKind::GitHub,
             commit: None,
             paths,
         }
