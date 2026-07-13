@@ -11,6 +11,8 @@
 [![Release](https://img.shields.io/github/v/release/zyqzyq/Unfour?include_prereleases&sort=semver)](https://github.com/zyqzyq/Unfour/releases)
 [![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-24C8DB.svg)](https://tauri.app)
 
+![Unfour overview](docs/screenshots/app-overview.png)
+
 </div>
 
 > [!WARNING]
@@ -60,6 +62,24 @@ capability crates and the command bus.
   (such as Codex, Claude Code, or Cursor) through the same command bus used by
   the desktop app, so your AI agent can work with the same API, SSH, and
   database context.
+
+## Screenshots
+
+**App overview — sidebar with module switcher and the API Client workspace**
+
+![Unfour overview](docs/screenshots/app-overview.png)
+
+**API Client — request builder with params, auth, headers, body, and response**
+
+![API Client](docs/screenshots/api-client.png)
+
+**SSH Terminal — connection and session management**
+
+![SSH Terminal](docs/screenshots/ssh-terminal.png)
+
+**Database — schema browsing and SQL query output**
+
+![Database](docs/screenshots/database.png)
 
 ## Local Development
 
