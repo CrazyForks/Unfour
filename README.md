@@ -14,13 +14,13 @@
 </div>
 
 > [!WARNING]
-> Unfour `v0.1.0`. Installers are unsigned and may trigger SmartScreen or other
+> Unfour `v0.1.1`. Installers are unsigned and may trigger SmartScreen or other
 > operating-system security warnings; validate the release against your own
 > requirements.
 
 ## Download
 
-Download [`v0.1.0` from GitHub Releases](https://github.com/zyqzyq/Unfour/releases/tag/v0.1.0).
+Download [`v0.1.1` from GitHub Releases](https://github.com/zyqzyq/Unfour/releases/tag/v0.1.1).
 
 - Windows: NSIS `.exe` is recommended for ordinary users. MSI `.msi` is also
   available for users who prefer MSI or need software deployment management;
@@ -112,7 +112,7 @@ map.
 
 ## Release Status
 
-The current published version is `v0.1.0`. Release readiness is documented in:
+The current published version is `v0.1.1`. Release readiness is documented in:
 
 - `docs/testing/release-verification.md`
 - `docs/testing/manual-test-cases.md`

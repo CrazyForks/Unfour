@@ -33,21 +33,22 @@ import {
   buildApiCollectionTree,
   collectTreeRequests,
   findDuplicateRequestName,
-  parseKeyValues,
   savedRequestToInput,
   type FolderNode,
 } from "../request-utils";
-import { methodBadgeLabel, methodToneClass } from "../model/request-tabs";
 import type { ApiOpenIntent } from "../model/types";
 import { useApiCollectionFolders } from "../hooks/useApiCollectionFolders";
 import { useApiCollections } from "../hooks/useApiCollections";
 import { ApiHistoryTree } from "./ApiHistoryTree";
-import {
-  RequestActionMenu,
-  RequestContextMenu,
-  type RequestTreeActionContext,
-} from "./ApiRequestTreeActions";
+import type { RequestTreeActionContext } from "./ApiRequestTreeActions";
 import { createApiCollectionDropController } from "./api-collection-dnd";
+import {
+  collectExpandableIds,
+  exportCollection,
+  exportRequest,
+  requestTreeItem,
+  SidebarEmpty,
+} from "./api-collection-tree-helpers";
 
 type NameTarget =
   | { kind: "collection" }
@@ -750,94 +751,4 @@ export function ApiCollectionTree({
       onSuccess: () => setDeleteFolderTarget(null),
     });
   }
-}
-
-function collectExpandableIds(items: TreeViewItem[]): string[] {
-  const ids: string[] = [];
-  for (const item of items) {
-    if (item.children?.length) {
-      ids.push(item.id);
-      ids.push(...collectExpandableIds(item.children));
-    }
-  }
-  return ids;
-}
-
-function requestTreeItem(
-  request: ApiSavedRequest,
-  ctx: RequestTreeActionContext,
-): TreeViewItem {
-  return {
-    id: `request:${request.id}`,
-    label: (
-      <span className="flex min-w-0 items-center gap-1.5">
-        <MethodMeta method={request.method} />
-        <span className="min-w-0 truncate">{request.name}</span>
-      </span>
-    ),
-    title: request.url,
-    actions: <RequestActionMenu ctx={ctx} request={request} />,
-    contextMenu: <RequestContextMenu ctx={ctx} request={request} />,
-  };
-}
-
-function MethodMeta({ method }: { method: string }) {
-  return (
-    <span
-      className={`w-9 shrink-0 text-left text-[10px] font-bold uppercase tabular-nums ${methodToneClass(method)}`}
-    >
-      {methodBadgeLabel(method)}
-    </span>
-  );
-}
-
-function SidebarEmpty({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="px-2 py-1.5 text-[12px] text-[var(--u-color-text-muted)]">
-      {children}
-    </div>
-  );
-}
-
-function serializeRequest(request: ApiSavedRequest) {
-  return {
-    name: request.name,
-    collectionId: request.collectionId,
-    parentFolderId: request.parentFolderId,
-    method: request.method,
-    url: request.url,
-    headers: parseKeyValues(request.headersJson),
-    query: parseKeyValues(request.queryJson),
-    body: request.body,
-    bodyKind: request.bodyKind,
-  };
-}
-
-function downloadJson(filename: string, value: unknown) {
-  const href = URL.createObjectURL(
-    new Blob([JSON.stringify(value, null, 2)], {
-      type: "application/json;charset=utf-8",
-    }),
-  );
-  const link = document.createElement("a");
-  link.href = href;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(href);
-}
-
-function exportRequest(request: ApiSavedRequest) {
-  downloadJson(
-    `${request.name.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.json`,
-    serializeRequest(request),
-  );
-}
-
-function exportCollection(name: string, requests: ApiSavedRequest[]) {
-  downloadJson(`${name.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.json`, {
-    name,
-    savedRequests: requests.map(serializeRequest),
-  });
 }

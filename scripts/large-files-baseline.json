@@ -1,40 +1,4 @@
 {
-  "description": "Known oversized source files after the first low-risk split. The large-file check allows these only while line counts do not increase.",
-  "files": [
-    {
-      "path": "crates/database-engine/src/database.rs",
-      "maxLines": 3544,
-      "reason": "Historical database engine entry; split only by driver, query safety, and table operation boundaries."
-    },
-    {
-      "path": "crates/ssh-engine/src/ssh.rs",
-      "maxLines": 2402,
-      "reason": "Historical SSH engine entry; split only by session lifecycle, native transport, persistence, and diagnostics boundaries."
-    },
-    {
-      "path": "crates/http-engine/src/api_client.rs",
-      "maxLines": 1723,
-      "reason": "Historical API engine entry; split only by saved requests, collections, history, and execution boundaries."
-    },
-    {
-      "path": "crates/unfour-command-bus/src/lib.rs",
-      "maxLines": 1726,
-      "reason": "Command-bus boundary and result models; needs future domain command and read-model extraction."
-    },
-    {
-      "path": "crates/unfour-mcp/src/tools/database.rs",
-      "maxLines": 1170,
-      "reason": "Database MCP tools plus parser/validator helpers; needs future validator and serializer split."
-    },
-    {
-      "path": "crates/unfour-mcp/src/tools/api.rs",
-      "maxLines": 1447,
-      "reason": "API MCP tools plus redaction/parser helpers; needs future serializer and argument-parser split."
-    },
-    {
-      "path": "packages/database/src/DatabasePage.tsx",
-      "maxLines": 1686,
-      "reason": "Historical database page container; needs future dialog, mutation hook, and workspace controller extraction."
-    }
-  ]
+  "description": "Known oversized source files allowed only while their line counts do not increase.",
+  "files": []
 }
