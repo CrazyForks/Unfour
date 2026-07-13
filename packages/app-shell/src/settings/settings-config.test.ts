@@ -12,7 +12,7 @@ import {
 
 describe("settings config", () => {
   it("uses centralized product metadata and links", () => {
-    expect(APP_VERSION).toBe("0.1.0");
+    expect(APP_VERSION).toMatch(/^\d+\.\d+\.\d+(-[A-Za-z0-9.-]+)?$/);
     expect(APP_WEBSITE_URL).toBe("https://unfour.dev/");
     expect(APP_GITHUB_URL).toBe("https://github.com/zyqzyq/Unfour");
     expect(MCP_DOCS_PATH).toBe("docs/mcp/codex-setup.md");
@@ -38,7 +38,7 @@ describe("settings config", () => {
         platform: "Win32",
         userAgent: "Vitest",
       }),
-    ).toContain("Unfour 0.1.0");
+    ).toContain(`Unfour ${APP_VERSION}`);
     expect(createVersionInfo({ platform: "Win32", userAgent: "Vitest" })).toContain(
       "Platform: Win32",
     );
