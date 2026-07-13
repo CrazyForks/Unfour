@@ -83,6 +83,15 @@ jobs:
       - name: Prepare Tauri sidecars
         run: node scripts/prepare-tauri-sidecars.mjs --debug
 
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-
+
       - name: Install Playwright Chromium
         run: pnpm exec playwright install --with-deps chromium
 
@@ -155,6 +164,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: '. -> target'
+          key: ${{ matrix.target }}
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
