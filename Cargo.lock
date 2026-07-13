@@ -6347,7 +6347,7 @@ dependencies = [
 
 [[package]]
 name = "unfour"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "sqlx",
  "tauri",
@@ -6360,7 +6360,7 @@ dependencies = [
 
 [[package]]
 name = "unfour-app"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -6378,7 +6378,7 @@ dependencies = [
 
 [[package]]
 name = "unfour-command-bus"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -6397,7 +6397,7 @@ dependencies = [
 
 [[package]]
 name = "unfour-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "chrono",
  "reqwest 0.12.28",
@@ -6410,7 +6410,7 @@ dependencies = [
 
 [[package]]
 name = "unfour-database-engine"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "chrono",
  "serde_json",
@@ -6425,7 +6425,7 @@ dependencies = [
 
 [[package]]
 name = "unfour-diag"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "chrono",
  "serde",
@@ -6440,7 +6440,7 @@ dependencies = [
 
 [[package]]
 name = "unfour-http-engine"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "chrono",
  "reqwest 0.12.28",
@@ -6455,7 +6455,7 @@ dependencies = [
 
 [[package]]
 name = "unfour-local-storage"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "chrono",
  "serde_json",
@@ -6469,7 +6469,7 @@ dependencies = [
 
 [[package]]
 name = "unfour-mcp"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -6483,14 +6483,14 @@ dependencies = [
 
 [[package]]
 name = "unfour-paths"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "dirs",
 ]
 
 [[package]]
 name = "unfour-secret-store"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "keyring",
  "serde_json",
@@ -6502,7 +6502,7 @@ dependencies = [
 
 [[package]]
 name = "unfour-ssh-engine"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "chrono",
  "russh",
@@ -6520,7 +6520,7 @@ dependencies = [
 
 [[package]]
 name = "unfour-workspace-engine"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "chrono",
  "serde",

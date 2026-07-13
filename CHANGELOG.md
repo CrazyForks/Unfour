@@ -6,6 +6,52 @@ This file is the user-facing change history for Unfour, following
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-07-13
+
+Maintenance and polish release following the 0.1.0 public launch.
+
+### Added
+
+- **Desktop extension slots** — The app shell now exposes module mount surfaces
+  and extension slots (`packages/app-shell/src/extensions.ts`), enabling future
+  pluggable desktop features without touching core layout code.
+- **Release `core_commit` identity** — App system info and the About panel now
+  surface the built `core_commit`, and the Community release identity config is
+  unified across the build pipeline (`release.yml`, `build.rs`, `app.rs`).
+- **Generic deep-link runtime support** — Deep links now resolve at runtime
+  without hardcoded scheme handling.
+- **i18n resource loading** — Extended the shared i18n provider to load
+  additional resource bundles and added provider tests.
+
+### Changed
+
+- **Windows distribution** — The build now packages only the NSIS installer and
+  drops the MSI requirement, simplifying the upgrade story (see
+  `docs/release/distribution.md`).
+
+### Fixed
+
+- **Settings dialog** — Enlarged the settings window and removed the MCP tab
+  height flash on open.
+
+### Refactored
+
+- **File-size discipline** — Split oversized source files into module
+  directories across `unfour-core` (models), `unfour-mcp` (ssh tools),
+  `workspace-engine`, `api-client`, `command-client` (types), and `packages/ui`
+  (shell, tree-view). Behavior is unchanged; this improves maintainability and
+  keeps the CI large-file gate green.
+- **Shared styles** — Moved global styles out of `apps/desktop/src/styles.css`
+  into dedicated `packages/app-shell/src/styles` modules (animations, host,
+  index) and tightened the shared-token checks.
+
+### Docs
+
+- Marked API, SQLite, SSH, PostgreSQL, MySQL, and MCP release-verification
+  checks as PASS.
+- Updated README and distribution/release documentation to reflect the NSIS-only
+  Windows packaging.
+
 ## [0.1.0] - 2026-07-09
 
 First public release.
@@ -43,4 +89,5 @@ First public release.
 - macOS and Linux artifacts remain experimental/unverified until real-device
   smoke checks are complete.
 
+[0.1.1]: https://github.com/zyqzyq/Unfour/releases/tag/v0.1.1
 [0.1.0]: https://github.com/zyqzyq/Unfour/releases/tag/v0.1.0
