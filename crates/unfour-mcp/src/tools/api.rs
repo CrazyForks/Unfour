@@ -508,6 +508,83 @@ pub(super) fn registered_tools() -> Vec<RegisteredTool> {
         },
         RegisteredTool {
             definition: ToolDefinition {
+                name: "unfour.api.create_environment",
+                title: "Create API Environment",
+                description:
+                    "Creates an empty API environment in local Unfour metadata through the command bus. Dev/test allow it; prod blocks by workspace policy.",
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "workspaceId": { "type": "string" },
+                        "name": { "type": "string" }
+                    },
+                    "required": ["name"],
+                    "additionalProperties": false
+                }),
+                output_schema: json!({ "type": "object" }),
+                annotations: ToolAnnotations::local_write(),
+            },
+            handler: api_create_environment,
+        },
+        RegisteredTool {
+            definition: ToolDefinition {
+                name: "unfour.api.update_environment",
+                title: "Update API Environment",
+                description:
+                    "Updates an API environment name and variables through the command bus. Sensitive variable values are masked in the result. Dev/test allow it; prod blocks by workspace policy.",
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "workspaceId": { "type": "string" },
+                        "environmentId": { "type": "string" },
+                        "name": { "type": "string" },
+                        "variables": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "key": { "type": "string" },
+                                    "value": { "type": "string" },
+                                    "enabled": { "type": "boolean" }
+                                },
+                                "required": ["key", "value", "enabled"],
+                                "additionalProperties": false
+                            }
+                        }
+                    },
+                    "required": ["environmentId", "name", "variables"],
+                    "additionalProperties": false
+                }),
+                output_schema: json!({ "type": "object" }),
+                annotations: ToolAnnotations::local_write(),
+            },
+            handler: api_update_environment,
+        },
+        RegisteredTool {
+            definition: ToolDefinition {
+                name: "unfour.api.delete_environment",
+                title: "Delete API Environment",
+                description:
+                    "Soft-deletes an API environment through the command bus. Guarded policy requires a content-bound confirmation_text; read-only policy blocks deletion.",
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "workspaceId": { "type": "string" },
+                        "environmentId": { "type": "string" },
+                        "confirm": { "type": "boolean" },
+                        "confirmationText": { "type": "string" },
+                        "confirmation_text": { "type": "string" }
+                    },
+                    "required": ["environmentId"],
+                    "additionalProperties": false
+                }),
+                output_schema: json!({ "type": "object" }),
+                annotations: ToolAnnotations::local_write_destructive(),
+            },
+            handler: api_delete_environment,
+        },
+        RegisteredTool {
+            definition: ToolDefinition {
                 name: "unfour.api.list_environments",
                 title: "List API Environments",
                 description:

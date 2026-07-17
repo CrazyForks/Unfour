@@ -1,9 +1,9 @@
 use unfour_command_bus::{ReadCommand, ReadCommandResult};
 use unfour_core::models::{
-    ApiCollection, ApiRequestInput, ApiResponse, ApiSavedRequest, CredentialCreateInput,
-    CredentialMetadata, DatabaseConnection, DatabaseConnectionInput, DatabaseQueryInput,
-    DatabaseQueryResult, DatabaseSchema, DatabaseTestResult, SshConnection, SshConnectionInput,
-    SshDiagnosticInput, SshDiagnosticResult, SystemHealth,
+    ApiCollection, ApiEnvironment, ApiRequestInput, ApiResponse, ApiSavedRequest,
+    CredentialCreateInput, CredentialMetadata, DatabaseConnection, DatabaseConnectionInput,
+    DatabaseQueryInput, DatabaseQueryResult, DatabaseSchema, DatabaseTestResult, KeyValue,
+    SshConnection, SshConnectionInput, SshDiagnosticInput, SshDiagnosticResult, SystemHealth,
 };
 
 use super::CommandBusAdapterError;
@@ -103,6 +103,41 @@ pub trait CommandBusAdapter: Send + Sync {
         Err(CommandBusAdapterError {
             code: "COMMAND_BUS_OPERATION_UNSUPPORTED",
             message: "This command-bus adapter does not support API collection deletion.",
+        })
+    }
+
+    fn create_api_environment(
+        &self,
+        _workspace_id: &str,
+        _name: &str,
+    ) -> Result<ApiEnvironment, CommandBusAdapterError> {
+        Err(CommandBusAdapterError {
+            code: "COMMAND_BUS_OPERATION_UNSUPPORTED",
+            message: "This command-bus adapter does not support API environment creation.",
+        })
+    }
+
+    fn update_api_environment(
+        &self,
+        _workspace_id: &str,
+        _environment_id: &str,
+        _name: &str,
+        _variables: Vec<KeyValue>,
+    ) -> Result<ApiEnvironment, CommandBusAdapterError> {
+        Err(CommandBusAdapterError {
+            code: "COMMAND_BUS_OPERATION_UNSUPPORTED",
+            message: "This command-bus adapter does not support API environment updates.",
+        })
+    }
+
+    fn delete_api_environment(
+        &self,
+        _workspace_id: &str,
+        _environment_id: &str,
+    ) -> Result<Vec<ApiEnvironment>, CommandBusAdapterError> {
+        Err(CommandBusAdapterError {
+            code: "COMMAND_BUS_OPERATION_UNSUPPORTED",
+            message: "This command-bus adapter does not support API environment deletion.",
         })
     }
 

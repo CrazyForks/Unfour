@@ -195,7 +195,10 @@ pub(super) fn classify_mcp_action(
         | "unfour.api.delete_request"
         | "unfour.api.create_collection"
         | "unfour.api.update_collection"
-        | "unfour.api.delete_collection" => (McpCapability::ApiMutate, McpRisk::Write),
+        | "unfour.api.delete_collection"
+        | "unfour.api.create_environment"
+        | "unfour.api.update_environment"
+        | "unfour.api.delete_environment" => (McpCapability::ApiMutate, McpRisk::Write),
         "unfour.api.send_request" => {
             if api_method.map(is_readonly_http_method).unwrap_or(false) {
                 (McpCapability::ApiSend, McpRisk::Read)

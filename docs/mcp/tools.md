@@ -57,6 +57,9 @@ text to execute.
 | `unfour.api.list_history` | `{ "workspaceId": "optional", "limit": "optional" }` | Lists recent API request/response history. Default limit is 50; max is 200. |
 | `unfour.api.get_history` | `{ "historyId": "required", "workspaceId": "optional" }` | Returns one history entry with request/response details masked. |
 | `unfour.api.list_environments` | `{ "workspaceId": "optional" }` | Lists API environments and variables. Sensitive values are masked. |
+| `unfour.api.create_environment` | `{ "workspaceId": "optional", "name": "required" }` | Creates an empty API environment in an allowed workspace. |
+| `unfour.api.update_environment` | `{ "environmentId": "required", "workspaceId": "optional", "name": "required", "variables": "required array" }` | Updates an API environment name and variables. Sensitive values are masked in the result. |
+| `unfour.api.delete_environment` | `{ "environmentId": "required", "workspaceId": "optional", "confirm": "optional", "confirmation_text": "optional" }` | Soft-deletes an API environment; guarded policy requires confirmation. |
 | `unfour.db.create_connection` | `{ "workspaceId": "optional", "name": "required", "driver": "required", "host": "optional", "port": "optional", "database": "optional", "username": "optional", "sslMode": "optional", "sqlitePath": "optional", "credentialRef": "optional", "password": "optional", "credentialLabel": "optional", "readOnly": "optional" }` | Creates a saved database connection. If `password` is supplied, it is written to the OS credential store and only the resulting credential reference is persisted. |
 | `unfour.db.list_connections` | `{ "workspaceId": "optional" }` | Lists saved database connections as safe summaries. |
 | `unfour.db.list_tables` | `{ "connectionId": "required", "workspaceId": "optional", "limit": "optional" }` | Lists tables and views for a saved connection. Default limit is 200; max is 500. |

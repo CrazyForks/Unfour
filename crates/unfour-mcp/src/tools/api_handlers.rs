@@ -583,28 +583,7 @@ pub(super) fn api_list_environments(
     let environments: Vec<Value> = environments
         .environments
         .iter()
-        .map(|env| {
-            let variables: Vec<Value> = env
-                .variables
-                .iter()
-                .map(|kv| {
-                    let value = if is_sensitive_key(&kv.key) {
-                        mask_secret(&kv.value)
-                    } else {
-                        kv.value.clone()
-                    };
-                    json!({ "key": kv.key, "value": value, "enabled": kv.enabled })
-                })
-                .collect();
-            json!({
-                "id": env.id,
-                "name": env.name,
-                "isActive": env.is_active,
-                "variableCount": env.variables.len(),
-                "variables": variables,
-                "workspaceId": env.workspace_id
-            })
-        })
+        .map(safe_environment)
         .collect();
 
     Ok(json!({
@@ -612,6 +591,131 @@ pub(super) fn api_list_environments(
         "count": environments.len(),
         "source": "command-bus"
     }))
+}
+
+pub(super) fn api_create_environment(
+    command_bus: &dyn CommandBusAdapter,
+    _evaluation: &ToolPolicyEvaluation,
+    arguments: Value,
+) -> Result<Value, ToolCallError> {
+    let arguments = object_with_allowed_keys(arguments, &["workspaceId", "name"])?;
+    let workspace_id = resolve_workspace_id(command_bus, &arguments)?;
+    let name = parse_required_string(&arguments, "name", "unfour.api.create_environment")?;
+    let environment = command_bus
+        .create_api_environment(&workspace_id, &name)
+        .map_err(|error| ToolCallError::Execution {
+            code: error.code,
+            message: error.message,
+        })?;
+    Ok(json!({
+        "apiEnvironment": safe_environment(&environment),
+        "source": "command-bus"
+    }))
+}
+
+pub(super) fn api_update_environment(
+    command_bus: &dyn CommandBusAdapter,
+    _evaluation: &ToolPolicyEvaluation,
+    arguments: Value,
+) -> Result<Value, ToolCallError> {
+    let arguments = object_with_allowed_keys(
+        arguments,
+        &["workspaceId", "environmentId", "name", "variables"],
+    )?;
+    let workspace_id = resolve_workspace_id(command_bus, &arguments)?;
+    let environment_id =
+        parse_required_string(&arguments, "environmentId", "unfour.api.update_environment")?;
+    let name = parse_required_string(&arguments, "name", "unfour.api.update_environment")?;
+    let variables = parse_environment_variables(arguments.get("variables"))?;
+    let environment = command_bus
+        .update_api_environment(&workspace_id, &environment_id, &name, variables)
+        .map_err(|error| ToolCallError::Execution {
+            code: error.code,
+            message: error.message,
+        })?;
+    Ok(json!({
+        "apiEnvironment": safe_environment(&environment),
+        "source": "command-bus"
+    }))
+}
+
+pub(super) fn api_delete_environment(
+    command_bus: &dyn CommandBusAdapter,
+    evaluation: &ToolPolicyEvaluation,
+    arguments: Value,
+) -> Result<Value, ToolCallError> {
+    let arguments = object_with_allowed_keys(
+        arguments,
+        &[
+            "workspaceId",
+            "environmentId",
+            "confirm",
+            "confirmationText",
+            "confirmation_text",
+        ],
+    )?;
+    let workspace_id = resolve_workspace_id(command_bus, &arguments)?;
+    let environment_id =
+        parse_required_string(&arguments, "environmentId", "unfour.api.delete_environment")?;
+    ensure_confirmed_if_guarded(
+        evaluation,
+        &arguments,
+        "API_DELETE_ENVIRONMENT",
+        "Deleting an API environment removes its local variables. Confirmation is required.",
+        json!({
+            "tool": "unfour.api.delete_environment",
+            "workspaceId": workspace_id,
+            "environmentId": environment_id
+        }),
+    )?;
+    let remaining = command_bus
+        .delete_api_environment(&workspace_id, &environment_id)
+        .map_err(|error| ToolCallError::Execution {
+            code: error.code,
+            message: error.message,
+        })?;
+    Ok(json!({
+        "softDelete": true,
+        "deletedEnvironmentId": environment_id,
+        "remainingCount": remaining.len(),
+        "source": "command-bus"
+    }))
+}
+
+fn parse_environment_variables(value: Option<&Value>) -> Result<Vec<KeyValue>, ToolCallError> {
+    let Some(Value::Array(_)) = value else {
+        return Err(ToolCallError::InvalidArguments(
+            "argument `variables` must be an array of { key, value, enabled } objects".to_string(),
+        ));
+    };
+    serde_json::from_value::<Vec<KeyValue>>(value.cloned().unwrap_or_default()).map_err(|_| {
+        ToolCallError::InvalidArguments(
+            "argument `variables` must be an array of { key, value, enabled } objects".to_string(),
+        )
+    })
+}
+
+fn safe_environment(environment: &unfour_core::models::ApiEnvironment) -> Value {
+    let variables: Vec<Value> = environment
+        .variables
+        .iter()
+        .map(|variable| {
+            let value = if is_sensitive_key(&variable.key) {
+                mask_secret(&variable.value)
+            } else {
+                variable.value.clone()
+            };
+            json!({ "key": variable.key, "value": value, "enabled": variable.enabled })
+        })
+        .collect();
+    json!({
+        "id": environment.id,
+        "name": environment.name,
+        "isActive": environment.is_active,
+        "variableCount": environment.variables.len(),
+        "variables": variables,
+        "workspaceId": environment.workspace_id
+    })
 }
 
 // --- Helpers ---

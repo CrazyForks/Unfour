@@ -204,6 +204,48 @@ impl CommandBusAdapter for ApiStubCommandBus {
         })
     }
 
+    fn create_api_environment(
+        &self,
+        workspace_id: &str,
+        name: &str,
+    ) -> Result<ApiEnvironment, CommandBusAdapterError> {
+        Ok(ApiEnvironment {
+            id: "env-created".to_string(),
+            workspace_id: workspace_id.to_string(),
+            name: name.to_string(),
+            variables: vec![],
+            is_active: false,
+            created_at: String::new(),
+            updated_at: String::new(),
+        })
+    }
+
+    fn update_api_environment(
+        &self,
+        workspace_id: &str,
+        environment_id: &str,
+        name: &str,
+        variables: Vec<KeyValue>,
+    ) -> Result<ApiEnvironment, CommandBusAdapterError> {
+        Ok(ApiEnvironment {
+            id: environment_id.to_string(),
+            workspace_id: workspace_id.to_string(),
+            name: name.to_string(),
+            variables,
+            is_active: false,
+            created_at: String::new(),
+            updated_at: String::new(),
+        })
+    }
+
+    fn delete_api_environment(
+        &self,
+        _workspace_id: &str,
+        _environment_id: &str,
+    ) -> Result<Vec<ApiEnvironment>, CommandBusAdapterError> {
+        Ok(vec![])
+    }
+
     fn execute_saved_api_request_in_workspace(
         &self,
         workspace_id: Option<&str>,

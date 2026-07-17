@@ -2,7 +2,7 @@ use unfour_command_bus::{ConnectionType, ReadCommand, ReadCommandResult};
 
 use super::{CommandBusAdapter, CommandBusAdapterError, LocalCommandBusAdapter};
 use unfour_command_bus::CommandBus;
-use unfour_core::models::SshConnectionInput;
+use unfour_core::models::{KeyValue, SshConnectionInput};
 use unfour_core::AppError;
 use unfour_local_storage::LocalDb;
 
@@ -40,6 +40,43 @@ fn ephemeral_adapter_executes_real_command_bus_reads() {
     let health = adapter.system_health().expect("system health");
     assert!(health.command_bus_ready);
     assert!(health.storage_ready);
+}
+
+#[test]
+fn ephemeral_adapter_executes_environment_crud() {
+    let adapter = LocalCommandBusAdapter::ephemeral().expect("create adapter");
+    let workspace = adapter
+        .execute_read(ReadCommand::CurrentWorkspace)
+        .expect("read current workspace");
+    let ReadCommandResult::CurrentWorkspace(workspace) = workspace else {
+        panic!("expected current workspace result");
+    };
+
+    let created = adapter
+        .create_api_environment(&workspace.workspace_id, "QA")
+        .expect("create environment");
+    assert_eq!(created.name, "QA");
+    assert!(created.variables.is_empty());
+
+    let updated = adapter
+        .update_api_environment(
+            &workspace.workspace_id,
+            &created.id,
+            "Staging",
+            vec![KeyValue {
+                key: "baseUrl".to_string(),
+                value: "https://staging.example.test".to_string(),
+                enabled: true,
+            }],
+        )
+        .expect("update environment");
+    assert_eq!(updated.name, "Staging");
+    assert_eq!(updated.variables.len(), 1);
+
+    let remaining = adapter
+        .delete_api_environment(&workspace.workspace_id, &created.id)
+        .expect("delete environment");
+    assert!(remaining.is_empty());
 }
 
 #[test]

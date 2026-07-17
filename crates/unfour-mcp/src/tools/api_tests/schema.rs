@@ -17,6 +17,15 @@ fn api_tools_are_registered() {
     assert!(definitions
         .iter()
         .any(|d| d.name == "unfour.api.send_request"));
+    assert!(definitions
+        .iter()
+        .any(|d| d.name == "unfour.api.create_environment"));
+    assert!(definitions
+        .iter()
+        .any(|d| d.name == "unfour.api.update_environment"));
+    assert!(definitions
+        .iter()
+        .any(|d| d.name == "unfour.api.delete_environment"));
 }
 
 #[test]
@@ -27,6 +36,9 @@ fn api_tools_have_valid_input_schemas() {
         "unfour.api.list_requests",
         "unfour.api.get_request",
         "unfour.api.send_request",
+        "unfour.api.create_environment",
+        "unfour.api.update_environment",
+        "unfour.api.delete_environment",
     ] {
         let def = definitions.iter().find(|d| d.name == *name).unwrap();
         assert_eq!(

@@ -8,10 +8,10 @@ use std::time::Duration;
 use tokio::runtime::{Builder, Runtime};
 use unfour_command_bus::{CommandBus, ReadCommand, ReadCommandResult};
 use unfour_core::models::{
-    ApiCollection, ApiRequestInput, ApiResponse, ApiSavedRequest, CredentialCreateInput,
-    CredentialMetadata, DatabaseConnection, DatabaseConnectionInput, DatabaseQueryInput,
-    DatabaseQueryResult, DatabaseSchema, DatabaseTestResult, SshConnection, SshConnectionInput,
-    SshDiagnosticInput, SshDiagnosticResult, SystemHealth,
+    ApiCollection, ApiEnvironment, ApiRequestInput, ApiResponse, ApiSavedRequest,
+    CredentialCreateInput, CredentialMetadata, DatabaseConnection, DatabaseConnectionInput,
+    DatabaseQueryInput, DatabaseQueryResult, DatabaseSchema, DatabaseTestResult, KeyValue,
+    SshConnection, SshConnectionInput, SshDiagnosticInput, SshDiagnosticResult, SystemHealth,
 };
 use unfour_core::AppError;
 
@@ -267,6 +267,61 @@ impl CommandBusAdapter for LocalCommandBusAdapter {
         .map_err(|e| {
             CommandBusAdapterError::from_app_error(
                 "The command-bus API collection delete operation failed.",
+                &e,
+            )
+        })
+    }
+
+    fn create_api_environment(
+        &self,
+        workspace_id: &str,
+        name: &str,
+    ) -> Result<ApiEnvironment, CommandBusAdapterError> {
+        self.run(
+            self.bus
+                .api_environment_create(workspace_id.to_string(), name.to_string()),
+        )
+        .map_err(|e| {
+            CommandBusAdapterError::from_app_error(
+                "The command-bus API environment create operation failed.",
+                &e,
+            )
+        })
+    }
+
+    fn update_api_environment(
+        &self,
+        workspace_id: &str,
+        environment_id: &str,
+        name: &str,
+        variables: Vec<KeyValue>,
+    ) -> Result<ApiEnvironment, CommandBusAdapterError> {
+        self.run(self.bus.api_environment_update(
+            workspace_id.to_string(),
+            environment_id.to_string(),
+            name.to_string(),
+            variables,
+        ))
+        .map_err(|e| {
+            CommandBusAdapterError::from_app_error(
+                "The command-bus API environment update operation failed.",
+                &e,
+            )
+        })
+    }
+
+    fn delete_api_environment(
+        &self,
+        workspace_id: &str,
+        environment_id: &str,
+    ) -> Result<Vec<ApiEnvironment>, CommandBusAdapterError> {
+        self.run(
+            self.bus
+                .api_environment_delete(workspace_id.to_string(), environment_id.to_string()),
+        )
+        .map_err(|e| {
+            CommandBusAdapterError::from_app_error(
+                "The command-bus API environment delete operation failed.",
                 &e,
             )
         })
