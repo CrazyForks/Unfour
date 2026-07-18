@@ -15,6 +15,26 @@
 
 </div>
 
+## Built with Codex & GPT-5.6
+
+Codex was used to review the Rust and TypeScript architecture, implement and
+refactor Tauri commands, add tests, and investigate build failures and MCP
+process lifecycle issues.
+
+GPT-5.6 helped design AI-assisted backend troubleshooting workflows, analyze
+SSH and database permission boundaries, refine MCP tool design, and plan the
+project architecture and release process.
+
+Codex is also more than a development tool for Unfour: through the Unfour MCP
+server, it can use API, SSH, and database capabilities to reproduce an API
+issue, inspect service logs, query the database, correlate the evidence, and
+identify the root cause.
+
+Sensitive operations remain under developer control. Workspace scope,
+credential handling, host trust, confirmations, and tool permissions constrain
+what Codex can access and execute; connecting Codex does not grant unrestricted
+access by default.
+
 > [!WARNING]
 > Unfour `v0.1.1`. Installers are unsigned and may trigger SmartScreen or other
 > operating-system security warnings; validate the release against your own
@@ -39,8 +59,8 @@ Download [`v0.1.1` from GitHub Releases](https://github.com/zyqzyq/Unfour/releas
 Unfour is a local-first desktop workspace for backend and operations work.
 It keeps API requests, SSH connections, database connections, local activity,
 and workspace layout in one local-first application, and exposes those
-capabilities to your AI agent through a local MCP server. AI-assisted
-troubleshooting workflows built on this foundation are planned.
+capabilities to your AI agent through a local MCP server. This foundation
+supports AI-assisted troubleshooting workflows across those tools.
 
 The app is built with Tauri 2, React, TypeScript, and Rust. The frontend owns
 the workbench UI, while security-sensitive execution such as HTTP, SSH,
@@ -58,10 +78,10 @@ capability crates and the command bus.
   confirmation-aware safety checks, preview table data, and review query output.
 - **Workspace** - Scope saved requests, environments, connections, activity,
   tabs, and layout state to a local workspace.
-- **Local MCP server** - Expose safe local diagnostic tools to MCP clients
-  (such as Codex, Claude Code, or Cursor) through the same command bus used by
-  the desktop app, so your AI agent can work with the same API, SSH, and
-  database context.
+- **MCP integration for Codex-powered API, SSH, and database debugging** -
+  Expose safe local diagnostic tools to MCP clients (such as Codex, Claude
+  Code, or Cursor) through the same command bus used by the desktop app, so
+  your AI agent can work with the same API, SSH, and database context.
 
 ## Screenshots
 
