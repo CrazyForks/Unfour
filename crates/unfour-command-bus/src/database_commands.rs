@@ -130,7 +130,25 @@ impl CommandBus {
         &self,
         input: DatabaseRowMutationInput,
     ) -> AppResult<DatabaseRowMutationResult> {
-        self.database.mutate_table_row(input).await
+        let workspace_id = input.workspace_id.clone();
+        let connection_id = input.connection_id.clone();
+        let table_name = input.table_name.clone();
+        let operation = input.operation.clone();
+        let result = self.database.mutate_table_row(input).await?;
+        self.activity_log
+            .record(
+                Some(&workspace_id),
+                "database.row.mutate",
+                Some(&connection_id),
+                serde_json::json!({
+                    "operation": operation,
+                    "tableName": table_name,
+                    "affectedRows": result.affected_rows,
+                    "confirmed": true
+                }),
+            )
+            .await?;
+        Ok(result)
     }
 
     pub async fn record_database_query_history(

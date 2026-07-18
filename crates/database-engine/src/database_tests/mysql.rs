@@ -75,6 +75,8 @@ fn mysql_schema_metadata_maps_database_table_and_columns() {
             nullable: false,
             primary_key: true,
             default_value: None,
+            generated: false,
+            auto_increment: false,
         }],
     );
 

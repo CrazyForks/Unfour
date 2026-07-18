@@ -422,6 +422,12 @@ export function handleDatabaseMock<T>(
 
   if (command === "database_row_mutate") {
     const input = args?.input as DatabaseRowMutationInput;
+    if (!input.confirmMutation) {
+      throw {
+        code: "CONFIRMATION_REQUIRED",
+        message: "Row changes require explicit confirmation.",
+      };
+    }
     return ({
       affectedRows: 1,
       sql: `-- mock ${input.operation} on ${input.tableName}`,

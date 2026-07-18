@@ -1,8 +1,14 @@
-import { ChevronLeft, ChevronRight, Database, Plus, RefreshCw } from "lucide-react";
+import { ChevronLeft, ChevronRight, Code2, Database, Plus, RefreshCw, RotateCcw } from "lucide-react";
 import { useState } from "react";
-import type { DatabaseCellValue, DatabaseQueryResult, DatabaseTable } from "@unfour/command-client";
+import type {
+  DatabaseCellValue,
+  DatabaseQueryResult,
+  DatabaseTable,
+  DatabaseTableColumn,
+} from "@unfour/command-client";
 import {
   Button,
+  ConfirmDialog,
   Dialog,
   DialogBody,
   DialogContent,
@@ -42,7 +48,6 @@ export function TableDataTab({
   editing?: TableEditing | null;
   error?: unknown;
   executePending: boolean;
-  /** True while the table data is being fetched (tab.loading). */
   loading?: boolean;
   onPageChange: (pageIndex: number, pageSize: number) => void;
   onRefresh: () => void;
@@ -50,7 +55,6 @@ export function TableDataTab({
   onTableFilter: (filter: string) => void;
   onTableSort: (column: string) => void;
   result: DatabaseQueryResult | null;
-  /** Schema of the opened table; used to paint headers immediately while loading. */
   table?: DatabaseTable | null;
   tableFilter: string;
   tableSort: { column: string; descending: boolean } | null;
@@ -58,34 +62,32 @@ export function TableDataTab({
 }) {
   const { t } = useI18n();
   const [addOpen, setAddOpen] = useState(false);
+  const [applyOpen, setApplyOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const isLoading = Boolean(loading && (!result || !tableView));
+  const tableMeta = table ?? null;
 
-  if (error) {
+  if (error && !result && !isLoading) {
     return (
       <ErrorState className="m-2 min-h-0 flex-1">
         <DatabaseErrorDetails error={error} />
       </ErrorState>
     );
   }
-
-  const isLoading = Boolean(loading && (!result || !tableView));
-  const tableMeta = table ?? null;
-
-  // Loading with a known schema: render the shell + skeleton grid instead of
-  // bouncing between an empty placeholder and the full grid. Without a schema
-  // (or when not loading) fall back to the real empty state.
   if (!result && !tableView && !isLoading) {
     return <EmptyState className="m-2 min-h-0 flex-1">{t("database.editor.tableDataEmpty")}</EmptyState>;
   }
 
   const displayName = tableView?.tableName ?? tableMeta?.name ?? "";
-  const gridResult: DatabaseQueryResult = result ?? buildSkeletonResult(tableMeta);
-
+  const gridResult = result ?? buildSkeletonResult(tableMeta);
   const firstRow = tableView && tableView.totalRows > 0 ? tableView.pageIndex * tableView.pageSize + 1 : 0;
   const lastRow = tableView ? Math.min(tableView.totalRows, (tableView.pageIndex + 1) * tableView.pageSize) : 0;
   const hasPrevious = Boolean(tableView && tableView.pageIndex > 0);
   const hasNext = Boolean(tableView && lastRow < tableView.totalRows);
   const totalPages = tableView ? Math.max(1, Math.ceil(tableView.totalRows / Math.max(1, tableView.pageSize))) : 1;
-  const previewSql = tableView ? buildPreviewSql(tableView.tableName, tableView.pageSize, tableView.pageIndex) : "";
+  const browseSql = tableView ? buildPreviewSql(tableView.tableName, tableView.pageSize, tableView.pageIndex) : "";
+  const pendingCount = editing?.pendingChanges.length ?? 0;
+  const controlsLocked = executePending || isLoading || pendingCount > 0;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -108,7 +110,7 @@ export function TableDataTab({
               {t("database.editor.structureView")}
             </button>
           ) : null}
-          {editing ? (
+          {editing?.canInsert ? (
             <Button
               disabled={editing.pending || isLoading}
               onClick={() => setAddOpen(true)}
@@ -120,10 +122,15 @@ export function TableDataTab({
               {t("database.editing.addRow")}
             </Button>
           ) : null}
+          {editing && !editing.canUpdateDelete ? (
+            <span className="max-w-[220px] truncate text-[11px] text-[var(--u-color-text-soft)]" title={t("database.editing.primaryKeyRequired")}>
+              {t("database.editing.insertOnly")}
+            </span>
+          ) : null}
           <Select
             aria-label={t("database.grid.pageSizeAria")}
             className="w-[88px]"
-            disabled={executePending || isLoading}
+            disabled={controlsLocked}
             onChange={(event) => onPageChange(0, Number(event.target.value))}
             options={[
               { label: "50", value: "50" },
@@ -132,42 +139,57 @@ export function TableDataTab({
             ]}
             value={tableView ? String(tableView.pageSize) : "50"}
           />
-          <IconButton disabled={executePending || isLoading} label={t("database.grid.refreshPreview")} onClick={onRefresh}>
+          <IconButton disabled={controlsLocked} label={t("database.grid.refreshPreview")} onClick={onRefresh}>
             <RefreshCw size={13} />
           </IconButton>
         </ToolbarGroup>
       </Toolbar>
-      {isLoading && (
+      {isLoading ? (
         <div className="h-0.5 w-full shrink-0 overflow-hidden bg-[var(--u-color-border)]">
           <div className="h-full w-1/3 animate-indeterminate rounded-full bg-[var(--u-color-primary)]" />
         </div>
-      )}
+      ) : null}
+      {error && result ? (
+        <div className="border-b border-[var(--u-color-danger)] bg-[color:color-mix(in_srgb,var(--u-color-danger)_8%,var(--u-color-surface))] px-3 py-2 text-[12px]" role="alert">
+          <DatabaseErrorDetails error={error} />
+        </div>
+      ) : null}
       <div className="flex min-h-0 flex-1 flex-col animate-fade-in" key={isLoading ? "skeleton" : "ready"}>
         <TableDataGrid
           columns={tableMeta?.columns}
           editing={editing}
           loading={isLoading}
           result={gridResult}
-          server={{
-            filter: tableFilter,
-            onFilter: onTableFilter,
-            onSort: onTableSort,
-            sort: tableSort,
-          }}
+          server={{ filter: tableFilter, onFilter: onTableFilter, onSort: onTableSort, sort: tableSort }}
         />
       </div>
+      {editing && pendingCount > 0 ? (
+        <div className="flex min-h-9 shrink-0 items-center gap-2 border-t border-[var(--u-color-border)] bg-[color:color-mix(in_srgb,var(--u-color-warning)_8%,var(--u-color-surface))] px-3">
+          <span className="min-w-0 flex-1 text-[12px] text-[var(--u-color-text)]">
+            {t("database.editing.pendingChanges", { count: pendingCount })}
+          </span>
+          <Button disabled={editing.pending} onClick={() => setPreviewOpen(true)} size="sm" type="button" variant="ghost">
+            <Code2 size={13} />
+            {t("database.editing.previewSql")}
+          </Button>
+          <Button disabled={editing.pending} onClick={editing.onRevert} size="sm" type="button" variant="ghost">
+            <RotateCcw size={13} />
+            {t("database.editing.revert")}
+          </Button>
+          <Button disabled={editing.pending} onClick={() => setApplyOpen(true)} size="sm" type="button">
+            {t("database.editing.apply")}
+          </Button>
+        </div>
+      ) : null}
       <div className="flex h-9 shrink-0 items-center gap-3 border-t border-[var(--u-color-border)] bg-[var(--u-color-surface)] px-3">
         <Database className="shrink-0 text-[var(--u-color-text-soft)]" size={13} />
-        <code
-          className="min-w-0 flex-1 truncate font-mono text-[12px] text-[var(--u-color-text-muted)]"
-          title={previewSql}
-        >
-          {previewSql}
+        <code className="min-w-0 flex-1 truncate font-mono text-[12px] text-[var(--u-color-text-muted)]" title={browseSql}>
+          {browseSql}
         </code>
         {tableView ? (
           <div className="flex shrink-0 items-center gap-1 text-[var(--u-color-text-soft)]">
             <IconButton
-              disabled={!hasPrevious || executePending}
+              disabled={!hasPrevious || controlsLocked}
               label={t("database.grid.prevPage")}
               onClick={() => onPageChange(tableView.pageIndex - 1, tableView.pageSize)}
               size="compact"
@@ -178,7 +200,7 @@ export function TableDataTab({
               {t("database.grid.page", { page: tableView.pageIndex + 1, pages: totalPages })}
             </span>
             <IconButton
-              disabled={!hasNext || executePending}
+              disabled={!hasNext || controlsLocked}
               label={t("database.grid.nextPage")}
               onClick={() => onPageChange(tableView.pageIndex + 1, tableView.pageSize)}
               size="compact"
@@ -189,33 +211,59 @@ export function TableDataTab({
         ) : null}
       </div>
       {editing ? (
-        <AddRowDialog
-          columns={result?.columns.map((column) => column.name) ?? []}
-          onOpenChange={setAddOpen}
-          onSubmit={(values) => {
-            editing.onInsertRow(values);
-            setAddOpen(false);
-          }}
-          open={addOpen}
-          pending={editing.pending}
-        />
+        <>
+          <AddRowDialog
+            columns={tableMeta?.columns ?? []}
+            onOpenChange={setAddOpen}
+            onSubmit={(values) => {
+              editing.onInsertRow(values);
+              setAddOpen(false);
+            }}
+            open={addOpen}
+            pending={editing.pending}
+          />
+          <ConfirmDialog
+            confirmLabel={t("database.editing.apply")}
+            description={t("database.editing.applyBody", { count: pendingCount })}
+            onConfirm={() => {
+              editing.onApply();
+              setApplyOpen(false);
+            }}
+            onOpenChange={setApplyOpen}
+            open={applyOpen}
+            pending={editing.pending}
+            title={t("database.editing.applyTitle")}
+          />
+          <Dialog onOpenChange={setPreviewOpen} open={previewOpen}>
+            <DialogContent title={t("database.editing.previewSql")}>
+              <DialogHeader><DialogTitle>{t("database.editing.previewSql")}</DialogTitle></DialogHeader>
+              <DialogBody>
+                <pre className="max-h-[55vh] overflow-auto whitespace-pre-wrap rounded border border-[var(--u-color-border)] bg-[var(--u-color-surface-subtle)] p-3 font-mono text-[12px] text-[var(--u-color-text)]">
+                  {editing.previewSql}
+                </pre>
+              </DialogBody>
+            </DialogContent>
+          </Dialog>
+        </>
       ) : null}
     </div>
   );
 }
 
 function buildSkeletonResult(tableMeta: DatabaseTable | null): DatabaseQueryResult {
-  // A result-shaped placeholder so the grid can paint real headers/rows while
-  // the real data streams in. The grid uses `columns`/`loading` to render the
-  // shimmer rows; the actual row array here is unused.
-  const cols = tableMeta?.columns ?? [];
+  const columns = tableMeta?.columns ?? [];
   return {
-    columns: cols.map((column) => ({ name: column.name, dataType: column.dataType })),
+    columns: columns.map((column) => ({ name: column.name, dataType: column.dataType })),
     rows: [],
     affectedRows: 0,
     durationMs: 0,
     safety: { classification: "select", requiresConfirmation: false, confirmed: false, message: null },
   };
+}
+
+function defaultMode(column: DatabaseTableColumn): DatabaseCellValue["mode"] {
+  if (column.generated || column.autoIncrement || column.defaultValue != null) return "default";
+  return column.nullable ? "null" : "value";
 }
 
 function AddRowDialog({
@@ -225,7 +273,7 @@ function AddRowDialog({
   open,
   pending,
 }: {
-  columns: string[];
+  columns: DatabaseTableColumn[];
   onOpenChange: (open: boolean) => void;
   onSubmit: (values: DatabaseCellValue[]) => void;
   open: boolean;
@@ -233,41 +281,67 @@ function AddRowDialog({
 }) {
   const { t } = useI18n();
   const [draft, setDraft] = useState<Record<string, string>>({});
+  const [modes, setModes] = useState<Record<string, DatabaseCellValue["mode"]>>({});
+
+  function modeFor(column: DatabaseTableColumn) {
+    return modes[column.name] ?? defaultMode(column);
+  }
 
   function submit() {
-    // Empty inputs are sent as NULL; non-empty inputs as the typed text.
-    const values: DatabaseCellValue[] = columns.map((column) => ({
-      column,
-      value: draft[column]?.length ? draft[column] : null,
-    }));
+    const values = columns.map((column): DatabaseCellValue => {
+      const mode = modeFor(column);
+      return mode === "value"
+        ? { column: column.name, mode, value: draft[column.name] ?? "" }
+        : { column: column.name, mode, value: null };
+    });
     onSubmit(values);
     setDraft({});
+    setModes({});
   }
 
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
       <DialogContent title={t("database.editing.addRow")}>
-        <DialogHeader>
-          <DialogTitle>{t("database.editing.addRow")}</DialogTitle>
-        </DialogHeader>
-        <DialogBody className="space-y-2">
-          {columns.map((column) => (
-            <label className="block space-y-1" key={column}>
-              <span className="text-[11px] font-medium uppercase text-[var(--u-color-text-soft)]">{column}</span>
-              <Input
-                onChange={(event) => setDraft((current) => ({ ...current, [column]: event.target.value }))}
-                placeholder={t("database.editing.nullPlaceholder")}
-                value={draft[column] ?? ""}
-              />
-            </label>
-          ))}
+        <DialogHeader><DialogTitle>{t("database.editing.addRow")}</DialogTitle></DialogHeader>
+        <DialogBody className="max-h-[60vh] space-y-2 overflow-auto">
+          {columns.map((column) => {
+            const mode = modeFor(column);
+            const options = [
+              { label: t("database.editing.value"), value: "value" },
+              ...(column.nullable ? [{ label: "NULL", value: "null" }] : []),
+              ...(column.generated || column.autoIncrement || column.defaultValue != null
+                ? [{ label: "DEFAULT", value: "default" }]
+                : []),
+            ];
+            return (
+              <label className="grid grid-cols-[minmax(120px,1fr)_100px_minmax(160px,2fr)] items-center gap-2" key={column.name}>
+                <span className="min-w-0 truncate text-[11px] font-medium text-[var(--u-color-text-soft)]" title={column.name}>
+                  {column.name}
+                </span>
+                <Select
+                  aria-label={t("database.editing.columnMode", { column: column.name })}
+                  disabled={column.generated}
+                  onChange={(event) => setModes((current) => ({ ...current, [column.name]: event.target.value as DatabaseCellValue["mode"] }))}
+                  options={options}
+                  value={mode}
+                />
+                <Input
+                  aria-label={t("database.editing.columnValue", { column: column.name })}
+                  disabled={mode !== "value"}
+                  onChange={(event) => setDraft((current) => ({ ...current, [column.name]: event.target.value }))}
+                  placeholder={mode === "value" ? t("database.editing.emptyStringAllowed") : mode.toUpperCase()}
+                  value={draft[column.name] ?? ""}
+                />
+              </label>
+            );
+          })}
         </DialogBody>
         <DialogFooter>
           <Button onClick={() => onOpenChange(false)} size="sm" type="button" variant="ghost">
             {t("common.confirm.cancel")}
           </Button>
           <Button disabled={pending} onClick={submit} size="sm" type="button">
-            {t("database.editing.insert")}
+            {t("database.editing.stageInsert")}
           </Button>
         </DialogFooter>
       </DialogContent>

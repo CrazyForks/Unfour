@@ -23,6 +23,7 @@ mod mysql;
 mod pools;
 mod postgres;
 mod queries;
+mod row_mutations;
 mod schema;
 mod sql;
 mod sqlite;
@@ -73,6 +74,8 @@ impl DatabaseService {
                 "mysql-schema-browser",
                 "mysql-sql-editor",
                 "mysql-read-only-table-data",
+                "confirmed-single-row-crud",
+                "optimistic-row-conflict-detection",
                 "paged-query-results",
                 "credential-backed-auth",
                 "on-demand-table-structure"

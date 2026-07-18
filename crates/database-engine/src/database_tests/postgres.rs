@@ -52,6 +52,8 @@ fn postgres_schema_metadata_preserves_schema_name() {
             nullable: false,
             primary_key: true,
             default_value: None,
+            generated: false,
+            auto_increment: false,
         }],
     );
 

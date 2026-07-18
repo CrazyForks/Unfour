@@ -192,123 +192,18 @@ pub(super) enum SqlDialect {
 }
 
 impl SqlDialect {
-    fn quote_ident(&self, value: &str) -> String {
+    pub(super) fn quote_ident(&self, value: &str) -> String {
         match self {
             SqlDialect::Standard => quote_identifier(value),
             SqlDialect::MySql => quote_mysql_identifier(value),
         }
     }
 
-    fn quote_qualified(&self, schema: Option<&str>, table: &str) -> String {
+    pub(super) fn quote_qualified(&self, schema: Option<&str>, table: &str) -> String {
         match schema {
             Some(schema) => format!("{}.{}", self.quote_ident(schema), self.quote_ident(table)),
             None => self.quote_ident(table),
         }
-    }
-
-    fn literal(&self, value: Option<&str>) -> String {
-        match value {
-            None => "NULL".to_string(),
-            Some(value) => match self {
-                SqlDialect::Standard => format!("'{}'", value.replace('\'', "''")),
-                SqlDialect::MySql => {
-                    format!("'{}'", value.replace('\\', "\\\\").replace('\'', "''"))
-                }
-            },
-        }
-    }
-}
-
-pub(super) fn build_row_mutation_sql(
-    dialect: SqlDialect,
-    schema: Option<&str>,
-    table_name: &str,
-    operation: &str,
-    values: &[DatabaseCellValue],
-    primary_key: &[DatabaseCellValue],
-) -> AppResult<String> {
-    let qualified = dialect.quote_qualified(schema, table_name);
-
-    let predicate = |cell: &DatabaseCellValue| match cell.value.as_deref() {
-        None => format!("{} IS NULL", dialect.quote_ident(&cell.column)),
-        Some(value) => format!(
-            "{} = {}",
-            dialect.quote_ident(&cell.column),
-            dialect.literal(Some(value))
-        ),
-    };
-
-    match operation {
-        "insert" => {
-            if values.is_empty() {
-                return Err(AppError::Validation(
-                    "insert requires at least one column value".to_string(),
-                ));
-            }
-            let columns = values
-                .iter()
-                .map(|cell| dialect.quote_ident(&cell.column))
-                .collect::<Vec<_>>()
-                .join(", ");
-            let literals = values
-                .iter()
-                .map(|cell| dialect.literal(cell.value.as_deref()))
-                .collect::<Vec<_>>()
-                .join(", ");
-            Ok(format!(
-                "INSERT INTO {} ({}) VALUES ({})",
-                qualified, columns, literals
-            ))
-        }
-        "update" => {
-            if values.is_empty() {
-                return Err(AppError::Validation(
-                    "update requires at least one column value".to_string(),
-                ));
-            }
-            if primary_key.is_empty() {
-                return Err(AppError::Validation(
-                    "update requires a primary key to identify the row".to_string(),
-                ));
-            }
-            let assignments = values
-                .iter()
-                .map(|cell| {
-                    format!(
-                        "{} = {}",
-                        dialect.quote_ident(&cell.column),
-                        dialect.literal(cell.value.as_deref())
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join(", ");
-            let where_clause = primary_key
-                .iter()
-                .map(predicate)
-                .collect::<Vec<_>>()
-                .join(" AND ");
-            Ok(format!(
-                "UPDATE {} SET {} WHERE {}",
-                qualified, assignments, where_clause
-            ))
-        }
-        "delete" => {
-            if primary_key.is_empty() {
-                return Err(AppError::Validation(
-                    "delete requires a primary key to identify the row".to_string(),
-                ));
-            }
-            let where_clause = primary_key
-                .iter()
-                .map(predicate)
-                .collect::<Vec<_>>()
-                .join(" AND ");
-            Ok(format!("DELETE FROM {} WHERE {}", qualified, where_clause))
-        }
-        other => Err(AppError::Validation(format!(
-            "unsupported row operation: {}",
-            other
-        ))),
     }
 }
 

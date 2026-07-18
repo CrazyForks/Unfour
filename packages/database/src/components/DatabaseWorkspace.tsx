@@ -13,7 +13,7 @@ import type {
   TableEditing,
   TableSegment,
 } from "../model/types";
-import { SplitPane, Tabs, useI18n, type WorkspaceTab } from "@unfour/ui";
+import { ConfirmDialog, SplitPane, Tabs, useI18n, type WorkspaceTab } from "@unfour/ui";
 import { QueryResultPanel } from "./QueryResultPanel";
 import { SqlEditorTab } from "./SqlEditorTab";
 import { TableDataTab } from "./TableDataTab";
@@ -96,6 +96,8 @@ export function DatabaseWorkspace({
   tabs: DatabaseWorkspaceTab[];
   workspaceId: string;
 }) {
+  const { t } = useI18n();
+  const [pendingCloseId, setPendingCloseId] = useState<DatabaseWorkspaceTabId | null>(null);
   const activeQuery = activeTab?.kind === "query" ? activeTab : null;
   const activeTable = activeTab?.kind === "table" ? activeTab : null;
 
@@ -125,6 +127,13 @@ export function DatabaseWorkspace({
   const workspaceTabs: WorkspaceTab[] = tabs.map((tab) => ({
     id: tab.id,
     loading: Boolean(tab.loading),
+    meta:
+      tab.kind === "table" && (tab.pendingChanges?.length ?? 0) > 0 ? (
+        <span
+          className="h-2 w-2 rounded-full bg-[var(--u-color-warning)]"
+          title={t("database.editing.pendingIndicator")}
+        />
+      ) : null,
     modified: tab.kind === "query" && tab.sql.trim().length > 0,
     title: tab.title,
   }));
@@ -133,7 +142,14 @@ export function DatabaseWorkspace({
     <div className="flex min-h-0 flex-1 flex-col">
       <Tabs
         activeId={activeTabId}
-        onClose={onCloseTab}
+        onClose={(tabId) => {
+          const tab = tabs.find((candidate) => candidate.id === tabId);
+          if (tab?.kind === "table" && (tab.pendingChanges?.length ?? 0) > 0) {
+            setPendingCloseId(tabId);
+          } else {
+            onCloseTab(tabId);
+          }
+        }}
         onReorder={onReorderTabs}
         onSelect={(tabId) => onSelectTab(tabId as DatabaseWorkspaceTabId)}
         tabs={workspaceTabs}
@@ -230,6 +246,18 @@ export function DatabaseWorkspace({
         {/* Empty state — shown only when no tabs exist at all */}
         {!hasTabs && <EmptyWorkspace />}
       </div>
+      <ConfirmDialog
+        confirmLabel={t("database.editing.discard")}
+        description={t("database.editing.discardBody")}
+        onConfirm={() => {
+          if (pendingCloseId) onCloseTab(pendingCloseId);
+          setPendingCloseId(null);
+        }}
+        onOpenChange={(open) => !open && setPendingCloseId(null)}
+        open={pendingCloseId !== null}
+        pending={Boolean(tableEditing?.pending)}
+        title={t("database.editing.discardTitle")}
+      />
     </div>
   );
 }

@@ -77,7 +77,7 @@ pub(super) async fn mysql_columns(
 ) -> Result<Vec<DatabaseTableColumn>, AppError> {
     let rows = sqlx::query(
         r#"
-        SELECT column_name, column_type, is_nullable, column_key, column_default
+        SELECT column_name, column_type, is_nullable, column_key, column_default, extra
         FROM information_schema.columns
         WHERE table_schema = ? AND table_name = ?
         ORDER BY ordinal_position
@@ -98,12 +98,16 @@ pub(super) async fn mysql_columns(
             let is_nullable: String = mysql_text(row, 2)?;
             let column_key: String = mysql_text(row, 3)?;
             let default_value: Option<String> = mysql_text_opt(row, 4)?;
+            let extra: String = mysql_text(row, 5)?;
+            let normalized_extra = extra.to_ascii_lowercase();
             Ok(DatabaseTableColumn {
                 name,
                 data_type,
                 nullable: is_nullable == "YES",
                 primary_key: column_key == "PRI",
                 default_value,
+                generated: normalized_extra.contains("generated"),
+                auto_increment: normalized_extra.contains("auto_increment"),
             })
         })
         .collect()

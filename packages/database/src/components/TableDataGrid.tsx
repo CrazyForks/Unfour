@@ -1,9 +1,8 @@
-import { Clipboard, Search, Trash2 } from "lucide-react";
+import { Clipboard, Eye, Search, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
-import type { DatabaseCellValue, DatabaseQueryResult, DatabaseTableColumn } from "@unfour/command-client";
+import type { DatabaseQueryResult, DatabaseTableColumn } from "@unfour/command-client";
 import {
   Button,
-  ConfirmDialog,
   DataTable,
   Dialog,
   DialogBody,
@@ -12,12 +11,14 @@ import {
   DialogTitle,
   IconButton,
   Input,
+  Select,
   StatusBadge,
   useI18n,
   type DataTableColumn,
   type DataTableSelection,
 } from "@unfour/ui";
 import type { TableEditing } from "../model/types";
+import { databaseValue, pendingValue } from "../model/table-row-editing";
 import { serializeDatabaseCell, serializeDatabaseRow, tryFormatJson } from "../result-utils";
 import {
   buildSkeletonColumns,
@@ -27,21 +28,14 @@ import {
   renderCell,
   renderServerSortIcon,
   renderSortIcon,
-  truncatePreview,
   type SortState,
 } from "./table-data-grid-helpers";
-
 
 const MAX_RENDERED_ROWS = 500;
 
 type CellViewer = { columnName: string; value: string | null };
-type EditTarget = { row: Array<string | null>; columnIndex: number };
-type DataRow = Array<string | null>;
-type PendingUpdate = {
-  columnName: string;
-  value: string;
-  primaryKey: DatabaseCellValue[];
-};
+type DataRow = Array<string | null> & { pendingRowKey?: string };
+type EditTarget = { row: DataRow; columnIndex: number };
 type ServerControls = {
   sort: { column: string; descending: boolean } | null;
   filter: string;
@@ -56,17 +50,10 @@ export function TableDataGrid({
   result,
   server,
 }: {
-  // Optional table schema used to render the loading skeleton (Navicat-style):
-  // the grid paints real column headers immediately while rows stream in.
   columns?: DatabaseTableColumn[] | null;
   editing?: TableEditing | null;
-  // Skeleton mode: when true (with `columns`), the grid renders placeholder rows
-  // instead of waiting for `result`, so the frame never pops in empty.
   loading?: boolean;
   result: DatabaseQueryResult;
-  // When present (table browse), sort and filter are applied server-side across
-  // the whole table; the grid reflects state and delegates instead of doing its
-  // own page-local sort/filter. Absent for ad-hoc query results.
   server?: ServerControls | null;
 }) {
   const { t } = useI18n();
@@ -76,88 +63,56 @@ export function TableDataGrid({
   const [activeCell, setActiveCell] = useState<{ row: number; column: number } | null>(null);
   const [viewer, setViewer] = useState<CellViewer | null>(null);
   const [viewerRaw, setViewerRaw] = useState(false);
-  const viewerJson = viewer && viewer.value !== null ? tryFormatJson(viewer.value) : null;
   const [edit, setEdit] = useState<EditTarget | null>(null);
   const [editValue, setEditValue] = useState("");
-  const [deleteRow, setDeleteRow] = useState<DataRow | null>(null);
-  const [pendingUpdate, setPendingUpdate] = useState<PendingUpdate | null>(null);
+  const [editMode, setEditMode] = useState<"value" | "null">("value");
   const [selection, setSelection] = useState<DataTableSelection | null>(null);
-  const [columnsWidths, setColumnsWidths] = useState<Record<string, number>>(() => {
-    const map: Record<string, number> = {};
-    map["__row_actions"] = editing ? 72 : 48;
-    return map;
-  });
+  const [columnsWidths, setColumnsWidths] = useState<Record<string, number>>(() => ({
+    __row_actions: editing ? 72 : 48,
+  }));
 
-  const isSkeleton = Boolean(loading && columns && columns.length > 0);
-  const skeletonRowCount = 12;
-
-  const skeletonRows = useMemo<Array<Array<string | null>>>(() => {
-    if (!isSkeleton || !columns) {
-      return [];
-    }
-    return buildSkeletonRows(columns, skeletonRowCount);
-  }, [isSkeleton, columns, skeletonRowCount]);
-
-  const skeletonColumns = useMemo<DataTableColumn<Array<string | null>>[]>(() => {
-    if (!isSkeleton || !columns) {
-      return [];
-    }
-    return buildSkeletonColumns(columns, columnsWidths);
-  }, [isSkeleton, columns, columnsWidths]);
-
-  function buildPrimaryKey(row: DataRow): DatabaseCellValue[] {
-    return (editing?.primaryKeyColumns ?? []).map((name) => {
-      const index = result.columns.findIndex((column) => column.name === name);
-      return { column: name, value: index >= 0 ? row[index] ?? null : null };
-    });
-  }
-
-  function commitEdit() {
-    if (!edit || !editing) {
-      setEdit(null);
-      return;
-    }
-    const columnName = result.columns[edit.columnIndex]?.name;
-    const original = edit.row[edit.columnIndex] ?? "";
-    if (columnName && editValue !== original) {
-      // Stage the change behind a confirmation step rather than writing to the
-      // database the moment the input blurs.
-      setPendingUpdate({
-        columnName,
-        value: editValue,
-        primaryKey: buildPrimaryKey(edit.row),
-      });
-    }
-    setEdit(null);
-  }
+  const viewerJson = viewer?.value !== null && viewer ? tryFormatJson(viewer.value) : null;
+  const isSkeleton = Boolean(loading && columns?.length);
+  const skeletonRows = useMemo<DataRow[]>(
+    () => (isSkeleton && columns ? buildSkeletonRows(columns, 12) : []),
+    [isSkeleton, columns],
+  );
+  const skeletonColumns = useMemo<DataTableColumn<DataRow>[]>(
+    () => (isSkeleton && columns ? buildSkeletonColumns(columns, columnsWidths) : []),
+    [isSkeleton, columns, columnsWidths],
+  );
+  const insertedRows = useMemo<DataRow[]>(
+    () =>
+      (editing?.pendingChanges ?? [])
+        .filter((change) => change.operation === "insert")
+        .map((change) => {
+          const row = result.columns.map((column) => {
+            const cell = change.values.find((candidate) => candidate.column === column.name);
+            if (!cell || cell.mode === "null") return null;
+            if (cell.mode === "default") return "DEFAULT";
+            return cell.value ?? "";
+          }) as DataRow;
+          row.pendingRowKey = change.rowKey;
+          return row;
+        }),
+    [editing?.pendingChanges, result.columns],
+  );
 
   const processedRows = useMemo(() => {
-    // In server mode the rows arrive already sorted and filtered for the whole
-    // table, so the grid renders them as-is.
-    if (server) {
-      return result.rows;
-    }
-
+    const rows = [...result.rows, ...insertedRows] as DataRow[];
+    if (server) return rows;
     const needle = filter.trim().toLowerCase();
     const filtered = needle
-      ? result.rows.filter((row) => row.some((value) => (value ?? "").toLowerCase().includes(needle)))
-      : result.rows;
-
-    if (!sort) {
-      return filtered;
-    }
-
-    // Copy before sorting so the source result order is preserved.
-    const sorted = [...filtered].sort((left, right) => {
-      const a = left[sort.columnIndex];
-      const b = right[sort.columnIndex];
-      const compared = compareCells(a, b);
+      ? rows.filter((row) => row.some((value) => (value ?? "").toLowerCase().includes(needle)))
+      : rows;
+    if (!sort) return filtered;
+    return [...filtered].sort((left, right) => {
+      const compared = compareCells(left[sort.columnIndex], right[sort.columnIndex]);
       return sort.direction === "asc" ? compared : -compared;
     });
-    return sorted;
-  }, [filter, result.rows, sort, server]);
-
+  }, [filter, insertedRows, result.rows, server, sort]);
   const visibleRows = processedRows.slice(0, MAX_RENDERED_ROWS);
+  const hasPendingChanges = Boolean(editing?.pendingChanges.length);
 
   async function copyText(text: string, status: "copied-cell" | "copied-row") {
     try {
@@ -171,91 +126,137 @@ export function TableDataGrid({
 
   function toggleSort(columnIndex: number) {
     setSort((current) => {
-      if (!current || current.columnIndex !== columnIndex) {
-        return { columnIndex, direction: "asc" };
-      }
-      if (current.direction === "asc") {
-        return { columnIndex, direction: "desc" };
-      }
+      if (!current || current.columnIndex !== columnIndex) return { columnIndex, direction: "asc" };
+      if (current.direction === "asc") return { columnIndex, direction: "desc" };
       return null;
     });
   }
 
-  const rowActionColumn: DataTableColumn<Array<string | null>> = {
-    cell: (row, rowIndex) => (
-      <div className="flex items-center gap-0.5">
-        <IconButton
-          label={`Copy row ${rowIndex + 1}`}
-          onClick={() => copyText(serializeDatabaseRow(result, row, "\t"), "copied-row")}
-          size="compact"
-        >
-          <Clipboard size={12} />
-        </IconButton>
-        {editing ? (
+  function commitEdit() {
+    if (!edit || !editing) {
+      setEdit(null);
+      return;
+    }
+    const columnName = result.columns[edit.columnIndex]?.name;
+    if (columnName) {
+      const rowKey = edit.row.pendingRowKey ?? editing.rowKey(edit.row);
+      const original = edit.row[edit.columnIndex] ?? null;
+      const current = pendingValue(editing.pendingChanges, rowKey, columnName, original);
+      const next = editMode === "null" ? databaseValue(columnName, null) : databaseValue(columnName, editValue);
+      if (next.mode === "null" ? current !== null : current !== next.value) {
+        editing.onUpdateCell(edit.row, columnName, next, rowKey);
+      }
+    }
+    setEdit(null);
+  }
+
+  const rowActionColumn: DataTableColumn<DataRow> = {
+    cell: (row, rowIndex) => {
+      const rowKey = row.pendingRowKey ?? editing?.rowKey(row);
+      const deleted = editing?.pendingChanges.some(
+        (change) => change.rowKey === rowKey && change.operation === "delete",
+      );
+      return (
+        <div className="flex items-center gap-0.5">
           <IconButton
-            disabled={editing.pending}
-            label={t("database.editing.deleteRow")}
-            onClick={() => setDeleteRow(row)}
+            label={t("database.grid.copyRow", { row: rowIndex + 1 })}
+            onClick={() => copyText(serializeDatabaseRow(result, row, "\t"), "copied-row")}
             size="compact"
           >
-            <Trash2 className="text-[var(--u-color-danger)]" size={12} />
+            <Clipboard size={12} />
           </IconButton>
-        ) : null}
-      </div>
-    ),
+          {editing ? (
+            <IconButton
+              disabled={(!editing.canUpdateDelete && !row.pendingRowKey) || editing.pending || deleted}
+              label={t("database.editing.deleteRow")}
+              onClick={() => editing.onDeleteRow(row, rowKey)}
+              size="compact"
+            >
+              <Trash2 className="text-[var(--u-color-danger)]" size={12} />
+            </IconButton>
+          ) : null}
+        </div>
+      );
+    },
     header: "#",
     id: "__row_actions",
-    width: columnsWidths["__row_actions"] ?? (editing ? 72 : 48),
+    width: columnsWidths.__row_actions ?? (editing ? 72 : 48),
   };
 
-  const dataColumns: DataTableColumn<Array<string | null>>[] = [
+  const dataColumns: DataTableColumn<DataRow>[] = [
     rowActionColumn,
     ...result.columns.map((column, columnIndex) => ({
-      cell: (row: Array<string | null>, rowIndex: number) => {
-        const value = row[columnIndex];
-        const isActive = activeCell?.row === rowIndex && activeCell?.column === columnIndex;
-        if (edit && edit.row === row && edit.columnIndex === columnIndex) {
+      cell: (row: DataRow, rowIndex: number) => {
+        const rowKey = row.pendingRowKey ?? editing?.rowKey(row) ?? JSON.stringify(row);
+        const change = editing?.pendingChanges.find((candidate) => candidate.rowKey === rowKey);
+        const value = pendingValue(editing?.pendingChanges ?? [], rowKey, column.name, row[columnIndex] ?? null);
+        const changed = change?.values.some((cell) => cell.column === column.name);
+        const deleted = change?.operation === "delete";
+        const active = activeCell?.row === rowIndex && activeCell.column === columnIndex;
+        if (edit?.row === row && edit.columnIndex === columnIndex) {
           return (
-            <input
-              autoFocus
-              className="block w-full rounded-sm border border-[var(--u-color-focus)] bg-[var(--u-color-surface)] px-1 font-mono text-[12px] text-[var(--u-color-text)] focus-visible:outline-none"
-              onBlur={commitEdit}
-              onChange={(event) => setEditValue(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  commitEdit();
-                } else if (event.key === "Escape") {
-                  event.preventDefault();
-                  setEdit(null);
-                }
+            <div
+              className="flex min-w-[180px] items-center gap-1"
+              onBlur={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget)) commitEdit();
               }}
-              value={editValue}
-            />
+            >
+              <Select
+                aria-label={t("database.editing.valueMode")}
+                className="h-6 w-[76px]"
+                onChange={(event) => setEditMode(event.target.value as "value" | "null")}
+                options={[
+                  { label: t("database.editing.value"), value: "value" },
+                  { label: "NULL", value: "null" },
+                ]}
+                value={editMode}
+              />
+              <input
+                autoFocus
+                className="block min-w-0 flex-1 rounded-sm border border-[var(--u-color-focus)] bg-[var(--u-color-surface)] px-1 font-mono text-[12px] text-[var(--u-color-text)] focus-visible:outline-none disabled:opacity-50"
+                disabled={editMode === "null"}
+                onChange={(event) => setEditValue(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    commitEdit();
+                  } else if (event.key === "Escape") {
+                    event.preventDefault();
+                    setEdit(null);
+                  }
+                }}
+                value={editValue}
+              />
+            </div>
           );
         }
         return (
           <button
-            className={
-              "block w-full cursor-pointer truncate text-left font-mono text-[12px] text-[var(--u-color-text)] hover:text-[var(--u-color-primary)] focus-visible:outline-none " +
-              (isActive
-                ? "ring-1 ring-inset ring-[var(--u-color-focus)]"
-                : "focus-visible:ring-1 focus-visible:ring-[var(--u-color-focus)]")
-            }
-            onClick={() => {
-              setActiveCell({ row: rowIndex, column: columnIndex });
-              setViewerRaw(false);
-              setViewer({ columnName: column.name, value: value ?? null });
-            }}
+            className={[
+              "block w-full cursor-pointer truncate text-left font-mono text-[12px] text-[var(--u-color-text)] focus-visible:outline-none",
+              active ? "ring-1 ring-inset ring-[var(--u-color-focus)]" : "focus-visible:ring-1 focus-visible:ring-[var(--u-color-focus)]",
+              changed ? "bg-[color:color-mix(in_srgb,var(--u-color-warning)_15%,transparent)]" : "",
+              deleted ? "line-through opacity-45" : "",
+            ].join(" ")}
+            onClick={() => setActiveCell({ row: rowIndex, column: columnIndex })}
             onDoubleClick={
-              editing
+              editing &&
+              (editing.canUpdateDelete || Boolean(row.pendingRowKey)) &&
+              !columns?.find((candidate) => candidate.name === column.name)?.generated &&
+              !editing.pending &&
+              !deleted
                 ? () => {
                     setEditValue(value ?? "");
+                    setEditMode(value === null ? "null" : "value");
                     setEdit({ row, columnIndex });
                   }
                 : undefined
             }
-            title={editing ? t("database.editing.editHint") : (value ?? "NULL")}
+            title={
+              editing && (editing.canUpdateDelete || row.pendingRowKey)
+                ? t("database.editing.editHint")
+                : (value ?? "NULL")
+            }
             type="button"
           >
             {renderCell(value)}
@@ -264,7 +265,8 @@ export function TableDataGrid({
       },
       header: (
         <button
-          className="group/header flex w-full min-w-0 cursor-pointer items-center gap-1 text-left hover:text-[var(--u-color-text)] focus-visible:outline-none"
+          className="group/header flex w-full min-w-0 cursor-pointer items-center gap-1 text-left hover:text-[var(--u-color-text)] focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={hasPendingChanges}
           onClick={() => (server ? server.onSort(column.name) : toggleSort(columnIndex))}
           title={t("database.grid.sortBy", { column: column.name })}
           type="button"
@@ -282,8 +284,6 @@ export function TableDataGrid({
   const gridColumns = isSkeleton ? skeletonColumns : dataColumns;
   const gridRows = isSkeleton ? skeletonRows : visibleRows;
 
-  const totalAfterFilter = processedRows.length;
-
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex h-8 shrink-0 items-center gap-2 border-b border-[var(--u-color-border)] px-2">
@@ -291,7 +291,7 @@ export function TableDataGrid({
         <Input
           aria-label={t("database.grid.filterPlaceholder")}
           className="h-6 max-w-[260px]"
-          disabled={isSkeleton}
+          disabled={isSkeleton || hasPendingChanges}
           onChange={(event) => (server ? server.onFilter(event.target.value) : setFilter(event.target.value))}
           placeholder={t("database.grid.filterPlaceholder")}
           value={server ? server.filter : filter}
@@ -310,23 +310,41 @@ export function TableDataGrid({
         className="flex-1"
         columns={gridColumns}
         empty={(server ? server.filter : filter) ? t("database.grid.noMatches") : t("database.grid.empty")}
-        getRowKey={(_, index) => index}
-        onColumnResize={(columnId, width) => {
-          setColumnsWidths((prev) => ({ ...prev, [columnId]: width }));
-        }}
+        getRowKey={(row, index) => row.pendingRowKey ?? editing?.rowKey(row) ?? `${JSON.stringify(row)}:${index}`}
+        onColumnResize={(columnId, width) => setColumnsWidths((current) => ({ ...current, [columnId]: width }))}
         onSelectionChange={setSelection}
         rows={gridRows}
         selection={selection}
       />
       <div className="flex h-7 shrink-0 items-center justify-between border-t border-[var(--u-color-border)] px-2 text-[11px] text-[var(--u-color-text-soft)]">
-        <span>{copyStatusLabel(copyStatus, t)}</span>
-        {isSkeleton ? null : (
+        <div className="flex items-center gap-1">
+          <span>{copyStatusLabel(copyStatus, t)}</span>
+          {activeCell && visibleRows[activeCell.row] && result.columns[activeCell.column] ? (
+            <IconButton
+              label={t("database.grid.valueViewer")}
+              onClick={() => {
+                const row = visibleRows[activeCell.row];
+                const column = result.columns[activeCell.column];
+                const rowKey = row.pendingRowKey ?? editing?.rowKey(row) ?? JSON.stringify(row);
+                setViewerRaw(false);
+                setViewer({
+                  columnName: column.name,
+                  value: pendingValue(editing?.pendingChanges ?? [], rowKey, column.name, row[activeCell.column] ?? null),
+                });
+              }}
+              size="compact"
+            >
+              <Eye size={12} />
+            </IconButton>
+          ) : null}
+        </div>
+        {!isSkeleton ? (
           <span>
-            {totalAfterFilter > visibleRows.length
-              ? t("database.grid.showingFirst", { shown: visibleRows.length, total: totalAfterFilter })
-              : t("database.grid.rowsRendered", { count: totalAfterFilter })}
+            {processedRows.length > visibleRows.length
+              ? t("database.grid.showingFirst", { shown: visibleRows.length, total: processedRows.length })
+              : t("database.grid.rowsRendered", { count: processedRows.length })}
           </span>
-        )}
+        ) : null}
       </div>
       <Dialog onOpenChange={(open) => !open && setViewer(null)} open={viewer !== null}>
         <DialogContent title={t("database.grid.valueViewer")}>
@@ -358,9 +376,7 @@ export function TableDataGrid({
               </>
             )}
             <div className="flex items-center justify-between">
-              <span className="text-[11px] text-[var(--u-color-text-soft)]">
-                {t("database.grid.selectToCopy")}
-              </span>
+              <span className="text-[11px] text-[var(--u-color-text-soft)]">{t("database.grid.selectToCopy")}</span>
               <Button
                 disabled={viewer?.value == null}
                 onClick={() => viewer?.value != null && copyText(serializeDatabaseCell(viewer.value, "\t"), "copied-cell")}
@@ -375,41 +391,6 @@ export function TableDataGrid({
           </DialogBody>
         </DialogContent>
       </Dialog>
-      {editing ? (
-        <ConfirmDialog
-          confirmLabel={t("database.editing.deleteRow")}
-          description={t("database.editing.deleteRowBody")}
-          onConfirm={() => {
-            if (deleteRow) {
-              editing.onDeleteRow(buildPrimaryKey(deleteRow));
-            }
-            setDeleteRow(null);
-          }}
-          onOpenChange={(open) => !open && setDeleteRow(null)}
-          open={deleteRow !== null}
-          pending={editing.pending}
-          title={t("database.editing.deleteRowTitle")}
-        />
-      ) : null}
-      {editing ? (
-        <ConfirmDialog
-          confirmLabel={t("database.editing.confirmUpdate")}
-          description={t("database.editing.updateCellBody", {
-            column: pendingUpdate?.columnName ?? "",
-            value: pendingUpdate ? truncatePreview(pendingUpdate.value) : "",
-          })}
-          onConfirm={() => {
-            if (pendingUpdate) {
-              editing.onUpdateCell(pendingUpdate.columnName, pendingUpdate.value, pendingUpdate.primaryKey);
-            }
-            setPendingUpdate(null);
-          }}
-          onOpenChange={(open) => !open && setPendingUpdate(null)}
-          open={pendingUpdate !== null}
-          pending={editing.pending}
-          title={t("database.editing.updateCellTitle")}
-        />
-      ) : null}
     </div>
   );
 }

@@ -61,6 +61,8 @@ export type DatabaseTableColumn = {
   nullable: boolean;
   primaryKey: boolean;
   defaultValue?: string | null;
+  generated?: boolean;
+  autoIncrement?: boolean;
 };
 
 export type DatabaseIndex = {
@@ -98,7 +100,8 @@ export type DatabaseTableStructure = {
 
 export type DatabaseCellValue = {
   column: string;
-  value: string | null;
+  mode: "value" | "null" | "default";
+  value?: string | null;
 };
 
 export type DatabaseRowMutationInput = {
@@ -110,6 +113,8 @@ export type DatabaseRowMutationInput = {
   operation: "insert" | "update" | "delete";
   values?: DatabaseCellValue[];
   primaryKey?: DatabaseCellValue[];
+  originalValues?: DatabaseCellValue[];
+  confirmMutation?: boolean;
 };
 
 export type DatabaseRowMutationResult = {

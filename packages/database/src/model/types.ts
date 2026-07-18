@@ -7,11 +7,32 @@ import type {
 } from "@unfour/command-client";
 
 export type TableEditing = {
+  canInsert: boolean;
+  canUpdateDelete: boolean;
   pending: boolean;
+  pendingChanges: PendingTableChange[];
+  previewSql: string;
   primaryKeyColumns: string[];
-  onDeleteRow: (primaryKey: DatabaseCellValue[]) => void;
+  rowKey: (row: Array<string | null>) => string;
+  onApply: () => void;
+  onDeleteRow: (row: Array<string | null>, rowKey?: string) => void;
   onInsertRow: (values: DatabaseCellValue[]) => void;
-  onUpdateCell: (columnName: string, value: string | null, primaryKey: DatabaseCellValue[]) => void;
+  onRevert: () => void;
+  onUpdateCell: (
+    row: Array<string | null>,
+    columnName: string,
+    value: DatabaseCellValue,
+    rowKey?: string,
+  ) => void;
+};
+
+export type PendingTableChange = {
+  id: string;
+  operation: "insert" | "update" | "delete";
+  originalValues: DatabaseCellValue[];
+  primaryKey: DatabaseCellValue[];
+  rowKey: string;
+  values: DatabaseCellValue[];
 };
 
 export type DatabaseTableViewState = {
@@ -99,6 +120,7 @@ export type DatabaseTableWorkspaceTab = {
   id: DatabaseWorkspaceTabId;
   kind: "table";
   loading?: boolean;
+  pendingChanges: PendingTableChange[];
   queryResult: DatabaseQueryResult | null;
   segment: TableSegment;
   structureTab: DatabaseStructureTab;

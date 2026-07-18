@@ -120,6 +120,10 @@ pub struct DatabaseTableColumn {
     pub primary_key: bool,
     #[serde(default)]
     pub default_value: Option<String>,
+    #[serde(default)]
+    pub generated: bool,
+    #[serde(default)]
+    pub auto_increment: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -151,10 +155,22 @@ pub struct DatabaseTableStructureInput {
     pub table_name: String,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum DatabaseCellValueMode {
+    #[default]
+    Value,
+    Null,
+    Default,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DatabaseCellValue {
     pub column: String,
+    #[serde(default)]
+    pub mode: DatabaseCellValueMode,
+    #[serde(default)]
     pub value: Option<String>,
 }
 
@@ -175,6 +191,13 @@ pub struct DatabaseRowMutationInput {
     /// Primary-key columns identifying the row for update/delete operations.
     #[serde(default)]
     pub primary_key: Vec<DatabaseCellValue>,
+    /// Original values used for optimistic concurrency checks. When present,
+    /// an update/delete fails if another client changed the row after loading.
+    #[serde(default)]
+    pub original_values: Vec<DatabaseCellValue>,
+    /// Row writes are destructive and require an explicit user confirmation.
+    #[serde(default)]
+    pub confirm_mutation: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

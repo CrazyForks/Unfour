@@ -79,10 +79,25 @@ pub(super) async fn postgres_columns(
 ) -> Result<Vec<DatabaseTableColumn>, AppError> {
     let rows = sqlx::query(
         r#"
-        SELECT column_name, data_type, is_nullable, column_default
-        FROM information_schema.columns
-        WHERE table_schema = $1 AND table_name = $2
-        ORDER BY ordinal_position
+        SELECT c.column_name,
+               pg_catalog.format_type(a.atttypid, a.atttypmod) AS data_type,
+               c.is_nullable,
+               c.column_default,
+               c.is_generated,
+               c.identity_generation,
+               EXISTS (
+                 SELECT 1
+                 FROM pg_catalog.pg_constraint con
+                 WHERE con.conrelid = cls.oid
+                   AND con.contype = 'p'
+                   AND a.attnum = ANY(con.conkey)
+               ) AS primary_key
+        FROM information_schema.columns c
+        JOIN pg_catalog.pg_namespace n ON n.nspname = c.table_schema
+        JOIN pg_catalog.pg_class cls ON cls.relnamespace = n.oid AND cls.relname = c.table_name
+        JOIN pg_catalog.pg_attribute a ON a.attrelid = cls.oid AND a.attname = c.column_name
+        WHERE c.table_schema = $1 AND c.table_name = $2
+        ORDER BY c.ordinal_position
         "#,
     )
     .bind(schema)
@@ -96,14 +111,13 @@ pub(super) async fn postgres_columns(
             let data_type: String = row.try_get("data_type")?;
             let is_nullable: String = row.try_get("is_nullable")?;
             let column_default: Option<String> = row.try_get("column_default")?;
-
-            // Detect primary key from column_default (serial types get nextval)
-            // For a more accurate check we'd need pg_constraint, but this is
-            // sufficient for the initial phase.
-            let primary_key = column_default
-                .as_deref()
-                .map(|d| d.starts_with("nextval("))
-                .unwrap_or(false);
+            let is_generated: String = row.try_get("is_generated")?;
+            let identity_generation: Option<String> = row.try_get("identity_generation")?;
+            let primary_key: bool = row.try_get("primary_key")?;
+            let auto_increment = identity_generation.is_some()
+                || column_default
+                    .as_deref()
+                    .is_some_and(|value| value.starts_with("nextval("));
 
             Ok(DatabaseTableColumn {
                 name,
@@ -111,6 +125,9 @@ pub(super) async fn postgres_columns(
                 nullable: is_nullable == "YES",
                 primary_key,
                 default_value: column_default,
+                generated: is_generated != "NEVER"
+                    || identity_generation.as_deref() == Some("ALWAYS"),
+                auto_increment,
             })
         })
         .collect()

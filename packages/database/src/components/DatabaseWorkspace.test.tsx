@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DatabaseConnection, DatabaseTable } from "@unfour/command-client";
 import { DatabaseWorkspace } from "./DatabaseWorkspace";
@@ -55,6 +55,7 @@ const tabs: DatabaseWorkspaceTab[] = [
     error: null,
     id: "table-1",
     kind: "table",
+    pendingChanges: [],
     queryResult: null,
     segment: "data",
     structureTab: "ddl",
@@ -126,5 +127,32 @@ describe("DatabaseWorkspace", () => {
     expect(onSelectTab).toHaveBeenCalledWith("query-1");
     expect(onCloseTab).toHaveBeenCalledWith("table-1");
     expect(onReorderTabs).toHaveBeenCalledWith(1, 0);
+  });
+
+  it("asks before closing a table with pending row changes", async () => {
+    const onCloseTab = vi.fn();
+    const dirtyTabs: DatabaseWorkspaceTab[] = tabs.map((tab) =>
+      tab.kind === "table"
+        ? {
+            ...tab,
+            pendingChanges: [
+              {
+                id: "update:1",
+                operation: "update",
+                originalValues: [],
+                primaryKey: [{ column: "id", mode: "value", value: "1" }],
+                rowKey: "1",
+                values: [{ column: "name", mode: "value", value: "Ada" }],
+              },
+            ],
+          }
+        : tab,
+    );
+    renderWorkspace({ activeTab: dirtyTabs[1], onCloseTab, tabs: dirtyTabs });
+
+    fireEvent.click(screen.getByRole("button", { name: "Close users" }));
+    expect(onCloseTab).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+    await waitFor(() => expect(onCloseTab).toHaveBeenCalledWith("table-1"));
   });
 });

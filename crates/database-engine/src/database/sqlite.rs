@@ -4,7 +4,7 @@ pub(super) async fn sqlite_columns(
     pool: &sqlx::SqlitePool,
     table_name: &str,
 ) -> AppResult<Vec<DatabaseTableColumn>> {
-    let sql = format!("PRAGMA table_info({})", quote_identifier(table_name));
+    let sql = format!("PRAGMA table_xinfo({})", quote_identifier(table_name));
     let rows = sqlx::query(&sql).fetch_all(pool).await?;
     rows.into_iter()
         .map(|row| {
@@ -13,6 +13,9 @@ pub(super) async fn sqlite_columns(
             let notnull: i64 = row.try_get("notnull")?;
             let primary_key: i64 = row.try_get("pk")?;
             let default_value: Option<String> = row.try_get("dflt_value")?;
+            let hidden: i64 = row.try_get("hidden")?;
+            let auto_increment =
+                primary_key > 0 && data_type.trim().eq_ignore_ascii_case("integer");
 
             Ok(DatabaseTableColumn {
                 name,
@@ -20,6 +23,8 @@ pub(super) async fn sqlite_columns(
                 nullable: notnull == 0,
                 primary_key: primary_key > 0,
                 default_value,
+                generated: matches!(hidden, 2 | 3),
+                auto_increment,
             })
         })
         .collect()

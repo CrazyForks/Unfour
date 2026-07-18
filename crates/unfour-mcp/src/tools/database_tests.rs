@@ -167,6 +167,8 @@ impl CommandBusAdapter for DbStubCommandBus {
                             nullable: false,
                             primary_key: true,
                             default_value: None,
+                            generated: false,
+                            auto_increment: false,
                         },
                         DatabaseTableColumn {
                             name: "email".to_string(),
@@ -174,6 +176,8 @@ impl CommandBusAdapter for DbStubCommandBus {
                             nullable: false,
                             primary_key: false,
                             default_value: None,
+                            generated: false,
+                            auto_increment: false,
                         },
                         DatabaseTableColumn {
                             name: "created_at".to_string(),
@@ -181,6 +185,8 @@ impl CommandBusAdapter for DbStubCommandBus {
                             nullable: true,
                             primary_key: false,
                             default_value: None,
+                            generated: false,
+                            auto_increment: false,
                         },
                     ],
                 },
@@ -195,6 +201,8 @@ impl CommandBusAdapter for DbStubCommandBus {
                         nullable: false,
                         primary_key: true,
                         default_value: None,
+                        generated: false,
+                        auto_increment: false,
                     }],
                 },
                 DatabaseTable {

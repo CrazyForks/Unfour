@@ -105,6 +105,7 @@ function createTableTab(
     error: null,
     id,
     kind: "table",
+    pendingChanges: [],
     queryResult: null,
     segment,
     structureTab: "ddl",

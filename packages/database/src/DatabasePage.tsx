@@ -40,6 +40,7 @@ import { buildDatabaseTree, databaseTableTreeId } from "./model/database-tree";
 import { normalizeQueryContext } from "./model/database-query-context";
 import { groupSavedSqlByConnection, type DatabasePageProps } from "./model/database-page";
 import { EMPTY_CONNECTION_STATES, useDatabaseConnectionStore } from "./model/database-connection-state";
+import { createTableEditing } from "./model/table-editing";
 import type {
   DatabaseConnectionSessionState,
   DatabaseConnectionStatus,
@@ -457,6 +458,7 @@ export function DatabasePage({
 
   const {
     applyTableFilter,
+    applyPendingTableChanges,
     applyTableSort,
     browseMutation,
     browseTablePage,
@@ -479,7 +481,6 @@ export function DatabasePage({
     loadConnectionRoot,
     loadHistoryEntry,
     loadSqlIntoEditor,
-    mutateRow,
     openSavedSql,
     previewSelectedTable,
     refreshActiveSchema,
@@ -690,24 +691,14 @@ export function DatabasePage({
   const activeTableStatus = activeTableTab
     ? connectionStates[activeTableTab.connectionId]?.status ?? "disconnected"
     : "disconnected";
-  const primaryKeyColumns = (activeTableTab?.table.columns ?? [])
-    .filter((column) => column.primaryKey)
-    .map((column) => column.name);
-  const tableEditing: TableEditing | null =
-    activeTableTab &&
-    activeTableTab.tableView &&
-    activeTableStatus === "connected" &&
-    primaryKeyColumns.length > 0 &&
-    !activeTableConnection?.readOnly
-      ? {
-          pending: rowMutation.isPending,
-          primaryKeyColumns,
-          onDeleteRow: (primaryKey) => mutateRow("delete", [], primaryKey),
-          onInsertRow: (values) => mutateRow("insert", values, []),
-          onUpdateCell: (columnName, value, primaryKey) =>
-            mutateRow("update", [{ column: columnName, value }], primaryKey),
-        }
-      : null;
+  const tableEditing: TableEditing | null = createTableEditing({
+    applyPendingChanges: applyPendingTableChanges,
+    connection: activeTableConnection,
+    connected: activeTableStatus === "connected",
+    mutationPending: rowMutation.isPending,
+    tab: activeTableTab,
+    updateTableTab: databaseTabs.updateTableTab,
+  });
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col bg-[var(--u-color-surface)]">

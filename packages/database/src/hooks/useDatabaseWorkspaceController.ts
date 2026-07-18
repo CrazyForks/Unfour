@@ -1,12 +1,10 @@
 import { type Dispatch, type FormEvent, type SetStateAction, useEffect, useRef } from "react";
-import { type QueryClient, useMutation } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
 import {
   getDatabaseSchema,
   listDatabaseCatalogs,
-  mutateDatabaseRow,
 } from "@unfour/command-client";
 import type {
-  DatabaseCellValue,
   DatabaseConnection,
   DatabaseConnectionInput,
   DatabaseSchema,
@@ -20,6 +18,7 @@ import { useQueryHistory } from "./useQueryHistory";
 import { useSavedSql } from "./useSavedSql";
 import { useSqlExecution } from "./useSqlExecution";
 import { useTableData } from "./useTableData";
+import { useTableRowMutations } from "./useTableRowMutations";
 import type {
   DatabaseConnectionSessionState,
   DatabaseConnectionStatus,
@@ -239,17 +238,11 @@ export function useDatabaseWorkspaceController({
     workspaceId,
   });
 
-  const rowMutation = useMutation({
-    mutationFn: mutateDatabaseRow,
-    onSuccess: () => {
-      // Re-read the current page so the grid reflects the committed change.
-      refreshTablePage();
-    },
-    onError: (error) => {
-      if (activeTableTab) {
-        databaseTabs.updateTableTab(activeTableTab.id, { error });
-      }
-    },
+  const { applyPendingTableChanges, rowMutation } = useTableRowMutations({
+    activeTableTab,
+    databaseTabs,
+    refreshTablePage,
+    workspaceId,
   });
 
   useEffect(() => {
@@ -556,27 +549,6 @@ export function useDatabaseWorkspaceController({
     }
   }
 
-  function mutateRow(
-    operation: "insert" | "update" | "delete",
-    values: DatabaseCellValue[],
-    primaryKey: DatabaseCellValue[],
-  ) {
-    if (!activeTableTab) {
-      return;
-    }
-    databaseTabs.updateTableTab(activeTableTab.id, { error: null });
-    rowMutation.mutate({
-      workspaceId,
-      connectionId: activeTableTab.connectionId,
-      catalog: activeTableTab.table.catalog,
-      schema: activeTableTab.table.schema,
-      tableName: activeTableTab.table.name,
-      operation,
-      values,
-      primaryKey,
-    });
-  }
-
   function runSql(overrideSql?: string) {
     executeMutation.reset();
     browseMutation.reset();
@@ -732,6 +704,7 @@ export function useDatabaseWorkspaceController({
 
   return {
     applyTableFilter,
+    applyPendingTableChanges,
     applyTableSort,
     browseMutation,
     browseTablePage,
@@ -754,7 +727,6 @@ export function useDatabaseWorkspaceController({
     loadConnectionRoot,
     loadHistoryEntry,
     loadSqlIntoEditor,
-    mutateRow,
     openSavedSql,
     previewSelectedTable,
     refreshActiveSchema,

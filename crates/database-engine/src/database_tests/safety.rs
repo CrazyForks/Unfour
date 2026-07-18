@@ -1,6 +1,7 @@
 use super::super::*;
 use super::support::{service_with_workspace, sqlite_fixture, sqlite_input};
 use std::fs;
+use unfour_core::models::DatabaseCellValueMode;
 
 #[test]
 fn classify_query_flags_writes_hidden_behind_explain_and_with() {
@@ -237,8 +238,11 @@ async fn read_only_connection_blocks_writes_and_row_edits() {
             values: vec![],
             primary_key: vec![DatabaseCellValue {
                 column: "id".to_string(),
+                mode: DatabaseCellValueMode::Value,
                 value: Some("1".to_string()),
             }],
+            original_values: vec![],
+            confirm_mutation: true,
         })
         .await;
     assert!(matches!(row, Err(AppError::ReadOnly(_))));

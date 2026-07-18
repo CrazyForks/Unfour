@@ -30,6 +30,8 @@ pub enum AppError {
         message: String,
         details: serde_json::Value,
     },
+    #[error("row conflict: {0}")]
+    RowConflict(String),
 }
 
 impl AppError {
@@ -48,6 +50,7 @@ impl AppError {
             AppError::ReadOnly(_) => "READ_ONLY_CONNECTION",
             AppError::Timeout(_) => "QUERY_TIMEOUT",
             AppError::ConfirmationRequired { .. } => "CONFIRMATION_REQUIRED",
+            AppError::RowConflict(_) => "ROW_CONFLICT",
         }
     }
 }
