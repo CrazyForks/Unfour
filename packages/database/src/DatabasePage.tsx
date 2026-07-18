@@ -691,14 +691,24 @@ export function DatabasePage({
   const activeTableStatus = activeTableTab
     ? connectionStates[activeTableTab.connectionId]?.status ?? "disconnected"
     : "disconnected";
-  const tableEditing: TableEditing | null = createTableEditing({
-    applyPendingChanges: applyPendingTableChanges,
-    connection: activeTableConnection,
-    connected: activeTableStatus === "connected",
-    mutationPending: rowMutation.isPending,
-    tab: activeTableTab,
-    updateTableTab: databaseTabs.updateTableTab,
-  });
+  const tableEditing: TableEditing | null = useMemo(
+    () => createTableEditing({
+      applyPendingChanges: applyPendingTableChanges,
+      connection: activeTableConnection,
+      connected: activeTableStatus === "connected",
+      mutationPending: rowMutation.isPending,
+      tab: activeTableTab,
+      updateTableTab: databaseTabs.updateTableTab,
+    }),
+    [
+      activeTableConnection,
+      activeTableStatus,
+      activeTableTab,
+      applyPendingTableChanges,
+      databaseTabs.updateTableTab,
+      rowMutation.isPending,
+    ],
+  );
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col bg-[var(--u-color-surface)]">

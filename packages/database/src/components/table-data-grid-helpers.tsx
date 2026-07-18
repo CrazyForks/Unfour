@@ -8,6 +8,12 @@ import {
 
 export type SortState = { columnIndex: number; direction: "asc" | "desc" };
 
+export const MAX_CELL_PREVIEW_LENGTH = 240;
+export const MAX_CELL_TITLE_LENGTH = 512;
+export const MAX_VALUE_VIEWER_LENGTH = 20_000;
+const MIN_AUTO_FIT_COLUMN_WIDTH = 96;
+const MAX_AUTO_FIT_COLUMN_WIDTH = 560;
+
 export function buildSkeletonRows(columns: DatabaseTableColumn[], count: number): Array<Array<string | null>> {
   return Array.from({ length: count }, () => columns.map(() => ""));
 }
@@ -39,9 +45,39 @@ export function buildSkeletonColumns(
   ];
 }
 
+export function truncateText(value: string, maxLength: number) {
+  if (value.length <= maxLength) return value;
+  return `${value.slice(0, Math.max(0, maxLength - 1))}…`;
+}
+
 export function truncatePreview(value: string) {
-  const text = value.length === 0 ? "''" : value;
-  return text.length > 120 ? `${text.slice(0, 120)}…` : text;
+  return truncateText(value.length === 0 ? "''" : value, MAX_CELL_PREVIEW_LENGTH);
+}
+
+export function calculateAutoFitWidth(
+  column: Pick<DatabaseTableColumn, "dataType" | "name">,
+  values: Array<string | null | undefined>,
+) {
+  const headerWidth = estimateTextWidth(column.name) + estimateTextWidth(column.dataType, 6) + 32;
+  const contentWidth = values.reduce(
+    (maximum, value) => Math.max(maximum, estimateTextWidth(value == null ? "NULL" : truncatePreview(value)) + 20),
+    MIN_AUTO_FIT_COLUMN_WIDTH,
+  );
+  return Math.min(MAX_AUTO_FIT_COLUMN_WIDTH, Math.max(MIN_AUTO_FIT_COLUMN_WIDTH, headerWidth, contentWidth));
+}
+
+export function isLikelyJson(value: string) {
+  const trimmed = value.trim();
+  return (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
+    (trimmed.startsWith("[") && trimmed.endsWith("]"));
+}
+
+function estimateTextWidth(value: string, pixelsPerUnit = 7.2) {
+  const units = Array.from(value).reduce((total, character) => {
+    if (character === "\t") return total + 4;
+    return total + (character.charCodeAt(0) > 255 ? 2 : 1);
+  }, 0);
+  return Math.ceil(units * pixelsPerUnit);
 }
 
 export function compareCells(a: string | null, b: string | null) {
@@ -91,11 +127,7 @@ export function renderCell(value: string | null | undefined) {
     return <StatusBadge>NULL</StatusBadge>;
   }
 
-  if (value.length > 240) {
-    return `${value.slice(0, 240)}...`;
-  }
-
-  return value;
+  return truncatePreview(value);
 }
 
 export function copyStatusLabel(

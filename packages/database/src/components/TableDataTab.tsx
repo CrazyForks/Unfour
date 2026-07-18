@@ -144,6 +144,24 @@ export function TableDataTab({
           </IconButton>
         </ToolbarGroup>
       </Toolbar>
+      {editing && pendingCount > 0 ? (
+        <div className="flex min-h-9 shrink-0 items-center gap-2 border-b border-[var(--u-color-border)] bg-[color:color-mix(in_srgb,var(--u-color-warning)_8%,var(--u-color-surface))] px-3">
+          <span className="min-w-0 flex-1 text-[12px] text-[var(--u-color-text)]">
+            {t("database.editing.pendingChanges", { count: pendingCount })}
+          </span>
+          <Button disabled={editing.pending} onClick={() => setPreviewOpen(true)} size="sm" type="button" variant="ghost">
+            <Code2 size={13} />
+            {t("database.editing.previewSql")}
+          </Button>
+          <Button disabled={editing.pending} onClick={editing.onRevert} size="sm" type="button" variant="ghost">
+            <RotateCcw size={13} />
+            {t("database.editing.revert")}
+          </Button>
+          <Button disabled={editing.pending} onClick={() => setApplyOpen(true)} size="sm" type="button">
+            {t("database.editing.apply")}
+          </Button>
+        </div>
+      ) : null}
       {isLoading ? (
         <div className="h-0.5 w-full shrink-0 overflow-hidden bg-[var(--u-color-border)]">
           <div className="h-full w-1/3 animate-indeterminate rounded-full bg-[var(--u-color-primary)]" />
@@ -163,24 +181,6 @@ export function TableDataTab({
           server={{ filter: tableFilter, onFilter: onTableFilter, onSort: onTableSort, sort: tableSort }}
         />
       </div>
-      {editing && pendingCount > 0 ? (
-        <div className="flex min-h-9 shrink-0 items-center gap-2 border-t border-[var(--u-color-border)] bg-[color:color-mix(in_srgb,var(--u-color-warning)_8%,var(--u-color-surface))] px-3">
-          <span className="min-w-0 flex-1 text-[12px] text-[var(--u-color-text)]">
-            {t("database.editing.pendingChanges", { count: pendingCount })}
-          </span>
-          <Button disabled={editing.pending} onClick={() => setPreviewOpen(true)} size="sm" type="button" variant="ghost">
-            <Code2 size={13} />
-            {t("database.editing.previewSql")}
-          </Button>
-          <Button disabled={editing.pending} onClick={editing.onRevert} size="sm" type="button" variant="ghost">
-            <RotateCcw size={13} />
-            {t("database.editing.revert")}
-          </Button>
-          <Button disabled={editing.pending} onClick={() => setApplyOpen(true)} size="sm" type="button">
-            {t("database.editing.apply")}
-          </Button>
-        </div>
-      ) : null}
       <div className="flex h-9 shrink-0 items-center gap-3 border-t border-[var(--u-color-border)] bg-[var(--u-color-surface)] px-3">
         <Database className="shrink-0 text-[var(--u-color-text-soft)]" size={13} />
         <code className="min-w-0 flex-1 truncate font-mono text-[12px] text-[var(--u-color-text-muted)]" title={browseSql}>

@@ -17,31 +17,53 @@ import {
   type DataTableColumn,
   type DataTableSelection,
 } from "@unfour/ui";
-import type { TableEditing } from "../model/types";
+import type { PendingTableChange, TableEditing } from "../model/types";
 import { databaseValue, pendingValue } from "../model/table-row-editing";
 import { serializeDatabaseCell, serializeDatabaseRow, tryFormatJson } from "../result-utils";
 import {
   buildSkeletonColumns,
   buildSkeletonRows,
+  calculateAutoFitWidth,
   compareCells,
   copyStatusLabel,
+  isLikelyJson,
+  MAX_CELL_TITLE_LENGTH,
+  MAX_VALUE_VIEWER_LENGTH,
   renderCell,
   renderServerSortIcon,
   renderSortIcon,
+  truncateText,
   type SortState,
 } from "./table-data-grid-helpers";
 
 const MAX_RENDERED_ROWS = 500;
+const EMPTY_PENDING_CHANGES: PendingTableChange[] = [];
 
 type CellViewer = { columnName: string; value: string | null };
 type DataRow = Array<string | null> & { pendingRowKey?: string };
 type EditTarget = { row: DataRow; columnIndex: number };
+type IndexedPendingChange = {
+  change: PendingTableChange;
+  valuesByColumn: Map<string, PendingTableChange["values"][number]>;
+};
 type ServerControls = {
   sort: { column: string; descending: boolean } | null;
   filter: string;
   onSort: (column: string) => void;
   onFilter: (filter: string) => void;
 };
+
+function indexedPendingValue(
+  indexedChange: IndexedPendingChange | undefined,
+  columnName: string,
+  fallback: string | null,
+) {
+  const cell = indexedChange?.valuesByColumn.get(columnName);
+  if (!cell) return fallback;
+  if (cell.mode === "null") return null;
+  if (cell.mode === "default") return "DEFAULT";
+  return cell.value ?? "";
+}
 
 export function TableDataGrid({
   columns,
@@ -71,7 +93,14 @@ export function TableDataGrid({
     __row_actions: editing ? 72 : 48,
   }));
 
-  const viewerJson = viewer?.value !== null && viewer ? tryFormatJson(viewer.value) : null;
+  const viewerValue = viewer?.value ?? null;
+  const viewerJson = viewerValue !== null && viewerValue.length <= MAX_VALUE_VIEWER_LENGTH
+    ? tryFormatJson(viewerValue)
+    : null;
+  const viewerIsJson = Boolean(viewerJson?.isJson || (viewerValue && isLikelyJson(viewerValue)));
+  const viewerContent = viewerJson?.isJson && !viewerRaw ? viewerJson.formatted : viewerValue;
+  const viewerPreview = viewerContent === null ? null : truncateText(viewerContent, MAX_VALUE_VIEWER_LENGTH);
+  const viewerTruncated = Boolean(viewerContent && viewerContent.length > MAX_VALUE_VIEWER_LENGTH);
   const isSkeleton = Boolean(loading && columns?.length);
   const skeletonRows = useMemo<DataRow[]>(
     () => (isSkeleton && columns ? buildSkeletonRows(columns, 12) : []),
@@ -111,8 +140,41 @@ export function TableDataGrid({
       return sort.direction === "asc" ? compared : -compared;
     });
   }, [filter, insertedRows, result.rows, server, sort]);
-  const visibleRows = processedRows.slice(0, MAX_RENDERED_ROWS);
-  const hasPendingChanges = Boolean(editing?.pendingChanges.length);
+  const visibleRows = useMemo(
+    () => processedRows.slice(0, MAX_RENDERED_ROWS),
+    [processedRows],
+  );
+  const pendingChanges = editing?.pendingChanges ?? EMPTY_PENDING_CHANGES;
+  const pendingChangesByRowKey = useMemo(
+    () => new Map(pendingChanges.map((change) => [
+      change.rowKey,
+      {
+        change,
+        valuesByColumn: new Map(change.values.map((cell) => [cell.column, cell])),
+      } satisfies IndexedPendingChange,
+    ])),
+    [pendingChanges],
+  );
+  const rowKeyForEditing = editing?.rowKey;
+  const visibleRowKeys = useMemo(
+    () => visibleRows.map(
+      (row) => row.pendingRowKey ?? rowKeyForEditing?.(row) ?? JSON.stringify(row),
+    ),
+    [rowKeyForEditing, visibleRows],
+  );
+  const autoFitWidths = useMemo(
+    () => result.columns.map((column, columnIndex) =>
+      calculateAutoFitWidth(
+        column,
+        visibleRows.map((row, rowIndex) => indexedPendingValue(
+          pendingChangesByRowKey.get(visibleRowKeys[rowIndex]),
+          column.name,
+          row[columnIndex] ?? null,
+        )),
+      )),
+    [pendingChangesByRowKey, result.columns, visibleRowKeys, visibleRows],
+  );
+  const hasPendingChanges = pendingChanges.length > 0;
 
   async function copyText(text: string, status: "copied-cell" | "copied-row") {
     try {
@@ -151,11 +213,12 @@ export function TableDataGrid({
   }
 
   const rowActionColumn: DataTableColumn<DataRow> = {
+    autoFitWidth: editing ? 72 : 48,
     cell: (row, rowIndex) => {
       const rowKey = row.pendingRowKey ?? editing?.rowKey(row);
-      const deleted = editing?.pendingChanges.some(
-        (change) => change.rowKey === rowKey && change.operation === "delete",
-      );
+      const deleted = rowKey
+        ? pendingChangesByRowKey.get(rowKey)?.change.operation === "delete"
+        : false;
       return (
         <div className="flex items-center gap-0.5">
           <IconButton
@@ -186,11 +249,13 @@ export function TableDataGrid({
   const dataColumns: DataTableColumn<DataRow>[] = [
     rowActionColumn,
     ...result.columns.map((column, columnIndex) => ({
+      autoFitWidth: autoFitWidths[columnIndex],
       cell: (row: DataRow, rowIndex: number) => {
         const rowKey = row.pendingRowKey ?? editing?.rowKey(row) ?? JSON.stringify(row);
-        const change = editing?.pendingChanges.find((candidate) => candidate.rowKey === rowKey);
-        const value = pendingValue(editing?.pendingChanges ?? [], rowKey, column.name, row[columnIndex] ?? null);
-        const changed = change?.values.some((cell) => cell.column === column.name);
+        const indexedChange = pendingChangesByRowKey.get(rowKey);
+        const change = indexedChange?.change;
+        const value = indexedPendingValue(indexedChange, column.name, row[columnIndex] ?? null);
+        const changed = indexedChange?.valuesByColumn.has(column.name);
         const deleted = change?.operation === "delete";
         const active = activeCell?.row === rowIndex && activeCell.column === columnIndex;
         if (edit?.row === row && edit.columnIndex === columnIndex) {
@@ -255,7 +320,7 @@ export function TableDataGrid({
             title={
               editing && (editing.canUpdateDelete || row.pendingRowKey)
                 ? t("database.editing.editHint")
-                : (value ?? "NULL")
+                : (value === null ? "NULL" : truncateText(value, MAX_CELL_TITLE_LENGTH))
             }
             type="button"
           >
@@ -311,6 +376,7 @@ export function TableDataGrid({
         columns={gridColumns}
         empty={(server ? server.filter : filter) ? t("database.grid.noMatches") : t("database.grid.empty")}
         getRowKey={(row, index) => row.pendingRowKey ?? editing?.rowKey(row) ?? `${JSON.stringify(row)}:${index}`}
+        getColumnResizeLabel={(column) => t("database.grid.resizeColumn", { column: column.id === "__row_actions" ? "#" : column.id })}
         onColumnResize={(columnId, width) => setColumnsWidths((current) => ({ ...current, [columnId]: width }))}
         onSelectionChange={setSelection}
         rows={gridRows}
@@ -329,7 +395,11 @@ export function TableDataGrid({
                 setViewerRaw(false);
                 setViewer({
                   columnName: column.name,
-                  value: pendingValue(editing?.pendingChanges ?? [], rowKey, column.name, row[activeCell.column] ?? null),
+                  value: indexedPendingValue(
+                    pendingChangesByRowKey.get(rowKey),
+                    column.name,
+                    row[activeCell.column] ?? null,
+                  ),
                 });
               }}
               size="compact"
@@ -356,23 +426,30 @@ export function TableDataGrid({
               <StatusBadge>NULL</StatusBadge>
             ) : (
               <>
-                {viewerJson?.isJson ? (
+                {viewerIsJson ? (
                   <div className="flex items-center justify-between">
                     <StatusBadge>JSON</StatusBadge>
-                    <button
-                      className="text-[11px] text-[var(--u-color-text-soft)] hover:text-[var(--u-color-text)]"
-                      onClick={() => setViewerRaw((current) => !current)}
-                      type="button"
-                    >
-                      {viewerRaw ? t("database.grid.viewFormatted") : t("database.grid.viewRaw")}
-                    </button>
+                    {viewerJson?.isJson ? (
+                      <button
+                        className="text-[11px] text-[var(--u-color-text-soft)] hover:text-[var(--u-color-text)]"
+                        onClick={() => setViewerRaw((current) => !current)}
+                        type="button"
+                      >
+                        {viewerRaw ? t("database.grid.viewFormatted") : t("database.grid.viewRaw")}
+                      </button>
+                    ) : null}
                   </div>
                 ) : null}
                 <div className="max-h-[50vh] overflow-auto rounded border border-[var(--u-color-border)] bg-[var(--u-color-surface-subtle)]">
                   <pre className="whitespace-pre-wrap break-words p-2 font-mono text-[12px] text-[var(--u-color-text)]">
-                    {viewerJson?.isJson && !viewerRaw ? viewerJson.formatted : viewer?.value}
+                    {viewerPreview}
                   </pre>
                 </div>
+                {viewerTruncated ? (
+                  <p className="text-[11px] text-[var(--u-color-text-soft)]" role="status">
+                    {t("database.grid.valueTruncated", { count: MAX_VALUE_VIEWER_LENGTH })}
+                  </p>
+                ) : null}
               </>
             )}
             <div className="flex items-center justify-between">

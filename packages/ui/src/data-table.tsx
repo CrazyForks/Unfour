@@ -3,6 +3,8 @@ import { cn } from "./utils";
 
 export type DataTableColumn<T> = {
   align?: "left" | "right";
+  /** Target width in px when the resize handle is double-clicked. */
+  autoFitWidth?: number;
   cell?: (row: T, rowIndex: number) => React.ReactNode;
   id: string;
   header: React.ReactNode;
@@ -38,6 +40,7 @@ export function DataTable<T>({
   getRowKey,
   rows,
   selection,
+  getColumnResizeLabel,
   onSelectionChange,
   onColumnResize,
 }: {
@@ -46,6 +49,8 @@ export function DataTable<T>({
   empty?: React.ReactNode;
   getRowKey?: (row: T, rowIndex: number) => React.Key;
   rows: T[];
+  /** Accessible drag/double-click hint for each column resize handle. */
+  getColumnResizeLabel?: (column: DataTableColumn<T>) => string;
   /** Controlled cell selection range. */
   selection?: DataTableSelection | null;
   onSelectionChange?: (selection: DataTableSelection | null) => void;
@@ -114,7 +119,9 @@ export function DataTable<T>({
 
   const handleResizeStart = React.useCallback(
     (colId: string, e: React.PointerEvent) => {
-      const currentWidth = colWidths[colId] ?? 0;
+      e.preventDefault();
+      e.stopPropagation();
+      const currentWidth = colWidths[colId] ?? columns.find((column) => column.id === colId)?.width ?? 0;
       // Track the latest width in a local so `onUp` reads the post-drag value
       // instead of the stale `colWidths` captured in this closure.
       let latestWidth = currentWidth;
@@ -141,7 +148,28 @@ export function DataTable<T>({
       window.addEventListener("pointermove", onMove);
       window.addEventListener("pointerup", onUp, { once: true });
     },
-    [colWidths, onColumnResize],
+    [colWidths, columns, onColumnResize],
+  );
+
+  const resizeColumn = React.useCallback(
+    (column: DataTableColumn<T>, width: number) => {
+      const nextWidth = Math.max(40, Math.round(width));
+      setColWidths((current) => ({ ...current, [column.id]: nextWidth }));
+      onColumnResize?.(column.id, nextWidth);
+    },
+    [onColumnResize],
+  );
+
+  const handleResizeKeyDown = React.useCallback(
+    (column: DataTableColumn<T>, event: React.KeyboardEvent) => {
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+      event.preventDefault();
+      event.stopPropagation();
+      const currentWidth = colWidths[column.id] ?? column.width ?? 40;
+      const step = event.shiftKey ? 32 : 8;
+      resizeColumn(column, currentWidth + (event.key === "ArrowRight" ? step : -step));
+    },
+    [colWidths, resizeColumn],
   );
 
   const isSelected = React.useCallback(
@@ -168,39 +196,57 @@ export function DataTable<T>({
         style={tableWidth ? { width: tableWidth } : undefined}
       >
         <colgroup>
-          {columns.map((column) => (
-            <col key={column.id} style={colWidths[column.id] ? { width: colWidths[column.id] } : undefined} />
-          ))}
+          {columns.map((column) => {
+            const width = colWidths[column.id] ?? column.width;
+            return <col key={column.id} style={width ? { width } : undefined} />;
+          })}
         </colgroup>
         <thead className="sticky top-0 z-10 bg-[var(--u-color-surface-subtle)] text-[var(--u-color-text-muted)]">
           <tr>
-            {columns.map((column) => (
-              <th
-                className={cn(
-                  "relative box-border h-[var(--u-size-table-row)] border-b border-[var(--u-color-border)] px-2 font-medium",
-                  column.align === "right" && "text-right",
-                )}
-                key={column.id}
-              >
-                <div
+            {columns.map((column) => {
+              const width = colWidths[column.id] ?? column.width;
+              const resizeLabel = getColumnResizeLabel?.(column) ?? column.id;
+              return (
+                <th
                   className={cn(
-                    "flex min-w-0 items-center gap-2",
-                    column.align === "right" && "justify-end",
+                    "relative box-border h-[var(--u-size-table-row)] border-b border-r border-[var(--u-color-border)] px-2 font-medium last:border-r-0",
+                    column.align === "right" && "text-right",
                   )}
+                  key={column.id}
                 >
-                  <span className="truncate">{column.header}</span>
-                  {column.meta && <span className="shrink-0 text-[10px] uppercase text-[var(--u-color-text-soft)]">{column.meta}</span>}
-                </div>
-                {onColumnResize && colWidths[column.id] && (
                   <div
-                    className="group absolute inset-y-0 right-0 z-10 w-2 cursor-col-resize"
-                    onPointerDown={(e) => handleResizeStart(column.id, e)}
+                    className={cn(
+                      "flex min-w-0 items-center gap-2",
+                      column.align === "right" && "justify-end",
+                    )}
                   >
-                    <div className="absolute inset-y-2 right-0 w-px bg-[var(--u-color-primary)] opacity-0 transition-opacity duration-100 group-hover:opacity-100" />
+                    <span className="truncate">{column.header}</span>
+                    {column.meta && <span className="shrink-0 text-[10px] uppercase text-[var(--u-color-text-soft)]">{column.meta}</span>}
                   </div>
-                )}
-              </th>
-            ))}
+                  {onColumnResize && width && (
+                    <div
+                      aria-label={resizeLabel}
+                      aria-orientation="vertical"
+                      aria-valuemin={40}
+                      aria-valuenow={Math.round(width)}
+                      className="group absolute inset-y-0 right-0 z-10 w-2 cursor-col-resize focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-[var(--u-color-focus)]"
+                      onDoubleClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        resizeColumn(column, column.autoFitWidth ?? column.width ?? width);
+                      }}
+                      onKeyDown={(event) => handleResizeKeyDown(column, event)}
+                      onPointerDown={(event) => handleResizeStart(column.id, event)}
+                      role="separator"
+                      tabIndex={0}
+                      title={resizeLabel}
+                    >
+                      <div className="absolute inset-y-1 -right-px w-px bg-[var(--u-color-primary)] opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100" />
+                    </div>
+                  )}
+                </th>
+              );
+            })}
           </tr>
         </thead>
         <tbody>
@@ -222,7 +268,7 @@ export function DataTable<T>({
                 {columns.map((column, colIndex) => (
                   <td
                     className={cn(
-                      "box-border h-[var(--u-size-table-row)] truncate px-2 text-[var(--u-color-text)]",
+                      "box-border h-[var(--u-size-table-row)] truncate border-r border-[var(--u-color-border)] px-2 text-[var(--u-color-text)] last:border-r-0",
                       column.align === "right" && "text-right",
                       isSelected(rowIndex, colIndex) && "bg-[color:color-mix(in_srgb,var(--u-color-primary)_12%,var(--u-color-surface))]",
                     )}
