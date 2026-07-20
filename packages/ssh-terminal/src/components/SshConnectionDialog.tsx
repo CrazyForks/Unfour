@@ -164,7 +164,7 @@ export function SshConnectionDialog({
             )}
             {Boolean(error) && (
               <ErrorState className="min-h-0 justify-start py-2 text-left">
-                {formatTerminalError(error)}
+                {formatTerminalError(error, t)}
               </ErrorState>
             )}
           </DialogBody>

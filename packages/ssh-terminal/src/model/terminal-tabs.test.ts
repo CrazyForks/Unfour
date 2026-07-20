@@ -1,6 +1,10 @@
 import type { SshConnection, SshSessionSummary } from "@unfour/command-client";
 import { describe, expect, it } from "vitest";
-import { buildTerminalSessionTabs, shouldShowTerminalSessionTab } from "./terminal-tabs";
+import {
+  buildTerminalSessionTabs,
+  shouldCloseTerminalSessionInBackend,
+  shouldShowTerminalSessionTab,
+} from "./terminal-tabs";
 
 function connection(overrides: Partial<SshConnection> & { id: string }): SshConnection {
   return {
@@ -117,6 +121,20 @@ describe("shouldShowTerminalSessionTab", () => {
     ).toBe(true);
   });
 
+  it("keeps a failed connection tab visible after another tab becomes active", () => {
+    expect(
+      shouldShowTerminalSessionTab({
+        activeSessionId: "s2",
+        dismissedSessionIds: [],
+        session: session({
+          sessionId: "s1",
+          connectionId: "c1",
+          status: "failed",
+        }),
+      }),
+    ).toBe(true);
+  });
+
   it("hides explicitly dismissed sessions", () => {
     expect(
       shouldShowTerminalSessionTab({
@@ -125,5 +143,31 @@ describe("shouldShowTerminalSessionTab", () => {
         session: session({ sessionId: "s1", connectionId: "c1" }),
       }),
     ).toBe(false);
+  });
+});
+
+describe("shouldCloseTerminalSessionInBackend", () => {
+  it("skips the backend close command for frontend-only failed sessions", () => {
+    const failedSession = session({
+      sessionId: "frontend-failed-1",
+      connectionId: "c1",
+      status: "failed",
+    });
+
+    expect(
+      shouldCloseTerminalSessionInBackend({
+        frontendFailedSessions: { [failedSession.sessionId]: failedSession },
+        sessionId: failedSession.sessionId,
+      }),
+    ).toBe(false);
+  });
+
+  it("closes backend-managed sessions through the command bus", () => {
+    expect(
+      shouldCloseTerminalSessionInBackend({
+        frontendFailedSessions: {},
+        sessionId: "backend-session-1",
+      }),
+    ).toBe(true);
   });
 });

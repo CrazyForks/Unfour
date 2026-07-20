@@ -32,7 +32,11 @@ import {
   defaultSshConnectionInput,
   sshConnectionToInput,
 } from "./model/ssh-connection-state";
-import { buildTerminalSessionTabs, shouldShowTerminalSessionTab } from "./model/terminal-tabs";
+import {
+  buildTerminalSessionTabs,
+  shouldCloseTerminalSessionInBackend,
+  shouldShowTerminalSessionTab,
+} from "./model/terminal-tabs";
 import { formatTerminalError } from "./model/errors";
 
 export function TerminalPage({
@@ -314,7 +318,7 @@ export function TerminalPage({
     onSuccess: (result) =>
       setTestResult({ ok: result.ok, message: result.message }),
     onError: (error) =>
-      setTestResult({ ok: false, message: formatTerminalError(error) }),
+      setTestResult({ ok: false, message: formatTerminalError(error, t) }),
   });
 
   const connectMutation = useMutation({
@@ -351,7 +355,7 @@ export function TerminalPage({
         sessionId: syntheticId,
         workspaceId,
         connectionId,
-        status: "disconnected",
+        status: "failed",
         reconnectAttempt: 0,
         authKind: connection.authKind,
         host: connection.host,
@@ -361,7 +365,7 @@ export function TerminalPage({
         createdAt: now,
         updatedAt: now,
       };
-      const errorMessage = formatTerminalError(error);
+      const errorMessage = formatTerminalError(error, t);
       startTerminalSession(syntheticId, [
         {
           sessionId: syntheticId,
@@ -580,6 +584,19 @@ export function TerminalPage({
     connectMutation.mutate(connectionId);
   }
 
+  function closeSessionInBackend(sessionId: string) {
+    if (
+      !shouldCloseTerminalSessionInBackend({
+        frontendFailedSessions,
+        sessionId,
+      })
+    ) {
+      connectMutation.reset();
+      return;
+    }
+    closeMutation.mutate(sessionId);
+  }
+
   function requestCloseSession(sessionId: string) {
     const session = sessions.find((item) => item.sessionId === sessionId);
     const needsConfirmation =
@@ -588,10 +605,10 @@ export function TerminalPage({
       setCloseConfirmSessionId(sessionId);
       return;
     }
-    // Already disconnected/failed: just drop the tab from view. The backend
-    // retains it as history, so re-closing would be a no-op.
+    // Frontend-only failures have no backend session to close. Backend-managed
+    // disconnected/failed sessions still go through the command bus.
     if (session) {
-      closeMutation.mutate(sessionId);
+      closeSessionInBackend(sessionId);
     }
     dismissSession(sessionId);
   }
@@ -605,7 +622,7 @@ export function TerminalPage({
   function closeSessionNow(sessionId: string) {
     const session = sessions.find((item) => item.sessionId === sessionId);
     if (session) {
-      closeMutation.mutate(sessionId);
+      closeSessionInBackend(sessionId);
     }
     dismissSession(sessionId);
   }
@@ -761,7 +778,7 @@ export function TerminalPage({
         }
         onConfirm={() => {
           if (closeConfirmSessionId) {
-            closeMutation.mutate(closeConfirmSessionId);
+            closeSessionInBackend(closeConfirmSessionId);
             dismissSession(closeConfirmSessionId);
           }
           setCloseConfirmSessionId(null);

@@ -1,6 +1,16 @@
 import type { SshConnection, SshSessionSummary } from "@unfour/command-client";
 import type { TerminalSessionTabState } from "./types";
 
+export function shouldCloseTerminalSessionInBackend({
+  frontendFailedSessions,
+  sessionId,
+}: {
+  frontendFailedSessions: Readonly<Record<string, SshSessionSummary>>;
+  sessionId: string;
+}) {
+  return frontendFailedSessions[sessionId] === undefined;
+}
+
 export function shouldShowTerminalSessionTab({
   activeSessionId,
   dismissedSessionIds,

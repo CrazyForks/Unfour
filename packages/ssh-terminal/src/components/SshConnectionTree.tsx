@@ -122,7 +122,7 @@ export function SshConnectionTree({
         sessionId: syntheticId,
         workspaceId,
         connectionId: variables.connectionId,
-        status: "disconnected",
+        status: "failed",
         reconnectAttempt: 0,
         authKind: connection.authKind,
         host: connection.host,
@@ -132,7 +132,7 @@ export function SshConnectionTree({
         createdAt: now,
         updatedAt: now,
       };
-      const errorMessage = formatTerminalError(error);
+      const errorMessage = formatTerminalError(error, t);
       startTerminalSession(syntheticId, [
         {
           sessionId: syntheticId,
@@ -410,22 +410,22 @@ export function SshConnectionTree({
       )}
       {connectMutation.error && (
         <StatusBadge className="max-w-full" tone="danger">
-          {formatTerminalError(connectMutation.error)}
+          {formatTerminalError(connectMutation.error, t)}
         </StatusBadge>
       )}
       {closeMutation.error && (
         <StatusBadge className="max-w-full" tone="danger">
-          {formatTerminalError(closeMutation.error)}
+          {formatTerminalError(closeMutation.error, t)}
         </StatusBadge>
       )}
       {deleteMutation.error && (
         <StatusBadge className="max-w-full" tone="danger">
-          {formatTerminalError(deleteMutation.error)}
+          {formatTerminalError(deleteMutation.error, t)}
         </StatusBadge>
       )}
       {duplicateMutation.error && (
         <StatusBadge className="max-w-full" tone="danger">
-          {formatTerminalError(duplicateMutation.error)}
+          {formatTerminalError(duplicateMutation.error, t)}
         </StatusBadge>
       )}
       <ConfirmDialog

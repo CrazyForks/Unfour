@@ -703,6 +703,20 @@
       "noSessionOpen": "当前没有打开的 SSH 会话",
       "selectConnection": "选择 SSH 连接并启动会话。"
     },
+    "errors": {
+      "authenticationFailed": "SSH 认证失败，请检查用户名和已保存的凭据。",
+      "connectionRefused": "SSH 端口拒绝连接，请确认服务器已在该端口运行 SSH 服务。",
+      "credentialMissing": "已保存的 SSH 凭据缺失。请编辑此连接，重新输入凭据并保存后再连接。",
+      "hostKeyFailed": "SSH 主机密钥检查失败，服务器身份可能已变化或尚未受信任。",
+      "hostKeyMismatch": "主机密钥验证失败，已保存的主机指纹与服务器不匹配。请核对指纹后再连接。",
+      "hostNotResolved": "无法解析 SSH 主机，请检查主机名或 DNS 设置。",
+      "hostUnreachable": "无法访问 SSH 主机，请检查网络、VPN、防火墙和服务器地址。",
+      "keyFileMissing": "找不到 SSH 身份文件，请检查此连接保存的路径。",
+      "keyUnreadable": "无法读取或解密 SSH 身份文件，请检查文件格式和已保存的凭据。",
+      "ptySize": "终端尺寸超出支持的 PTY 范围。",
+      "sessionDisconnected": "SSH 会话未连接，请重新连接后再发送输入。",
+      "timeout": "SSH 连接超时，请检查主机、端口、VPN、防火墙或网络路由。"
+    },
     "session": {
       "closed": "SSH 会话已关闭。",
       "closeTitle": "关闭会话？",

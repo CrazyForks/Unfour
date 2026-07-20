@@ -180,7 +180,7 @@ export function TerminalWorkspace({
       ) : null}
       {Boolean(actionError) && (
         <div className="shrink-0 truncate border-b border-[var(--u-color-border)] bg-[var(--u-color-danger-soft)] px-3 py-1 text-[12px] text-[var(--u-color-danger)]">
-          {formatTerminalError(actionError)}
+          {formatTerminalError(actionError, t)}
         </div>
       )}
       <div className="relative flex min-h-0 flex-1">
@@ -199,7 +199,7 @@ export function TerminalWorkspace({
         <TerminalSearchBar />
         {error ? (
           <ErrorState className="h-full min-h-0 flex-1 rounded-none border-0">
-            {formatTerminalError(error)}
+            {formatTerminalError(error, t)}
           </ErrorState>
         ) : primaryModel ? (
           <TerminalSplitView

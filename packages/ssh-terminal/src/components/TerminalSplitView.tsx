@@ -5,6 +5,7 @@ import type {
   SshSessionSummary,
 } from "@unfour/command-client";
 import { Button, SplitPane, cn, useI18n } from "@unfour/ui";
+import { shouldRenderTerminalPane } from "../model/terminal-session-status";
 import type { TerminalSplitMode } from "../model/types";
 import { TerminalPane } from "./TerminalPane";
 
@@ -71,6 +72,9 @@ function PaneShell({
 }) {
   const { t } = useI18n();
   const { events, session } = model;
+  const showFailedPlaceholder =
+    session.status === "failed" &&
+    !shouldRenderTerminalPane(session, events.length);
 
   return (
     <div
@@ -79,7 +83,7 @@ function PaneShell({
         active && "ring-1 ring-inset ring-[var(--u-color-focus)]",
       )}
     >
-      {session.status === "failed" ? (
+      {showFailedPlaceholder ? (
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 bg-[var(--u-color-terminal-bg)] p-6 text-center">
           <div className="space-y-1">
             <div className="text-[13px] font-semibold text-[var(--u-color-terminal-text)]">

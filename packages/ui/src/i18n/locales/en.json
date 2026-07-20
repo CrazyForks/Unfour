@@ -704,6 +704,20 @@
       "noSessionOpen": "No SSH session is open",
       "selectConnection": "Select an SSH connection and start a session."
     },
+    "errors": {
+      "authenticationFailed": "SSH authentication failed. Check the username and saved credential.",
+      "connectionRefused": "SSH port refused the connection. Confirm the server is running SSH on this port.",
+      "credentialMissing": "The saved SSH credential is missing. Edit this connection, enter it again, and save before reconnecting.",
+      "hostKeyFailed": "SSH host key check failed. The server identity changed or is not trusted yet.",
+      "hostKeyMismatch": "Host key verification failed. The saved host fingerprint does not match the server. Review the fingerprint before reconnecting.",
+      "hostNotResolved": "SSH host could not be resolved. Check the hostname or DNS settings.",
+      "hostUnreachable": "SSH host is unreachable. Check the network, VPN, firewall, and server address.",
+      "keyFileMissing": "The SSH identity file was not found. Check the path saved on this connection.",
+      "keyUnreadable": "The SSH identity file could not be read or decrypted. Check its format and saved credential.",
+      "ptySize": "Terminal size is outside the supported PTY range.",
+      "sessionDisconnected": "SSH session is not connected. Reconnect before sending input.",
+      "timeout": "SSH connection timed out. Check the host, port, VPN, firewall, or network route."
+    },
     "session": {
       "closed": "SSH session closed.",
       "closeTitle": "Close session?",

@@ -1,15 +1,25 @@
-export function formatTerminalError(error: unknown) {
+import type { TFunction } from "@unfour/ui";
+
+export function formatTerminalError(error: unknown, t: TFunction) {
   const rawMessage = rawTerminalError(error);
   const normalized = rawMessage.toLowerCase();
 
+  if (
+    normalized.includes("password ssh session requires a stored password") ||
+    normalized.includes("password auth requires a credential reference") ||
+    normalized.includes("password ssh auth requires a password")
+  ) {
+    return t("ssh.errors.credentialMissing");
+  }
+
   if (normalized.includes("host key verification failed")) {
-    return "Host key verification failed. The saved host fingerprint does not match the server. Review the fingerprint before reconnecting.";
+    return t("ssh.errors.hostKeyMismatch");
   }
   if (
     normalized.includes("fingerprint does not match") ||
     normalized.includes("host key")
   ) {
-    return "SSH host key check failed. The server identity changed or is not trusted yet.";
+    return t("ssh.errors.hostKeyFailed");
   }
   if (
     normalized.includes("authentication failed") ||
@@ -17,16 +27,16 @@ export function formatTerminalError(error: unknown) {
     normalized.includes("permission denied") ||
     normalized.includes("key rejected")
   ) {
-    return "SSH authentication failed. Check the username, credential reference, private key, or passphrase.";
+    return t("ssh.errors.authenticationFailed");
   }
   if (normalized.includes("timed out") || normalized.includes("timeout")) {
-    return "SSH connection timed out. Check the host, port, VPN, firewall, or network route.";
+    return t("ssh.errors.timeout");
   }
   if (
     normalized.includes("connection refused") ||
     normalized.includes("actively refused")
   ) {
-    return "SSH port refused the connection. Confirm the server is running SSH on this port.";
+    return t("ssh.errors.connectionRefused");
   }
   if (
     normalized.includes("could not resolve") ||
@@ -34,30 +44,30 @@ export function formatTerminalError(error: unknown) {
     normalized.includes("nodename") ||
     normalized.includes("name or service not known")
   ) {
-    return "SSH host could not be resolved. Check the hostname or DNS settings.";
+    return t("ssh.errors.hostNotResolved");
   }
   if (
     normalized.includes("network unreachable") ||
     normalized.includes("host unreachable") ||
     normalized.includes("no route to host")
   ) {
-    return "SSH host is unreachable. Check the network, VPN, firewall, and server address.";
+    return t("ssh.errors.hostUnreachable");
   }
   if (normalized.includes("private key file not found")) {
-    return "SSH private key file was not found. Check the key path saved on this connection.";
+    return t("ssh.errors.keyFileMissing");
   }
   if (
     normalized.includes("failed to decrypt ssh private key") ||
     normalized.includes("failed to read ssh private key") ||
     normalized.includes("passphrase may be incorrect")
   ) {
-    return "SSH private key could not be read or decrypted. Check the key format and passphrase credential.";
+    return t("ssh.errors.keyUnreadable");
   }
   if (normalized.includes("session is not connected")) {
-    return "SSH session is not connected. Reconnect before sending input.";
+    return t("ssh.errors.sessionDisconnected");
   }
   if (normalized.includes("pty size")) {
-    return "Terminal size is outside the supported PTY range.";
+    return t("ssh.errors.ptySize");
   }
 
   return redactTerminalError(rawMessage);
