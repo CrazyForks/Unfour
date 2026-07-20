@@ -6,6 +6,54 @@ This file is the user-facing change history for Unfour, following
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-07-20
+
+Feature and reliability release focused on API interoperability, Database row
+editing, and MCP/SSH stability.
+
+### Added
+
+- **OpenAPI collection export** — Export API collections as OpenAPI 3.1 from the
+  collection toolbar, with shared dialog and tree actions in the API Client.
+- **OpenAPI YAML import** — Import OpenAPI YAML into API collections through the
+  http-engine OpenAPI import path.
+- **Database table row editing** — Edit table rows with confirmation gating,
+  optimistic concurrency checks, and bind-parameter SQL updates.
+- **MCP API environment CRUD** — Manage API environments through MCP tools over
+  the command bus.
+- **Named secret operations** — Secret store supports named secret read/write
+  helpers for credential-reference workflows.
+- **Data grid UX** — Column resizing and JSON preview improvements in the shared
+  data table / Database table grid.
+
+### Fixed
+
+- **SSH failed sessions** — Failed SSH session tabs and connection errors are
+  preserved instead of being discarded silently.
+- **MCP idle shutdown** — Idle shutdown is disabled by default so long-lived MCP
+  clients are not interrupted unexpectedly.
+
+### Changed
+
+- **Database workspace controller** — Split Database page orchestration into
+  dedicated hooks and connection/tree helpers while preserving existing query
+  and schema flows.
+
+### Refactored
+
+- Split oversized backend modules into focused directories across
+  `database-engine`, `http-engine` (api_client), `ssh-engine`,
+  `unfour-command-bus`, and `unfour-mcp` tool handlers. Behavior is unchanged
+  aside from the features listed above.
+- Removed obsolete workspace implementation leftovers from the earlier
+  workspace boundary cleanup.
+
+### Docs
+
+- Updated README screenshots and product overview copy for the current desktop
+  modules.
+- Documented MCP environment tools and idle-shutdown default in MCP docs.
+
 ## [0.1.1] - 2026-07-13
 
 Maintenance and polish release following the 0.1.0 public launch.
@@ -89,5 +137,6 @@ First public release.
 - macOS and Linux artifacts remain experimental/unverified until real-device
   smoke checks are complete.
 
+[0.1.2]: https://github.com/zyqzyq/Unfour/releases/tag/v0.1.2
 [0.1.1]: https://github.com/zyqzyq/Unfour/releases/tag/v0.1.1
 [0.1.0]: https://github.com/zyqzyq/Unfour/releases/tag/v0.1.0
