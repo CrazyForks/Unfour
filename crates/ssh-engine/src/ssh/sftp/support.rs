@@ -60,24 +60,23 @@ pub(super) async fn finalize_remote_upload(
     temp_path: &str,
     target_path: &str,
     transfer_id: &str,
-    target_exists: bool,
 ) -> Result<(), TransferRunError> {
     let backup = format!("{target_path}.unfour-backup-{transfer_id}");
-    if target_exists {
-        sftp.rename(target_path.to_string(), backup.clone())
-            .await
-            .map_err(transfer_sftp_error)?;
-    }
+    // Opportunistic backup avoids a prior try_exists RTT on overwrite uploads.
+    let had_backup = sftp
+        .rename(target_path.to_string(), backup.clone())
+        .await
+        .is_ok();
     if let Err(error) = sftp
         .rename(temp_path.to_string(), target_path.to_string())
         .await
     {
-        if target_exists {
+        if had_backup {
             let _ = sftp.rename(backup.clone(), target_path.to_string()).await;
         }
         return Err(transfer_sftp_error(error));
     }
-    if target_exists {
+    if had_backup {
         let _ = sftp.remove_file(backup).await;
     }
     Ok(())

@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { SftpTransferState } from "@unfour/command-client";
+import type { SftpTransferState, SftpTransferStatus } from "@unfour/command-client";
 
 export const DEFAULT_SFTP_PANEL_WIDTH = 340;
 export const MIN_SFTP_PANEL_WIDTH = 260;
@@ -25,6 +25,32 @@ type SftpUiState = {
   setTransfers: (sessionId: string, transfers: SftpTransferState[]) => void;
   upsertTransfer: (transfer: SftpTransferState) => void;
 };
+
+const TERMINAL_STATUSES: SftpTransferStatus[] = ["success", "failed", "cancelled"];
+
+export function isTerminalTransferStatus(status: SftpTransferStatus | string) {
+  return TERMINAL_STATUSES.includes(status as SftpTransferStatus);
+}
+
+/** Prefer authoritative terminal/progress updates over stale channel frames. */
+export function preferFresherTransfer(
+  current: SftpTransferState | undefined,
+  incoming: SftpTransferState,
+): SftpTransferState {
+  if (!current || current.transferId !== incoming.transferId) return incoming;
+  if (isTerminalTransferStatus(current.status) && !isTerminalTransferStatus(incoming.status)) {
+    return current;
+  }
+  if (isTerminalTransferStatus(incoming.status)) return incoming;
+  if (incoming.transferredBytes > current.transferredBytes) return incoming;
+  if (
+    incoming.transferredBytes === current.transferredBytes &&
+    incoming.totalBytes >= current.totalBytes
+  ) {
+    return incoming;
+  }
+  return current;
+}
 
 export function maxSftpPanelWidth(availableWidth = Number.POSITIVE_INFINITY) {
   return Number.isFinite(availableWidth)
@@ -108,17 +134,32 @@ export const useSftpStore = create<SftpUiState>((set) => ({
       },
     })),
   setTransfers: (sessionId, transfers) =>
-    set((state) => ({
-      transfers: { ...state.transfers, [sessionId]: transfers },
-    })),
+    set((state) => {
+      const current = state.transfers[sessionId] ?? [];
+      const byId = new Map(current.map((item) => [item.transferId, item]));
+      const merged = transfers.map((incoming) =>
+        preferFresherTransfer(byId.get(incoming.transferId), incoming),
+      );
+      for (const item of current) {
+        if (!merged.some((entry) => entry.transferId === item.transferId)) {
+          merged.push(item);
+        }
+      }
+      merged.sort((left, right) => right.startedAt.localeCompare(left.startedAt));
+      return {
+        transfers: { ...state.transfers, [sessionId]: merged },
+      };
+    }),
   upsertTransfer: (transfer) =>
     set((state) => {
       const current = state.transfers[transfer.sessionId] ?? [];
+      const existing = current.find((item) => item.transferId === transfer.transferId);
+      const next = preferFresherTransfer(existing, transfer);
       return {
         transfers: {
           ...state.transfers,
           [transfer.sessionId]: [
-            transfer,
+            next,
             ...current.filter((item) => item.transferId !== transfer.transferId),
           ],
         },

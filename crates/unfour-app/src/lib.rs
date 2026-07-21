@@ -221,7 +221,12 @@ where
                     if let Ok(value) = serde_json::from_str::<serde_json::Value>(&payload) {
                         if let Ok(guard) = transfer_channel_slot.lock() {
                             if let Some(channel) = guard.as_ref() {
-                                let _ = channel.send(value);
+                                // Retry immediately if the IPC buffer rejects a frame.
+                                for _ in 0..3 {
+                                    if channel.send(value.clone()).is_ok() {
+                                        break;
+                                    }
+                                }
                             }
                         }
                     }

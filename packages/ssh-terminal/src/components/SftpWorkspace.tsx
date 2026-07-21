@@ -100,6 +100,31 @@ export function SftpWorkspace({
     };
   }, [session, setTransfers]);
 
+  // Channel progress can drop under IPC pressure; poll while transfers are active
+  // so the UI cannot stay stuck at 0% after the backend already finished.
+  useEffect(() => {
+    if (!session || runningTransfers.length === 0) return;
+    let cancelled = false;
+    const syncTransfers = () => {
+      listSftpTransfers({
+        workspaceId: session.workspaceId,
+        sessionId: session.sessionId,
+      })
+        .then((items) => {
+          if (!cancelled) setTransfers(session.sessionId, items);
+        })
+        .catch(() => {
+          // Keep the PTY healthy if transfer polling fails.
+        });
+    };
+    syncTransfers();
+    const timer = window.setInterval(syncTransfers, 500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [session, runningTransfers.length, setTransfers]);
+
   function resizeTo(nextWidth: number) {
     const available = hostRef.current?.getBoundingClientRect().width ?? Number.POSITIVE_INFINITY;
     setPanelWidth(clampSftpPanelWidth(nextWidth, available));

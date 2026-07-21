@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { open as openFileDialog, save as saveFileDialog } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
@@ -30,6 +30,10 @@ import { SftpToolbar } from "./SftpToolbar";
 type NameAction = "mkdir" | "rename" | "upload";
 const EMPTY_TRANSFERS: SftpTransferState[] = [];
 
+function isActiveTransfer(transfer: SftpTransferState) {
+  return transfer.status === "pending" || transfer.status === "running";
+}
+
 export function SftpPanel({
   onClose,
   session,
@@ -57,6 +61,8 @@ export function SftpPanel({
   const [localUploadPath, setLocalUploadPath] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<SftpFileEntry | null>(null);
   const connected = session.status === "connected";
+  const hasActiveTransfer = transfers.some(isActiveTransfer);
+  const seenUploadSuccessRef = useRef(new Set<string>());
 
   const openQuery = useQuery({
     enabled: connected,
@@ -79,7 +85,10 @@ export function SftpPanel({
       : currentPath ?? "";
 
   const directoryQuery = useQuery({
-    enabled: connected && openQuery.isSuccess && Boolean(currentPath),
+    // Keep directory listing off the shared SFTP channel while a transfer runs;
+    // russh-sftp serializes requests, so a refresh at upload start stalls at 0%.
+    enabled:
+      connected && openQuery.isSuccess && Boolean(currentPath) && !hasActiveTransfer,
     queryKey: ["ssh-sftp-directory", session.workspaceId, session.sessionId, currentPath],
     queryFn: () =>
       listSftpDirectory({
@@ -87,7 +96,9 @@ export function SftpPanel({
         sessionId: session.sessionId,
         path: currentPath!,
       }),
+    refetchOnWindowFocus: false,
     retry: false,
+    staleTime: 10_000,
   });
   const entries = directoryQuery.data?.entries ?? [];
   const selectedEntry = entries.find((entry) => entry.path === selectedPath) ?? null;
@@ -129,7 +140,12 @@ export function SftpPanel({
       throw new Error(t("ssh.sftp.invalidOperation"));
     },
     onSuccess: (transfer) => {
-      if (transfer) upsertTransfer(transfer);
+      if (transfer) {
+        // Upload keeps using the SFTP channel; refresh after it finishes.
+        upsertTransfer(transfer);
+        closeNameDialog();
+        return;
+      }
       closeNameDialog();
       void refreshDirectory();
     },
@@ -157,7 +173,11 @@ export function SftpPanel({
         workspaceId: session.workspaceId,
         transferId: transfer.transferId,
       }),
-    onSuccess: upsertTransfer,
+    onSuccess: (state) => {
+      // Cancel returns the authoritative backend snapshot. If the transfer already
+      // finished while the UI was stale, this just resyncs (often as success).
+      upsertTransfer(state);
+    },
     onError: (error) => handleError(error, { key: "ssh.sftp.cancelFailed" }),
   });
 
@@ -176,6 +196,24 @@ export function SftpPanel({
       queryKey: ["ssh-sftp-directory", session.workspaceId, session.sessionId],
     });
   }
+
+  useEffect(() => {
+    let shouldRefresh = false;
+    for (const transfer of transfers) {
+      if (
+        transfer.direction === "upload" &&
+        transfer.status === "success" &&
+        !seenUploadSuccessRef.current.has(transfer.transferId)
+      ) {
+        seenUploadSuccessRef.current.add(transfer.transferId);
+        shouldRefresh = true;
+      }
+    }
+    if (!shouldRefresh) return;
+    void queryClient.invalidateQueries({
+      queryKey: ["ssh-sftp-directory", session.workspaceId, session.sessionId],
+    });
+  }, [transfers, queryClient, session.workspaceId, session.sessionId]);
 
   function closeNameDialog() {
     setNameAction(null);
@@ -238,7 +276,7 @@ export function SftpPanel({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <SftpToolbar
-        canRefresh={directoryQuery.isSuccess}
+        canRefresh={directoryQuery.isSuccess && !hasActiveTransfer}
         connected={connected}
         currentPath={currentPath}
         endpoint={`${session.username}@${session.host}`}
