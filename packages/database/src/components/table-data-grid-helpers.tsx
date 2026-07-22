@@ -2,7 +2,6 @@ import { ArrowDown, ArrowUp, ChevronsUpDown } from "lucide-react";
 import type { DatabaseTableColumn } from "@unfour/command-client";
 import {
   StatusBadge,
-  type DataTableColumn,
   type useI18n,
 } from "@unfour/ui";
 
@@ -13,37 +12,6 @@ export const MAX_CELL_TITLE_LENGTH = 512;
 export const MAX_VALUE_VIEWER_LENGTH = 20_000;
 const MIN_AUTO_FIT_COLUMN_WIDTH = 96;
 const MAX_AUTO_FIT_COLUMN_WIDTH = 560;
-
-export function buildSkeletonRows(columns: DatabaseTableColumn[], count: number): Array<Array<string | null>> {
-  return Array.from({ length: count }, () => columns.map(() => ""));
-}
-
-export function buildSkeletonColumns(
-  columns: DatabaseTableColumn[],
-  columnsWidths: Record<string, number>,
-): DataTableColumn<Array<string | null>>[] {
-  return [
-    {
-      header: "#",
-      id: "__row_actions",
-      width: columnsWidths["__row_actions"] ?? 48,
-    },
-    ...columns.map((column, columnIndex) => {
-      const id = column.name || `column-${columnIndex}`;
-      return {
-        header: (
-          <span className="truncate" title={column.name}>
-            {column.name}
-          </span>
-        ),
-        id,
-        meta: column.dataType,
-        width: columnsWidths[id] ?? Math.min(Math.max(column.name.length * 9 + 96, 140), 360),
-        cell: () => <SkeletonCell />,
-      } satisfies DataTableColumn<Array<string | null>>;
-    }),
-  ];
-}
 
 export function truncateText(value: string, maxLength: number) {
   if (value.length <= maxLength) return value;
@@ -144,12 +112,4 @@ export function copyStatusLabel(
     default:
       return t("database.grid.copyHint");
   }
-}
-
-export function SkeletonCell() {
-  return (
-    <div className="flex h-full items-center px-1">
-      <div className="h-3 w-full animate-pulse rounded bg-[var(--u-color-border)]" />
-    </div>
-  );
 }

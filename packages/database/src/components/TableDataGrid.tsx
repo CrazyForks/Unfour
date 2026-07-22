@@ -21,8 +21,6 @@ import type { PendingTableChange, TableEditing } from "../model/types";
 import { databaseValue, pendingValue } from "../model/table-row-editing";
 import { serializeDatabaseCell, serializeDatabaseRow, tryFormatJson } from "../result-utils";
 import {
-  buildSkeletonColumns,
-  buildSkeletonRows,
   calculateAutoFitWidth,
   compareCells,
   copyStatusLabel,
@@ -101,15 +99,7 @@ export function TableDataGrid({
   const viewerContent = viewerJson?.isJson && !viewerRaw ? viewerJson.formatted : viewerValue;
   const viewerPreview = viewerContent === null ? null : truncateText(viewerContent, MAX_VALUE_VIEWER_LENGTH);
   const viewerTruncated = Boolean(viewerContent && viewerContent.length > MAX_VALUE_VIEWER_LENGTH);
-  const isSkeleton = Boolean(loading && columns?.length);
-  const skeletonRows = useMemo<DataRow[]>(
-    () => (isSkeleton && columns ? buildSkeletonRows(columns, 12) : []),
-    [isSkeleton, columns],
-  );
-  const skeletonColumns = useMemo<DataTableColumn<DataRow>[]>(
-    () => (isSkeleton && columns ? buildSkeletonColumns(columns, columnsWidths) : []),
-    [isSkeleton, columns, columnsWidths],
-  );
+  const isLoading = Boolean(loading);
   const insertedRows = useMemo<DataRow[]>(
     () =>
       (editing?.pendingChanges ?? [])
@@ -346,17 +336,14 @@ export function TableDataGrid({
     })),
   ];
 
-  const gridColumns = isSkeleton ? skeletonColumns : dataColumns;
-  const gridRows = isSkeleton ? skeletonRows : visibleRows;
-
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div aria-busy={isLoading} className="flex min-h-0 flex-1 flex-col">
       <div className="flex h-8 shrink-0 items-center gap-2 border-b border-[var(--u-color-border)] px-2">
         <Search className="text-[var(--u-color-text-soft)]" size={13} />
         <Input
           aria-label={t("database.grid.filterPlaceholder")}
           className="h-6 max-w-[260px]"
-          disabled={isSkeleton || hasPendingChanges}
+          disabled={isLoading || hasPendingChanges}
           onChange={(event) => (server ? server.onFilter(event.target.value) : setFilter(event.target.value))}
           placeholder={t("database.grid.filterPlaceholder")}
           value={server ? server.filter : filter}
@@ -373,13 +360,19 @@ export function TableDataGrid({
       </div>
       <DataTable
         className="flex-1"
-        columns={gridColumns}
-        empty={(server ? server.filter : filter) ? t("database.grid.noMatches") : t("database.grid.empty")}
+        columns={dataColumns}
+        empty={
+          isLoading
+            ? <span className="sr-only">{t("common.state.loading")}</span>
+            : (server ? server.filter : filter)
+              ? t("database.grid.noMatches")
+              : t("database.grid.empty")
+        }
         getRowKey={(row, index) => row.pendingRowKey ?? editing?.rowKey(row) ?? `${JSON.stringify(row)}:${index}`}
         getColumnResizeLabel={(column) => t("database.grid.resizeColumn", { column: column.id === "__row_actions" ? "#" : column.id })}
         onColumnResize={(columnId, width) => setColumnsWidths((current) => ({ ...current, [columnId]: width }))}
         onSelectionChange={setSelection}
-        rows={gridRows}
+        rows={visibleRows}
         selection={selection}
       />
       <div className="flex h-7 shrink-0 items-center justify-between border-t border-[var(--u-color-border)] px-2 text-[11px] text-[var(--u-color-text-soft)]">
@@ -408,7 +401,7 @@ export function TableDataGrid({
             </IconButton>
           ) : null}
         </div>
-        {!isSkeleton ? (
+        {!isLoading ? (
           <span>
             {processedRows.length > visibleRows.length
               ? t("database.grid.showingFirst", { shown: visibleRows.length, total: processedRows.length })

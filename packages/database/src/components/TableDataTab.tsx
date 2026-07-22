@@ -79,7 +79,7 @@ export function TableDataTab({
   }
 
   const displayName = tableView?.tableName ?? tableMeta?.name ?? "";
-  const gridResult = result ?? buildSkeletonResult(tableMeta);
+  const gridResult = result ?? buildLoadingResult(tableMeta);
   const firstRow = tableView && tableView.totalRows > 0 ? tableView.pageIndex * tableView.pageSize + 1 : 0;
   const lastRow = tableView ? Math.min(tableView.totalRows, (tableView.pageIndex + 1) * tableView.pageSize) : 0;
   const hasPrevious = Boolean(tableView && tableView.pageIndex > 0);
@@ -172,7 +172,7 @@ export function TableDataTab({
           <DatabaseErrorDetails error={error} />
         </div>
       ) : null}
-      <div className="flex min-h-0 flex-1 flex-col animate-fade-in" key={isLoading ? "skeleton" : "ready"}>
+      <div className="flex min-h-0 flex-1 flex-col">
         <TableDataGrid
           columns={tableMeta?.columns}
           editing={editing}
@@ -250,7 +250,7 @@ export function TableDataTab({
   );
 }
 
-function buildSkeletonResult(tableMeta: DatabaseTable | null): DatabaseQueryResult {
+function buildLoadingResult(tableMeta: DatabaseTable | null): DatabaseQueryResult {
   const columns = tableMeta?.columns ?? [];
   return {
     columns: columns.map((column) => ({ name: column.name, dataType: column.dataType })),

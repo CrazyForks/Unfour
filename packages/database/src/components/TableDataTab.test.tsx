@@ -49,6 +49,45 @@ const editing: TableEditing = {
 };
 
 describe("TableDataTab", () => {
+  it("keeps the table stable without rendering placeholder rows while loading", () => {
+    const view = render(
+      <TableDataTab
+        executePending={false}
+        loading
+        onPageChange={vi.fn()}
+        onRefresh={vi.fn()}
+        onTableFilter={vi.fn()}
+        onTableSort={vi.fn()}
+        result={null}
+        table={table}
+        tableFilter=""
+        tableSort={null}
+        tableView={null}
+      />,
+    );
+
+    const loadingTable = screen.getByRole("table");
+    expect(loadingTable.querySelectorAll(".animate-pulse")).toHaveLength(0);
+
+    view.rerender(
+      <TableDataTab
+        executePending={false}
+        loading={false}
+        onPageChange={vi.fn()}
+        onRefresh={vi.fn()}
+        onTableFilter={vi.fn()}
+        onTableSort={vi.fn()}
+        result={result}
+        table={table}
+        tableFilter=""
+        tableSort={null}
+        tableView={{ pageIndex: 0, pageSize: 50, readOnly: false, tableName: "events", totalRows: 1 }}
+      />,
+    );
+
+    expect(screen.getByRole("table")).toBe(loadingTable);
+  });
+
   it("keeps pending-change actions above the data grid", () => {
     render(
       <TableDataTab
