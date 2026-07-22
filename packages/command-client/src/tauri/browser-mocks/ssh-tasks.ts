@@ -183,6 +183,7 @@ function handleTaskRunLogReadMock<T>(
   return [
     `[${started}] run running`,
     `[${started}] step 'Mock command' running`,
+    `[${started}] command $ echo hello from mock task run`,
     `[${started}] stdout hello from mock task run`,
     `[${started}] step 'Mock command' success`,
     `[${run.finishedAt ?? started}] run ${run.status}`,

@@ -50,6 +50,14 @@ describe("buildTaskRunTranscript", () => {
           stepId: "s1",
           stepName: "Build",
           position: 0,
+          stream: "command",
+          data: "$ cargo build\n",
+        }),
+        event({
+          kind: "output",
+          stepId: "s1",
+          stepName: "Build",
+          position: 0,
           stream: "stdout",
           data: "compiling...\n",
         }),
@@ -68,10 +76,12 @@ describe("buildTaskRunTranscript", () => {
 
     expect(lines.map((line) => line.text)).toEqual([
       "── 1. Build ──",
+      "$ cargo build\n",
       "compiling...\n",
       "↳ success · 120 ms · exit 0",
     ]);
-    expect(lines[1]?.stream).toBe("stdout");
+    expect(lines[1]?.kind).toBe("command");
+    expect(lines[2]?.stream).toBe("stdout");
   });
 
   it("summarizes transfer steps once when the step finishes", () => {

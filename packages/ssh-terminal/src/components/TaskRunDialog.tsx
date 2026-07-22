@@ -16,9 +16,11 @@ import {
 import { detectTaskInputs } from "../model/task-template";
 
 export function TaskRunDialog({
+  activeEnvironmentName,
   connectionId,
   connections,
   error,
+  filledFromWorkspace,
   inputValues,
   onConnectionChange,
   onInputChange,
@@ -26,11 +28,14 @@ export function TaskRunDialog({
   onRun,
   open,
   pending,
+  secretInputNames,
   task,
 }: {
+  activeEnvironmentName: string | null;
   connectionId: string;
   connections: SshConnection[];
   error: Error | null;
+  filledFromWorkspace: boolean;
   inputValues: Record<string, string>;
   onConnectionChange: (connectionId: string) => void;
   onInputChange: (name: string, value: string) => void;
@@ -38,6 +43,7 @@ export function TaskRunDialog({
   onRun: () => void;
   open: boolean;
   pending: boolean;
+  secretInputNames: string[];
   task: SshTaskDetail | null;
 }) {
   const { t } = useI18n();
@@ -46,6 +52,7 @@ export function TaskRunDialog({
   const missing = detectedInputs.some((name) => !inputValues[name]?.trim());
   const canRun = Boolean(task && connection && !missing && task.steps.some((step) => step.enabled));
   const title = t("ssh.tasks.run.title");
+  const secretNames = new Set(secretInputNames);
 
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
@@ -77,6 +84,15 @@ export function TaskRunDialog({
               <h3 className="mb-2 text-[12px] font-semibold text-[var(--u-color-text)]">
                 {t("ssh.tasks.run.inputs")}
               </h3>
+              {filledFromWorkspace && (
+                <p className="mb-2 text-[11px] text-[var(--u-color-text-muted)]">
+                  {activeEnvironmentName
+                    ? t("ssh.tasks.run.workspaceDefaultsWithEnv", {
+                        name: activeEnvironmentName,
+                      })
+                    : t("ssh.tasks.run.workspaceDefaults")}
+                </p>
+              )}
               {detectedInputs.length ? (
                 <div className="grid grid-cols-2 gap-2">
                   {detectedInputs.map((name, index) => (
@@ -85,6 +101,7 @@ export function TaskRunDialog({
                       <Input
                         autoFocus={index === 0}
                         onChange={(event) => onInputChange(name, event.target.value)}
+                        type={secretNames.has(name) ? "password" : "text"}
                         value={inputValues[name] ?? ""}
                       />
                     </label>

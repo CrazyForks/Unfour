@@ -7,17 +7,13 @@ import {
   ContextMenuItem,
   ContextMenuSeparator,
   ContextMenuTrigger,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
   IconButton,
   Input,
   LoadingState,
   SidebarSection,
   useI18n,
 } from "@unfour/ui";
-import { MoreHorizontal, Play, Plus, Workflow } from "lucide-react";
+import { Play, Plus, Workflow } from "lucide-react";
 import { SshSidebarModeSwitcher } from "./SshSidebarModeSwitcher";
 
 export function TaskList({
@@ -70,18 +66,6 @@ export function TaskList({
           >
             <Plus size={14} />
           </IconButton>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <IconButton label={t("ssh.tasks.actions.more")} size="compact">
-                <MoreHorizontal size={14} />
-              </IconButton>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onSelect={onExample}>
-                {t("ssh.tasks.actions.dockerExample")}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
         </div>
       </div>
       {loading ? (

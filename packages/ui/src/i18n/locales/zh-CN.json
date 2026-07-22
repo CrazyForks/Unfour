@@ -1062,6 +1062,8 @@
         "loadingLog": "正在加载日志...",
         "missingInputs": "请填写所有检测到的输入项后再运行。",
         "noInputs": "此 Task 没有临时输入项。",
+        "workspaceDefaults": "已从工作区变量加载匹配项，可在本次运行中修改。",
+        "workspaceDefaultsWithEnv": "已从工作区变量和「{name}」环境加载匹配项，可在本次运行中修改。",
         "openLog": "打开日志",
         "resize": "调整运行面板高度",
         "selectConnection": "选择 SSH 连接",

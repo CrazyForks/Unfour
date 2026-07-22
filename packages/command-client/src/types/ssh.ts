@@ -367,7 +367,7 @@ export type SshTaskRunEvent = {
   stepType: SshTaskStepType | null;
   position: number | null;
   status: SshTaskRunStatus | "success" | "failed" | "cancelled" | null;
-  stream: "stdout" | "stderr" | null;
+  stream: "stdout" | "stderr" | "command" | null;
   data: string | null;
   exitCode: number | null;
   durationMs: number | null;

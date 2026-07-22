@@ -18,6 +18,10 @@ impl NativeTaskDriver {
                 }
             })?;
         let remote_path = normalize_task_remote_path(&config.remote_path)?;
+        emit(DriverEvent::Output {
+            stream: "command".to_string(),
+            data: format!("$ download {remote_path} -> {}\n", config.local_path),
+        });
         let target = std::path::PathBuf::from(&config.local_path);
         if target.exists() && !config.overwrite {
             return Err(TaskStepError::Failed {

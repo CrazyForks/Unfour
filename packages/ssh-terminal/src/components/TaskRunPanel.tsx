@@ -235,11 +235,13 @@ export function TaskRunPanel({
                 className={
                   line.kind === "header"
                     ? "mt-1 block font-semibold text-[var(--u-color-text-muted)] first:mt-0"
-                    : line.kind === "meta" || line.kind === "transfer"
-                      ? "block text-[var(--u-color-text-soft)]"
-                      : line.kind === "error" || line.stream === "stderr"
-                        ? "text-[var(--u-color-danger)]"
-                        : undefined
+                    : line.kind === "command"
+                      ? "block font-medium text-[var(--u-color-primary)]"
+                      : line.kind === "meta" || line.kind === "transfer"
+                        ? "block text-[var(--u-color-text-soft)]"
+                        : line.kind === "error" || line.stream === "stderr"
+                          ? "text-[var(--u-color-danger)]"
+                          : undefined
                 }
                 key={line.key}
               >

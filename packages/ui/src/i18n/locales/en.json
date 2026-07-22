@@ -1064,6 +1064,8 @@
         "loadingLog": "Loading log...",
         "missingInputs": "Fill in every detected input before running.",
         "noInputs": "This task has no temporary inputs.",
+        "workspaceDefaults": "Matching values were loaded from workspace variables. Edit them for this run only.",
+        "workspaceDefaultsWithEnv": "Matching values were loaded from workspace variables and \"{name}\". Edit them for this run only.",
         "openLog": "Open log",
         "resize": "Resize run panel",
         "selectConnection": "Select an SSH connection",

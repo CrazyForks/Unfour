@@ -18,6 +18,10 @@ impl NativeTaskDriver {
                 }
             })?;
         let remote_path = normalize_task_remote_path(&config.remote_path)?;
+        emit(DriverEvent::Output {
+            stream: "command".to_string(),
+            data: format!("$ upload {} -> {remote_path}\n", config.local_path),
+        });
         let mut local = tokio::fs::File::open(&config.local_path)
             .await
             .map_err(|error| TaskStepError::Failed {

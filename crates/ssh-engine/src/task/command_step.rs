@@ -34,6 +34,9 @@ impl NativeTaskDriver {
             message: error.to_string(),
             exit_code: None,
         })?;
+        // Echo the resolved remote command into the run transcript before exec so
+        // live output and persisted logs both show what actually ran.
+        emit_redacted("command", &format!("$ {command}\n"), emit);
         let mut channel =
             self.handle
                 .channel_open_session()

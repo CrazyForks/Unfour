@@ -3,8 +3,8 @@ import { formatFileSize } from "./sftp-format";
 
 export type TaskRunTranscriptLine = {
   key: string;
-  kind: "header" | "output" | "meta" | "transfer" | "error";
-  stream?: "stdout" | "stderr" | null;
+  kind: "header" | "command" | "output" | "meta" | "transfer" | "error";
+  stream?: "stdout" | "stderr" | "command" | null;
   text: string;
 };
 
@@ -45,9 +45,10 @@ export function buildTaskRunTranscript(
           text: labels.stepHeader(position, name),
         });
       }
+      const isCommand = event.stream === "command";
       lines.push({
         key: `output-${event.createdAt}-${index}`,
-        kind: "output",
+        kind: isCommand ? "command" : "output",
         stream: event.stream,
         text: event.data,
       });

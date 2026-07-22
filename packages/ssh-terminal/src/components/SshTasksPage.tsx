@@ -15,6 +15,8 @@ import {
   getSshTask,
   listSshTaskRuns,
   listSshTasks,
+  listWorkspaceEnvironments,
+  listWorkspaceVariables,
   readSshTaskRunLog,
   registerSshTaskRunChannel,
   runSshTask,
@@ -47,6 +49,11 @@ import {
   preferredTaskConnectionId,
   taskDetailToDraft,
 } from "../model/task-template";
+import {
+  activeWorkspaceEnvironmentName,
+  defaultTaskRunInputs,
+  mergeActiveWorkspaceVariables,
+} from "../model/task-run-inputs";
 import {
   closeTaskTab,
   createEmptyTaskEditorState,
@@ -85,6 +92,11 @@ export function SshTasksPage({
   const [runDialogTask, setRunDialogTask] = useState<SshTaskDetail | null>(null);
   const [runConnectionId, setRunConnectionId] = useState("");
   const [runInputs, setRunInputs] = useState<Record<string, string>>({});
+  const [runSecretInputs, setRunSecretInputs] = useState<string[]>([]);
+  const [runFilledFromWorkspace, setRunFilledFromWorkspace] = useState(false);
+  const [runActiveEnvironmentName, setRunActiveEnvironmentName] = useState<string | null>(
+    null,
+  );
   const [activeRun, setActiveRun] = useState<SshTaskRun | null>(null);
   const [activeRunTask, setActiveRunTask] = useState<SshTaskDetail | null>(null);
   const [eventsByRun, setEventsByRun] = useState<Record<string, SshTaskRunEvent[]>>({});
@@ -251,11 +263,41 @@ export function SshTasksPage({
           queryKey: ["ssh-task", workspaceId, taskId],
           queryFn: () => getSshTask(workspaceId, taskId),
         });
+        const detectedInputs = detectTaskInputs(detail.steps, true);
+        let inputs = Object.fromEntries(detectedInputs.map((name) => [name, ""]));
+        let secretNames: string[] = [];
+        let filledFromWorkspace = false;
+        let activeEnvironmentName: string | null = null;
+
+        try {
+          const [workspaceVariables, environments] = await Promise.all([
+            queryClient.fetchQuery({
+              queryKey: ["workspace-variables", workspaceId],
+              queryFn: () => listWorkspaceVariables(workspaceId),
+            }),
+            queryClient.fetchQuery({
+              queryKey: ["workspace-environments", workspaceId],
+              queryFn: () => listWorkspaceEnvironments(workspaceId),
+            }),
+          ]);
+          const defaults = defaultTaskRunInputs(
+            detectedInputs,
+            mergeActiveWorkspaceVariables(workspaceVariables, environments),
+          );
+          inputs = defaults.inputs;
+          secretNames = defaults.secretNames;
+          filledFromWorkspace = defaults.filledFromWorkspace.length > 0;
+          activeEnvironmentName = activeWorkspaceEnvironmentName(environments);
+        } catch {
+          // Workspace defaults are optional; keep empty inputs if they fail to load.
+        }
+
         setRunDialogTask(detail);
         setRunConnectionId(preferredTaskConnectionId(detail.localBinding));
-        setRunInputs(
-          Object.fromEntries(detectTaskInputs(detail.steps, true).map((name) => [name, ""])),
-        );
+        setRunInputs(inputs);
+        setRunSecretInputs(secretNames);
+        setRunFilledFromWorkspace(filledFromWorkspace);
+        setRunActiveEnvironmentName(activeEnvironmentName);
         resetRunMutation();
       } catch (error) {
         handleError(error, { key: "feedback.ssh.taskLoadFailed" });
@@ -574,9 +616,11 @@ export function SshTasksPage({
       </main>
 
       <TaskRunDialog
+        activeEnvironmentName={runActiveEnvironmentName}
         connectionId={runConnectionId}
         connections={connections}
         error={runMutation.error}
+        filledFromWorkspace={runFilledFromWorkspace}
         inputValues={runInputs}
         onConnectionChange={setRunConnectionId}
         onInputChange={(name, value) =>
@@ -586,6 +630,7 @@ export function SshTasksPage({
         onRun={() => runMutation.mutate()}
         open={runDialogTask !== null}
         pending={runMutation.isPending}
+        secretInputNames={runSecretInputs}
         task={runDialogTask}
       />
       <ConfirmDialog

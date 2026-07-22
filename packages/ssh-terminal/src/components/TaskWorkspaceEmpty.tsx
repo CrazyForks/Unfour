@@ -40,9 +40,11 @@ export function TaskWorkspaceEmpty({
           <Plus size={13} />
           {t("ssh.tasks.actions.new")}
         </Button>
-        <Button onClick={onExample} size="sm" variant="secondary">
-          {t("ssh.tasks.actions.dockerExample")}
-        </Button>
+        {!hasTasks ? (
+          <Button onClick={onExample} size="sm" variant="secondary">
+            {t("ssh.tasks.actions.dockerExample")}
+          </Button>
+        ) : null}
       </div>
     </div>
   );
