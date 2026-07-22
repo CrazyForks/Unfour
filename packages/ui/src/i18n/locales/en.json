@@ -1007,6 +1007,7 @@
         "insertStep": "Insert step",
         "localPath": "Local path",
         "localPathHint": "Browse a local path, or use {{local_file}} / {{local_output_dir}} for values filled when the task runs.",
+        "localPathHintDownload": "Choose a save file, or a folder (keeps/appends a file name). Do not point at a bare directory.",
         "localPathPlaceholder": "C:\\path\\to\\file, /local/path, or {{local_file}}",
         "name": "Name",
         "nameRequired": "Enter a task name before saving or running.",

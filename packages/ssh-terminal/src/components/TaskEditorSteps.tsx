@@ -205,6 +205,7 @@ export function StepRow({
                   label={t("ssh.tasks.editor.localPath")}
                   mode={step.stepType === "upload" ? "upload" : "download"}
                   onChange={(next) => onConfigChange("localPath", next)}
+                  remotePath={String(config.remotePath ?? "")}
                   value={String(config.localPath ?? "")}
                 />
                 <Field label={t("ssh.tasks.editor.remotePath")}>

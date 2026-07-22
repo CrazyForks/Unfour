@@ -22,12 +22,22 @@ impl NativeTaskDriver {
             stream: "command".to_string(),
             data: format!("$ download {remote_path} -> {}\n", config.local_path),
         });
-        let target = std::path::PathBuf::from(&config.local_path);
+        let target = resolve_download_local_target(&config.local_path)?;
         if target.exists() && !config.overwrite {
             return Err(TaskStepError::Failed {
                 message: "local target already exists".to_string(),
                 exit_code: None,
             });
+        }
+        if let Some(parent) = target.parent() {
+            if !parent.as_os_str().is_empty() {
+                tokio::fs::create_dir_all(parent).await.map_err(|error| {
+                    TaskStepError::Failed {
+                        message: format!("create local download directory failed: {error}"),
+                        exit_code: None,
+                    }
+                })?;
+            }
         }
         let mut part_name = target.as_os_str().to_os_string();
         part_name.push(format!(".unfour-task-part-{}", step.id));
@@ -87,6 +97,33 @@ impl NativeTaskDriver {
     }
 }
 
+/// Refuse bare directories so download never renames/overwrites a folder as if it
+/// were the destination file.
+fn resolve_download_local_target(local_path: &str) -> Result<std::path::PathBuf, TaskStepError> {
+    let trimmed = local_path.trim();
+    if trimmed.is_empty() {
+        return Err(TaskStepError::Failed {
+            message: "local download path is empty".to_string(),
+            exit_code: None,
+        });
+    }
+    if trimmed.ends_with('/') || trimmed.ends_with('\\') {
+        return Err(TaskStepError::Failed {
+            message: "local download path must include a file name, not only a directory"
+                .to_string(),
+            exit_code: None,
+        });
+    }
+    let target = std::path::PathBuf::from(trimmed);
+    if target.is_dir() {
+        return Err(TaskStepError::Failed {
+            message: "local download path is a directory; append a file name".to_string(),
+            exit_code: None,
+        });
+    }
+    Ok(target)
+}
+
 #[cfg(feature = "ssh-native")]
 async fn replace_local_download(
     part: &std::path::Path,
@@ -94,6 +131,12 @@ async fn replace_local_download(
     step_id: &str,
     overwrite: bool,
 ) -> Result<(), TaskStepError> {
+    if target.is_dir() {
+        return Err(TaskStepError::Failed {
+            message: "local download path is a directory; append a file name".to_string(),
+            exit_code: None,
+        });
+    }
     let mut backup_name = target.as_os_str().to_os_string();
     backup_name.push(format!(".unfour-task-backup-{step_id}"));
     let backup = std::path::PathBuf::from(backup_name);
@@ -122,4 +165,29 @@ async fn replace_local_download(
         let _ = tokio::fs::remove_file(backup).await;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_download_local_target;
+
+    #[test]
+    fn rejects_trailing_directory_separators() {
+        let err = resolve_download_local_target(r"C:\Downloads\").unwrap_err();
+        assert!(matches!(err, super::TaskStepError::Failed { message, .. } if message.contains("file name")));
+        let err = resolve_download_local_target("/tmp/out/").unwrap_err();
+        assert!(matches!(err, super::TaskStepError::Failed { message, .. } if message.contains("file name")));
+    }
+
+    #[test]
+    fn rejects_empty_paths() {
+        let err = resolve_download_local_target("   ").unwrap_err();
+        assert!(matches!(err, super::TaskStepError::Failed { message, .. } if message.contains("empty")));
+    }
+
+    #[test]
+    fn accepts_file_paths() {
+        let target = resolve_download_local_target(r"C:\Downloads\archive.tar").unwrap();
+        assert_eq!(target, std::path::PathBuf::from(r"C:\Downloads\archive.tar"));
+    }
 }

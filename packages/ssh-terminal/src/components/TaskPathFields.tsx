@@ -9,16 +9,19 @@ import {
   useI18n,
 } from "@unfour/ui";
 import { FolderOpen } from "lucide-react";
+import { downloadPathFromDirectory } from "../model/task-local-path";
 
 export function LocalPathField({
   label,
   mode,
   onChange,
+  remotePath = "",
   value,
 }: {
   label: string;
   mode: "upload" | "download";
   onChange: (value: string) => void;
+  remotePath?: string;
   value: string;
 }) {
   const { t } = useI18n();
@@ -37,7 +40,12 @@ export function LocalPathField({
         directory: kind === "directory",
         multiple: false,
       });
-      if (typeof selection === "string") onChange(selection);
+      if (typeof selection !== "string") return;
+      if (mode === "download" && kind === "directory") {
+        onChange(downloadPathFromDirectory(selection, value, remotePath));
+        return;
+      }
+      onChange(selection);
     } catch {
       // Dialog unavailable in browser mocks, or user cancelled.
     }
@@ -83,7 +91,9 @@ export function LocalPathField({
         </DropdownMenu>
       </div>
       <span className="text-[10px] leading-4 text-[var(--u-color-text-soft)]">
-        {t("ssh.tasks.editor.localPathHint")}
+        {mode === "download"
+          ? t("ssh.tasks.editor.localPathHintDownload")
+          : t("ssh.tasks.editor.localPathHint")}
       </span>
     </label>
   );
