@@ -1,40 +1,45 @@
 // @vitest-environment jsdom
 import type { ReactNode } from "react";
-import type { ApiEnvironment } from "@unfour/command-client";
+import type { WorkspaceEnvironment } from "@unfour/command-client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderHook, waitFor } from "@testing-library/react";
 
 vi.mock("@unfour/command-client", () => ({
-  activateApiEnvironment: vi.fn(),
-  createApiEnvironment: vi.fn(),
-  deleteApiEnvironment: vi.fn(),
-  listApiEnvironments: vi.fn(),
-  updateApiEnvironment: vi.fn(),
+  setActiveWorkspaceEnvironment: vi.fn(),
+  createWorkspaceEnvironment: vi.fn(),
+  deleteWorkspaceEnvironment: vi.fn(),
+  listWorkspaceEnvironments: vi.fn(),
+  updateWorkspaceEnvironmentVariables: vi.fn(),
 }));
 
 import {
-  activateApiEnvironment,
-  createApiEnvironment,
-  deleteApiEnvironment,
-  listApiEnvironments,
+  setActiveWorkspaceEnvironment,
+  createWorkspaceEnvironment,
+  deleteWorkspaceEnvironment,
+  listWorkspaceEnvironments,
 } from "@unfour/command-client";
 import { useApiEnvironments } from "./useApiEnvironments";
 
-const listMock = vi.mocked(listApiEnvironments);
-const createMock = vi.mocked(createApiEnvironment);
-const deleteMock = vi.mocked(deleteApiEnvironment);
-const activateMock = vi.mocked(activateApiEnvironment);
+const listMock = vi.mocked(listWorkspaceEnvironments);
+const createMock = vi.mocked(createWorkspaceEnvironment);
+const deleteMock = vi.mocked(deleteWorkspaceEnvironment);
+const activateMock = vi.mocked(setActiveWorkspaceEnvironment);
 
-function environment(overrides: Partial<ApiEnvironment>): ApiEnvironment {
+function environment(overrides: Partial<WorkspaceEnvironment>): WorkspaceEnvironment {
   return {
     id: "env-1",
     workspaceId: "ws-1",
     name: "Local",
+    sortOrder: 0,
     variables: [],
     isActive: false,
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",
+    deletedAt: null,
+    revision: 1,
+    syncStatus: "local",
+    remoteId: null,
     ...overrides,
   };
 }

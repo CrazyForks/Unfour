@@ -17,6 +17,7 @@ impl ApiClientService {
         workspace_id: String,
         collection_id: String,
         format: ApiCollectionExportFormat,
+        environments: Vec<ApiEnvironment>,
     ) -> AppResult<ApiCollectionExportArtifact> {
         validate_workspace_id(&workspace_id)?;
         if collection_id.trim().is_empty() {
@@ -35,7 +36,6 @@ impl ApiClientService {
             .into_iter()
             .filter(|request| request.collection_id == collection_id)
             .collect();
-        let environments = self.list_environments(workspace_id.clone()).await?;
         let histories = self
             .list_collection_export_histories(&workspace_id, &collection_id)
             .await?;

@@ -316,19 +316,6 @@ export function addQueryIfMissing(
   return [...query, { enabled: true, key: key.trim(), value }];
 }
 
-export function resolveTemplateLoose(
-  value: string,
-  variables: KeyValue[],
-): string {
-  return variables
-    .filter((item) => item.enabled && item.key.trim())
-    .reduce(
-      (current, item) =>
-        current.split(`{{${item.key.trim()}}}`).join(item.value),
-      value,
-    );
-}
-
 function parseFormBody(body: string): KeyValue[] {
   const parsed = parseKeyValues(body);
   if (parsed.length || !body.trim()) {

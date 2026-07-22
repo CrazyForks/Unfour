@@ -15,8 +15,10 @@ import type {
   SshTaskDetail,
   SshTaskRun,
   Workspace,
+  WorkspaceEnvironment,
   WorkspaceLayout,
   WorkspaceState,
+  WorkspaceVariable,
 } from "../../types";
 
 export const mockWorkspace: Workspace = {
@@ -66,6 +68,58 @@ export const mockStore = {
       updatedAt: new Date().toISOString(),
     },
   ] as ApiEnvironment[],
+  workspaceVariables: [] as WorkspaceVariable[],
+  workspaceEnvironments: [
+    {
+      id: "env-default-mock",
+      workspaceId: mockWorkspace.id,
+      name: "Default",
+      sortOrder: 0,
+      isActive: true,
+      variables: [
+        {
+          id: "env-default-base-url-mock",
+          workspaceId: mockWorkspace.id,
+          environmentId: "env-default-mock",
+          key: "base_url",
+          value: "https://httpbin.org",
+          isSecret: false,
+          isEnabled: true,
+          description: null,
+          sortOrder: 0,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          deletedAt: null,
+          revision: 1,
+          syncStatus: "local",
+          remoteId: null,
+        },
+        {
+          id: "env-default-source-mock",
+          workspaceId: mockWorkspace.id,
+          environmentId: "env-default-mock",
+          key: "source",
+          value: "unfour",
+          isSecret: false,
+          isEnabled: true,
+          description: null,
+          sortOrder: 1,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          deletedAt: null,
+          revision: 1,
+          syncStatus: "local",
+          remoteId: null,
+        },
+      ],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      deletedAt: null,
+      revision: 1,
+      syncStatus: "local",
+      remoteId: null,
+    },
+  ] as WorkspaceEnvironment[],
   collections: [] as ApiCollection[],
   collectionFolders: [] as ApiCollectionFolder[],
   layouts: {} as Record<string, WorkspaceLayout>,
@@ -250,11 +304,36 @@ export function assertMockEnvironmentNameAvailable(
 }
 
 export function mockActiveEnvVariables(workspaceId: string): KeyValue[] {
-  return (
-    mockStore.environments.find(
-      (env) => env.workspaceId === workspaceId && env.isActive,
-    )?.variables ?? []
+  const values = new Map<string, KeyValue>();
+  for (const variable of mockStore.workspaceVariables) {
+    if (
+      variable.workspaceId === workspaceId &&
+      variable.isEnabled &&
+      !variable.deletedAt
+    ) {
+      values.set(variable.key, {
+        key: variable.key,
+        value: variable.value,
+        enabled: true,
+      });
+    }
+  }
+  const activeEnvironment = mockStore.workspaceEnvironments.find(
+    (environment) =>
+      environment.workspaceId === workspaceId &&
+      environment.isActive &&
+      !environment.deletedAt,
   );
+  for (const variable of activeEnvironment?.variables ?? []) {
+    if (variable.isEnabled && !variable.deletedAt) {
+      values.set(variable.key, {
+        key: variable.key,
+        value: variable.value,
+        enabled: true,
+      });
+    }
+  }
+  return Array.from(values.values());
 }
 
 export function trimMockSshHistory(sessionId: string) {

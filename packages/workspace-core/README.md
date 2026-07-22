@@ -26,6 +26,8 @@ available across modules.
 - Tracks selected API request, Database connection, and SSH connection IDs.
 - Hydrates and snapshots layout state.
 - Opens workspace tabs and toggles sidebar collapse.
+- Re-exports workspace variable/environment contracts and the shared resolver
+  command wrapper for future API, SSH, Database, and Tasks consumers.
 
 ## Known Gaps
 

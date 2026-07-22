@@ -51,7 +51,7 @@ Unfour/
 | `@unfour/command-client` | Typed Tauri `invoke` wrappers, shared frontend command types, and browser-development mock fallback. |
 | `@unfour/workspace-core` | Zustand workspace store and workspace type re-exports. |
 | `@unfour/workspace-local` | OSS local workspace lifecycle boundary; currently a compatibility/transitional package reserved for recent workspace, import/export, persistence lifecycle, and migration behavior. |
-| `@unfour/api-client` | API Client feature UI: requests, tabs, Send, responses, history, saved requests, collections, environments, import/export. |
+| `@unfour/api-client` | API Client feature UI: requests, tabs, Send, responses, history, saved requests, collections, and the current workspace-variable management surface. Persistence and resolution remain workspace-owned. |
 | `@unfour/database` | Database feature UI: connections, schema tree, SQL editor, query results, table preview, query history. |
 | `@unfour/ssh-terminal` | SSH Terminal feature UI: connections, sessions, xterm panes, split/search/logs, host-key trust. |
 | `@unfour/desktop` | Thin desktop frontend entrypoint that mounts `@unfour/app-shell`. |
@@ -65,10 +65,10 @@ Unfour/
 | `unfour-diag` | Structured logging, log retention, correlation IDs, and diagnostic bundle export. |
 | `unfour-local-storage` | SQLite setup, migrations, local persistence, and activity log. |
 | `unfour-secret-store` | Credential reference service backed by OS keychain in production and in-memory storage in tests. |
-| `unfour-http-engine` | API execution, environment resolution, saved requests, history, and persistence redaction. |
+| `unfour-http-engine` | API execution after shared workspace-variable resolution, saved requests, history, and persistence redaction. |
 | `unfour-database-engine` | Database connection CRUD, schema browsing, SQL execution, table browsing, and SQL safety classification. |
 | `unfour-ssh-engine` | SSH connection/session lifecycle, PTY events, host-key trust, reconnect behavior, and redacted log export. |
-| `unfour-workspace-engine` | Workspace CRUD, active workspace state, environments, and layout persistence. |
+| `unfour-workspace-engine` | Workspace CRUD, active workspace state, workspace variables/environments, shared variable resolution, and layout persistence. |
 | `unfour-app` | Shared Tauri composition layer for plugins, command-bus setup, managed `AppState`, commands, and edition-independent wiring. |
 | `unfour-command-bus` | Shared command entry point used by Tauri, MCP, and future adapters. |
 | `unfour-mcp` | Local stdio MCP server that routes tools through the command bus. |

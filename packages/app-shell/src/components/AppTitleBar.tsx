@@ -1,8 +1,9 @@
 import { Settings } from "lucide-react";
-import type { Workspace } from "@unfour/command-client";
+import type { Workspace, WorkspaceEnvironment } from "@unfour/command-client";
 import { useState, type ReactNode } from "react";
 import {
   GlobalToolbar,
+  ActiveEnvironmentSelect,
   IconButton,
   useI18n,
 } from "@unfour/ui";
@@ -16,16 +17,24 @@ import type {
 
 export function AppTitleBar({
   activeWorkspace,
+  activeEnvironmentId = null,
+  environments = [],
   endAccessory,
   extensionContext,
   onActivateWorkspace,
+  onManageVariables = () => {},
+  onSelectEnvironment = () => {},
   settingsSections,
   workspaces,
 }: {
   activeWorkspace?: Workspace;
+  activeEnvironmentId?: string | null;
+  environments?: WorkspaceEnvironment[];
   endAccessory?: ReactNode;
   extensionContext: DesktopAppExtensionContext;
   onActivateWorkspace: (workspaceId: string) => void;
+  onManageVariables?: () => void;
+  onSelectEnvironment?: (environmentId: string | null) => void;
   settingsSections?: readonly DesktopAppSettingsSection[];
   workspaces: Workspace[];
 }) {
@@ -36,11 +45,19 @@ export function AppTitleBar({
     <>
       <GlobalToolbar
         left={
-          <WorkspaceMenu
-            activeWorkspace={activeWorkspace}
-            onActivateWorkspace={onActivateWorkspace}
-            workspaces={workspaces}
-          />
+          <div className="flex min-w-0 items-center gap-1">
+            <WorkspaceMenu
+              activeWorkspace={activeWorkspace}
+              onActivateWorkspace={onActivateWorkspace}
+              workspaces={workspaces}
+            />
+            <ActiveEnvironmentSelect
+              activeEnvironmentId={activeEnvironmentId}
+              environments={environments}
+              onManage={onManageVariables}
+              onSelect={onSelectEnvironment}
+            />
+          </div>
         }
         right={
           <>

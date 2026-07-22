@@ -27,6 +27,46 @@ export type WorkspaceState = {
   workspaces: Workspace[];
 };
 
+export type WorkspaceVariableInput = {
+  id?: string | null;
+  key: string;
+  value: string;
+  isSecret: boolean;
+  isEnabled: boolean;
+  description: string | null;
+  sortOrder: number;
+};
+
+export type WorkspaceVariable = WorkspaceVariableInput & {
+  id: string;
+  workspaceId: string;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+  revision: number;
+  syncStatus: string;
+  remoteId: string | null;
+};
+
+export type WorkspaceEnvironmentVariable = WorkspaceVariable & {
+  environmentId: string;
+};
+
+export type WorkspaceEnvironment = {
+  id: string;
+  workspaceId: string;
+  name: string;
+  sortOrder: number;
+  isActive: boolean;
+  variables: WorkspaceEnvironmentVariable[];
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+  revision: number;
+  syncStatus: string;
+  remoteId: string | null;
+};
+
 export type WorkspaceTab = {
   id: string;
   title: string;

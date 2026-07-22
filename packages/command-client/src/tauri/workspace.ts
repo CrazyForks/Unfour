@@ -1,10 +1,13 @@
 import { call } from "./invoke";
 import type {
   Workspace,
+  WorkspaceEnvironment,
   WorkspaceEnvironmentType,
   WorkspaceLayout,
   WorkspaceMcpPolicy,
   WorkspaceState,
+  WorkspaceVariable,
+  WorkspaceVariableInput,
 } from "../types";
 
 export function getWorkspaceState() {
@@ -49,5 +52,76 @@ export function updateWorkspaceLayout(workspaceId: string, layout: WorkspaceLayo
   return call<WorkspaceLayout>("workspace_layout_update", {
     workspaceId,
     layout,
+  });
+}
+
+export function listWorkspaceVariables(workspaceId: string) {
+  return call<WorkspaceVariable[]>("workspace_variables_list", { workspaceId });
+}
+
+export function replaceWorkspaceVariables(
+  workspaceId: string,
+  variables: WorkspaceVariableInput[],
+) {
+  return call<WorkspaceVariable[]>("workspace_variables_replace", {
+    workspaceId,
+    variables,
+  });
+}
+
+export function listWorkspaceEnvironments(workspaceId: string) {
+  return call<WorkspaceEnvironment[]>("workspace_environments_list", { workspaceId });
+}
+
+export function createWorkspaceEnvironment(workspaceId: string, name: string) {
+  return call<WorkspaceEnvironment>("workspace_environment_create", {
+    workspaceId,
+    name,
+  });
+}
+
+export function updateWorkspaceEnvironmentVariables(
+  workspaceId: string,
+  environmentId: string,
+  name: string,
+  variables: WorkspaceVariableInput[],
+) {
+  return call<WorkspaceEnvironment>("workspace_environment_update", {
+    workspaceId,
+    environmentId,
+    name,
+    variables,
+  });
+}
+
+export function deleteWorkspaceEnvironment(
+  workspaceId: string,
+  environmentId: string,
+) {
+  return call<WorkspaceEnvironment[]>("workspace_environment_delete", {
+    workspaceId,
+    environmentId,
+  });
+}
+
+export function setActiveWorkspaceEnvironment(
+  workspaceId: string,
+  environmentId: string | null,
+) {
+  return call<WorkspaceEnvironment[]>("workspace_environment_set_active", {
+    workspaceId,
+    environmentId,
+  });
+}
+
+export function resolveWorkspaceVariables(
+  workspaceId: string,
+  activeEnvironmentId: string | null,
+  input: string,
+) {
+  return call<string>("workspace_variables_resolve", {
+    workspaceId,
+    activeEnvironmentId,
+    input,
   });
 }

@@ -14,11 +14,10 @@ use unfour_local_storage::LocalDb;
 mod helpers;
 use helpers::{
     build_url, normalize_collection_id, normalize_entity_id, normalize_folder_name, parse_method,
-    resolve_input, validate_environment, validate_workspace_id, CollectionRow, EnvironmentRow,
+    validate_workspace_id, CollectionRow,
 };
 
 mod collections;
-mod environments;
 mod execution;
 mod history;
 mod openapi_export;

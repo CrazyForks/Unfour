@@ -1,4 +1,8 @@
 export { Badge } from "./badge";
+export {
+  ActiveEnvironmentSelect,
+  type EnvironmentSelectItem,
+} from "./active-environment-select";
 export { Button, type ButtonProps } from "./button";
 export { ConfirmDialog } from "./confirm-dialog";
 export { DataTable, type DataTableColumn, type DataTableSelection } from "./data-table";
@@ -105,3 +109,4 @@ export {
 } from "./tree-view";
 export { cn } from "./utils";
 export { usePlatform, type Platform } from "./platform";
+export { VariableTable, type VariableTableItem } from "./variable-table";

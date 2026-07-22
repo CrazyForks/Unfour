@@ -357,6 +357,30 @@
     },
     "title": "API Debugger"
   },
+  "variables": {
+    "activeEnvironment": "Active environment",
+    "add": "Add variable",
+    "deleteRow": "Delete variable {key}",
+    "description": "Description",
+    "duplicateKeys": "Duplicate variable keys: {keys}",
+    "empty": "No variables in this scope.",
+    "enabled": "Enabled",
+    "enabledShort": "On",
+    "environmentPrefix": "Environment: {name}",
+    "environmentsGroup": "Environments",
+    "hideSecret": "Hide secret value",
+    "key": "Key",
+    "manage": "Manage variables",
+    "newEnvironment": "New Environment",
+    "noEnvironment": "No Environment",
+    "overridesWorkspace": "Overrides workspace value",
+    "secret": "Secret",
+    "showSecret": "Show secret value",
+    "value": "Value",
+    "workspaceDescription": "Available to all environments in this workspace. Environment variables with the same key take precedence.",
+    "workspaceGroup": "Workspace",
+    "workspaceVariables": "Workspace Variables"
+  },
   "common": {
     "actions": {
       "connect": "Connect",

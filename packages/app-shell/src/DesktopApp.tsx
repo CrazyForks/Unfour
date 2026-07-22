@@ -11,9 +11,11 @@ import {
   getWorkspaceLayout,
   getWorkspaceState,
   listDatabaseConnections,
+  listWorkspaceEnvironments,
   openDiagnosticsDir,
   openLogDir,
   setActiveWorkspace as setActiveWorkspaceCommand,
+  setActiveWorkspaceEnvironment,
 } from "@unfour/command-client";
 import { useWorkspaceStore } from "@unfour/workspace-core";
 import { AppTitleBar } from "./components/AppTitleBar";
@@ -46,6 +48,11 @@ export function DesktopApp({ extensions }: DesktopAppProps) {
   const [databaseSidebarContent, setDatabaseSidebarContent] = useState<ReactNode>(null);
   const [databaseStatusBarContent, setDatabaseStatusBarContent] = useState<ReactNode>(null);
   const [rightInspectorCollapsed, setRightInspectorCollapsed] = useState(true);
+  const [variableManagerRequest, setVariableManagerRequest] = useState<{
+    environmentId: string | null;
+    nonce: number;
+    workspaceId: string;
+  } | null>(null);
   const {
     activeTabId,
     activeWorkspaceId,
@@ -73,6 +80,11 @@ export function DesktopApp({ extensions }: DesktopAppProps) {
     queryKey: ["workspace-layout", activeWorkspace?.id],
     queryFn: () => getWorkspaceLayout(activeWorkspace?.id ?? ""),
   });
+  const workspaceEnvironmentsQuery = useQuery({
+    enabled: Boolean(activeWorkspace?.id),
+    queryKey: ["workspace-environments", activeWorkspace?.id],
+    queryFn: () => listWorkspaceEnvironments(activeWorkspace?.id ?? ""),
+  });
   const sidebarDatabaseConnectionsQuery = useQuery({
     enabled: Boolean(activeWorkspace?.id),
     queryKey: ["database-connections", activeWorkspace?.id],
@@ -96,6 +108,30 @@ export function DesktopApp({ extensions }: DesktopAppProps) {
       queryClient.invalidateQueries({ queryKey: ["workspaces"] });
     },
   });
+  const activateEnvironmentMutation = useMutation({
+    mutationFn: (input: { environmentId: string | null; workspaceId: string }) =>
+      setActiveWorkspaceEnvironment(input.workspaceId, input.environmentId),
+    onSuccess: (environments, input) => {
+      queryClient.setQueryData(
+        ["workspace-environments", input.workspaceId],
+        environments,
+      );
+    },
+    onError: (error) =>
+      handleError(error, { key: "feedback.api.environmentActivateFailed" }),
+  });
+  const workspaceEnvironments = workspaceEnvironmentsQuery.data ?? [];
+  const activeEnvironment =
+    workspaceEnvironments.find((environment) => environment.isActive) ?? null;
+  const handleManageVariables = useCallback(() => {
+    if (!activeWorkspace) return;
+    setActiveTab("api-main");
+    setVariableManagerRequest((current) => ({
+      environmentId: activeEnvironment?.id ?? null,
+      nonce: (current?.nonce ?? 0) + 1,
+      workspaceId: activeWorkspace.id,
+    }));
+  }, [activeEnvironment?.id, activeWorkspace, setActiveTab]);
   const handleApiSidebarChange = useCallback((content: ReactNode | null) => {
     setApiSidebarContent(content);
   }, []);
@@ -175,10 +211,20 @@ export function DesktopApp({ extensions }: DesktopAppProps) {
         }
         globalToolbar={
           <AppTitleBar
+            activeEnvironmentId={activeEnvironment?.id ?? null}
             activeWorkspace={activeWorkspace}
+            environments={workspaceEnvironments}
             endAccessory={TitleBarEnd ? <TitleBarEnd {...extensionContext} /> : undefined}
             extensionContext={extensionContext}
             onActivateWorkspace={(id) => activateWorkspaceMutation.mutate(id)}
+            onManageVariables={handleManageVariables}
+            onSelectEnvironment={(environmentId) =>
+              activeWorkspace &&
+              activateEnvironmentMutation.mutate({
+                environmentId,
+                workspaceId: activeWorkspace.id,
+              })
+            }
             settingsSections={extensions?.settingsSections}
             workspaces={workspaceQuery.data?.workspaces ?? []}
           />
@@ -234,6 +280,11 @@ export function DesktopApp({ extensions }: DesktopAppProps) {
                   onShellSidebarChange={handleApiSidebarChange}
                   onActiveSavedRequestChange={setSelectedApiRequest}
                   openIntent={null}
+                  variableManagerRequest={
+                    variableManagerRequest?.workspaceId === activeWorkspace.id
+                      ? variableManagerRequest
+                      : undefined
+                  }
                   workspaceId={activeWorkspace.id}
                 />
               </div>

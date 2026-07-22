@@ -527,6 +527,7 @@ async fn unfour_openapi_export_imports_as_a_new_workspace_scoped_collection() {
             "workspace-a".to_string(),
             source.id.clone(),
             unfour_core::models::ApiCollectionExportFormat::Json,
+            Vec::new(),
         )
         .await
         .expect("export collection");

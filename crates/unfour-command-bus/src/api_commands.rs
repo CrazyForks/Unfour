@@ -5,7 +5,13 @@ impl CommandBus {
         &self,
         workspace_id: String,
     ) -> AppResult<Vec<ApiEnvironment>> {
-        self.api_client.list_environments(workspace_id).await
+        Ok(self
+            .workspace
+            .list_environments(workspace_id)
+            .await?
+            .into_iter()
+            .map(crate::workspace_variable_commands::legacy_api_environment)
+            .collect())
     }
 
     pub async fn api_environment_create(
@@ -13,10 +19,11 @@ impl CommandBus {
         workspace_id: String,
         name: String,
     ) -> AppResult<ApiEnvironment> {
-        let environment = self
-            .api_client
-            .create_environment(workspace_id.clone(), name)
-            .await?;
+        let environment = crate::workspace_variable_commands::legacy_api_environment(
+            self.workspace
+                .create_environment(workspace_id.clone(), name)
+                .await?,
+        );
         self.activity_log
             .record(
                 Some(&workspace_id),
@@ -35,10 +42,37 @@ impl CommandBus {
         name: String,
         variables: Vec<KeyValue>,
     ) -> AppResult<ApiEnvironment> {
-        let environment = self
-            .api_client
-            .update_environment(workspace_id.clone(), environment_id, name, variables)
-            .await?;
+        let existing = self
+            .workspace
+            .list_environments(workspace_id.clone())
+            .await?
+            .into_iter()
+            .find(|environment| environment.id == environment_id)
+            .ok_or_else(|| unfour_core::AppError::NotFound("workspace environment".to_string()))?;
+        let variables = variables
+            .into_iter()
+            .enumerate()
+            .map(|(index, variable)| {
+                let metadata = existing
+                    .variables
+                    .iter()
+                    .find(|current| current.key == variable.key);
+                WorkspaceVariableInput {
+                    id: metadata.map(|current| current.id.clone()),
+                    key: variable.key,
+                    value: variable.value,
+                    is_secret: metadata.is_some_and(|current| current.is_secret),
+                    is_enabled: variable.enabled,
+                    description: metadata.and_then(|current| current.description.clone()),
+                    sort_order: i64::try_from(index).unwrap_or(i64::MAX),
+                }
+            })
+            .collect();
+        let environment = crate::workspace_variable_commands::legacy_api_environment(
+            self.workspace
+                .update_environment(workspace_id.clone(), environment_id, name, variables)
+                .await?,
+        );
         self.activity_log
             .record(
                 Some(&workspace_id),
@@ -56,9 +90,12 @@ impl CommandBus {
         environment_id: String,
     ) -> AppResult<Vec<ApiEnvironment>> {
         let environments = self
-            .api_client
+            .workspace
             .delete_environment(workspace_id.clone(), environment_id.clone())
-            .await?;
+            .await?
+            .into_iter()
+            .map(crate::workspace_variable_commands::legacy_api_environment)
+            .collect();
         self.activity_log
             .record(
                 Some(&workspace_id),
@@ -75,9 +112,13 @@ impl CommandBus {
         workspace_id: String,
         environment_id: Option<String>,
     ) -> AppResult<Vec<ApiEnvironment>> {
-        self.api_client
-            .activate_environment(workspace_id, environment_id)
-            .await
+        Ok(self
+            .workspace
+            .set_active_environment(workspace_id, environment_id)
+            .await?
+            .into_iter()
+            .map(crate::workspace_variable_commands::legacy_api_environment)
+            .collect())
     }
 
     pub async fn api_collection_list(&self, workspace_id: String) -> AppResult<Vec<ApiCollection>> {
@@ -90,8 +131,9 @@ impl CommandBus {
         collection_id: String,
         format: ApiCollectionExportFormat,
     ) -> AppResult<ApiCollectionExportArtifact> {
+        let environments = self.api_environments_list(workspace_id.clone()).await?;
         self.api_client
-            .export_collection_openapi(workspace_id, collection_id, format)
+            .export_collection_openapi(workspace_id, collection_id, format, environments)
             .await
     }
 
@@ -369,7 +411,8 @@ impl CommandBus {
     }
 
     pub async fn send_api_request(&self, input: ApiRequestInput) -> AppResult<ApiResponse> {
-        let response = self.api_client.send(input.clone()).await?;
+        let resolved_input = self.resolve_api_request_input(input.clone()).await?;
+        let response = self.api_client.send(resolved_input).await?;
         self.activity_log
             .record(
                 Some(&input.workspace_id),
@@ -532,6 +575,7 @@ impl CommandBus {
             timeout_ms,
         };
 
+        let input = self.resolve_api_request_input(input).await?;
         self.api_client.send(input).await
     }
 }

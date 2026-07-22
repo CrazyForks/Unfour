@@ -1,13 +1,13 @@
 import { useCallback, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  activateApiEnvironment,
   deleteApiRequest,
   duplicateApiRequest,
   getApiHistoryDetail,
-  listApiEnvironments,
+  listWorkspaceEnvironments,
   listApiHistory,
   listSavedApiRequests,
+  resolveWorkspaceVariables,
   saveApiRequest,
   sendApiRequest,
   updateApiRequest,
@@ -25,12 +25,12 @@ import {
   addQueryIfMissing,
   bodyFieldsToInput,
   hasHeader,
-  resolveTemplateLoose,
   sendableKeyValues,
   stripUrlQuery,
 } from "../request-utils";
 import type {
   ApiSplitDirection,
+  ApiAuthConfig,
   RequestDraft,
   RequestParamsTab,
   ResponseTab,
@@ -55,8 +55,8 @@ export function useApiRequestTabs(workspaceId: string) {
   });
   const environmentsQuery = useQuery({
     enabled: Boolean(workspaceId),
-    queryKey: ["api-environments", workspaceId],
-    queryFn: () => listApiEnvironments(workspaceId),
+    queryKey: ["workspace-environments", workspaceId],
+    queryFn: () => listWorkspaceEnvironments(workspaceId),
   });
 
   const sendMutation = useMutation({
@@ -104,14 +104,6 @@ export function useApiRequestTabs(workspaceId: string) {
       queryClient.invalidateQueries({ queryKey: ["api-saved", workspaceId] });
     },
   });
-  const activateEnvironmentMutation = useMutation({
-    mutationFn: (environmentId: string | null) =>
-      activateApiEnvironment(workspaceId, environmentId),
-    onSuccess: () =>
-      queryClient.invalidateQueries({
-        queryKey: ["api-environments", workspaceId],
-      }),
-  });
   const sendRequest = sendMutation.mutate;
   const saveRequest = saveMutation.mutateAsync;
 
@@ -124,11 +116,6 @@ export function useApiRequestTabs(workspaceId: string) {
     () => environments.find((environment) => environment.isActive) ?? null,
     [environments],
   );
-  const envVariables = useMemo(
-    () => activeEnvironment?.variables ?? [],
-    [activeEnvironment],
-  );
-
   const newRequest = useCallback(() => {
     useApiRequestTabStore.getState().newRequest(workspaceId);
   }, [workspaceId]);
@@ -162,17 +149,23 @@ export function useApiRequestTabs(workspaceId: string) {
         useApiRequestTabStore.getState().failTabSend(workspaceId, tab.id, validationError);
         return;
       }
-      const input = tabToInput(tab, workspaceId, {
-        envVariables,
-        purpose: "send",
-      });
-      useApiRequestTabStore.getState().startTabSend(workspaceId, tab.id, input);
-      sendRequest({
-        input,
-        tabId: tab.id,
-      });
+      void resolveAuthForSend(
+        tab.draft.auth,
+        workspaceId,
+        activeEnvironment?.id ?? null,
+      )
+        .then((auth) => {
+          const input = tabToInput(tab, workspaceId, { auth, purpose: "send" });
+          useApiRequestTabStore.getState().startTabSend(workspaceId, tab.id, input);
+          sendRequest({ input, tabId: tab.id });
+        })
+        .catch((error) =>
+          useApiRequestTabStore
+            .getState()
+            .failTabSend(workspaceId, tab.id, formatError(error)),
+        );
     },
-    [envVariables, sendRequest, workspaceId],
+    [activeEnvironment?.id, sendRequest, workspaceId],
   );
 
   const saveTab = useCallback(
@@ -191,10 +184,7 @@ export function useApiRequestTabs(workspaceId: string) {
       useApiRequestTabStore.getState().startTabSave(workspaceId, tab.id);
       try {
         const saved = await saveRequest({
-          input: tabToInput({ ...tab, draft }, workspaceId, {
-            envVariables,
-            purpose: "save",
-          }),
+          input: tabToInput({ ...tab, draft }, workspaceId, { purpose: "save" }),
           requestId: tab.savedRequestId,
           tabId: tab.id,
         });
@@ -203,7 +193,7 @@ export function useApiRequestTabs(workspaceId: string) {
         return null;
       }
     },
-    [envVariables, saveRequest, workspaceId],
+    [saveRequest, workspaceId],
   );
 
   return {
@@ -213,12 +203,9 @@ export function useApiRequestTabs(workspaceId: string) {
     deleteMutation,
     duplicateMutation,
     environments,
-    envVariables,
     historyItems: historyQuery.data ?? [],
     savedRequests: savedQuery.data ?? [],
     state,
-    activateEnvironment: (environmentId: string | null) =>
-      activateEnvironmentMutation.mutate(environmentId),
     closeTab: (tabId: string) =>
       useApiRequestTabStore.getState().closeTab(workspaceId, tabId),
     closeTabs: (tabIds: string[]) =>
@@ -245,7 +232,7 @@ export function tabToInput(
   tab: ApiRequestTab,
   workspaceId: string,
   options: {
-    envVariables?: KeyValue[];
+    auth?: ApiAuthConfig;
     purpose?: "save" | "send";
   } = {},
 ): ApiRequestInput {
@@ -254,11 +241,11 @@ export function tabToInput(
   const headers =
     purpose === "save"
       ? tab.draft.headers
-      : applyGeneratedHeaders(tab.draft, options.envVariables ?? []);
+      : applyGeneratedHeaders(tab.draft, options.auth ?? tab.draft.auth);
   const query =
     purpose === "save"
       ? tab.draft.query
-      : applyGeneratedQuery(tab.draft, options.envVariables ?? []);
+      : applyGeneratedQuery(tab.draft, options.auth ?? tab.draft.auth);
   return {
     workspaceId,
     name: tab.draft.name,
@@ -296,7 +283,7 @@ function validateBeforeSend(tab: ApiRequestTab): string | null {
 
 function applyGeneratedHeaders(
   draft: RequestDraft,
-  envVariables: KeyValue[],
+  auth: ApiAuthConfig,
 ): KeyValue[] {
   let headers = sendableKeyValues(draft.headers);
   if (draft.bodyMode === "raw" && draft.rawBodyType === "json" && draft.body.trim()) {
@@ -311,8 +298,8 @@ function applyGeneratedHeaders(
   }
 
   // Explicit Authorization in the Headers table wins over generated Auth headers.
-  if (draft.auth.type === "bearer" && !hasHeader(headers, "Authorization")) {
-    const token = resolveTemplateLoose(draft.auth.token, envVariables);
+  if (auth.type === "bearer" && !hasHeader(headers, "Authorization")) {
+    const token = auth.token;
     if (token.trim()) {
       headers = [
         ...headers,
@@ -324,9 +311,9 @@ function applyGeneratedHeaders(
       ];
     }
   }
-  if (draft.auth.type === "basic" && !hasHeader(headers, "Authorization")) {
-    const username = resolveTemplateLoose(draft.auth.username, envVariables);
-    const password = resolveTemplateLoose(draft.auth.password, envVariables);
+  if (auth.type === "basic" && !hasHeader(headers, "Authorization")) {
+    const username = auth.username;
+    const password = auth.password;
     if (username || password) {
       headers = [
         ...headers,
@@ -338,9 +325,9 @@ function applyGeneratedHeaders(
       ];
     }
   }
-  if (draft.auth.type === "api-key" && draft.auth.addTo === "header") {
-    const key = resolveTemplateLoose(draft.auth.key, envVariables).trim();
-    const value = resolveTemplateLoose(draft.auth.value, envVariables);
+  if (auth.type === "api-key" && auth.addTo === "header") {
+    const key = auth.key.trim();
+    const value = auth.value;
     if (key && !hasHeader(headers, key)) {
       headers = [
         ...headers,
@@ -357,17 +344,43 @@ function applyGeneratedHeaders(
 
 function applyGeneratedQuery(
   draft: RequestDraft,
-  envVariables: KeyValue[],
+  auth: ApiAuthConfig,
 ): KeyValue[] {
   let query = sendableKeyValues(draft.query);
-  if (draft.auth.type === "api-key" && draft.auth.addTo === "query") {
-    const key = resolveTemplateLoose(draft.auth.key, envVariables).trim();
-    const value = resolveTemplateLoose(draft.auth.value, envVariables);
+  if (auth.type === "api-key" && auth.addTo === "query") {
+    const key = auth.key.trim();
+    const value = auth.value;
     if (key) {
       query = addQueryIfMissing(query, key, value);
     }
   }
   return query;
+}
+
+async function resolveAuthForSend(
+  auth: ApiAuthConfig,
+  workspaceId: string,
+  activeEnvironmentId: string | null,
+): Promise<ApiAuthConfig> {
+  const resolve = (input: string) =>
+    input.includes("{{")
+      ? resolveWorkspaceVariables(workspaceId, activeEnvironmentId, input)
+      : Promise.resolve(input);
+  if (auth.type === "bearer") {
+    return { ...auth, token: await resolve(auth.token) };
+  }
+  if (auth.type === "basic") {
+    const [username, password] = await Promise.all([
+      resolve(auth.username),
+      resolve(auth.password),
+    ]);
+    return { ...auth, password, username };
+  }
+  if (auth.type === "api-key") {
+    const [key, value] = await Promise.all([resolve(auth.key), resolve(auth.value)]);
+    return { ...auth, key, value };
+  }
+  return auth;
 }
 
 function encodeBasicCredential(username: string, password: string): string {

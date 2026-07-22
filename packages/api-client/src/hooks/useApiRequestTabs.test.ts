@@ -80,7 +80,7 @@ describe("tabToInput", () => {
   });
 
 
-  it("resolves environment variables inside generated bearer auth", () => {
+  it("uses the shared resolver result inside generated bearer auth", () => {
     const input = tabToInput(
       tabWithDraft({
         method: "POST",
@@ -89,7 +89,7 @@ describe("tabToInput", () => {
       }),
       WORKSPACE,
       {
-        envVariables: [{ enabled: true, key: "access_token", value: "abc123" }],
+        auth: { type: "bearer", token: "abc123" },
       },
     );
 
@@ -127,7 +127,7 @@ describe("tabToInput", () => {
   });
 
 
-  it("resolves environment variables inside generated api-key auth", () => {
+  it("uses shared resolver results inside generated api-key auth", () => {
     const queryInput = tabToInput(
       tabWithDraft({
         method: "GET",
@@ -136,7 +136,7 @@ describe("tabToInput", () => {
       }),
       WORKSPACE,
       {
-        envVariables: [{ enabled: true, key: "api_key", value: "secret" }],
+        auth: { type: "api-key", addTo: "query", key: "api_key", value: "secret" },
       },
     );
     const headerInput = tabToInput(
@@ -147,7 +147,7 @@ describe("tabToInput", () => {
       }),
       WORKSPACE,
       {
-        envVariables: [{ enabled: true, key: "api_key", value: "secret" }],
+        auth: { type: "api-key", addTo: "header", key: "X-API-Key", value: "secret" },
       },
     );
 

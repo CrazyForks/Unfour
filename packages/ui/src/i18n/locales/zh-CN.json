@@ -357,6 +357,30 @@
     },
     "title": "API 调试器"
   },
+  "variables": {
+    "activeEnvironment": "当前运行环境",
+    "add": "添加变量",
+    "deleteRow": "删除变量 {key}",
+    "description": "说明",
+    "duplicateKeys": "重复变量键：{keys}",
+    "empty": "此范围内暂无变量。",
+    "enabled": "已启用",
+    "enabledShort": "启用",
+    "environmentPrefix": "环境：{name}",
+    "environmentsGroup": "环境",
+    "hideSecret": "隐藏 Secret 值",
+    "key": "键",
+    "manage": "管理变量",
+    "newEnvironment": "新建环境",
+    "noEnvironment": "无环境",
+    "overridesWorkspace": "覆盖 Workspace 值",
+    "secret": "Secret",
+    "showSecret": "显示 Secret 值",
+    "value": "值",
+    "workspaceDescription": "可用于此 Workspace 中的所有环境。同名 Environment Variable 优先。",
+    "workspaceGroup": "Workspace",
+    "workspaceVariables": "Workspace Variables"
+  },
   "common": {
     "actions": {
       "connect": "连接",

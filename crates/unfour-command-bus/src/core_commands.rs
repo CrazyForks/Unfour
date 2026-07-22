@@ -328,7 +328,7 @@ impl CommandBus {
             ReadCommand::ApiListEnvironments { workspace_id } => {
                 let state = self.read_workspace_state().await?;
                 let ws_id = workspace_id.unwrap_or(state.active_workspace_id);
-                let environments = self.api_client.list_environments(ws_id).await?;
+                let environments = self.api_environments_list(ws_id).await?;
                 Ok(ReadCommandResult::ApiEnvironments(
                     ApiEnvironmentListResult {
                         count: environments.len(),
@@ -404,7 +404,7 @@ impl CommandBus {
     ) -> AppResult<Workspace> {
         let workspace = self
             .workspace
-            .update_environment(workspace_id, environment_type)
+            .update_environment_type(workspace_id, environment_type)
             .await?;
         self.activity_log
             .record(

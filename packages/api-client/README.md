@@ -7,7 +7,8 @@
 ## Boundaries
 
 - Can own request drafts, request tabs, Send behavior, response display,
-  history, saved requests, collections, environments, and import/export UI.
+  history, saved requests, collections, the workspace-variable management
+  surface, and import/export UI.
 - Should call backend behavior through `@unfour/command-client`.
 - Should reuse `@unfour/ui` primitives where possible.
 - Should not own Database, SSH Terminal, app-shell, or global workspace
@@ -30,7 +31,8 @@
 - Send request as the primary action.
 - Save, duplicate, delete, import, and export saved requests.
 - View response body, headers, cookies, timing, and history.
-- Manage workspace environment variables for request templates.
+- Manage workspace variables and workspace environments through shared
+  workspace commands; API Send consumes the shared resolution result.
 
 ## Known Gaps
 

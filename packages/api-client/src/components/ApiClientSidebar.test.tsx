@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import type { ReactNode } from "react";
-import type { ApiEnvironment } from "@unfour/command-client";
+import type { WorkspaceEnvironment } from "@unfour/command-client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { I18nProvider } from "@unfour/ui";
@@ -8,18 +8,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiClientSidebar } from "./ApiClientSidebar";
 
 vi.mock("@unfour/command-client", () => ({
-  activateApiEnvironment: vi.fn(),
+  setActiveWorkspaceEnvironment: vi.fn(),
   createApiCollection: vi.fn(),
   createApiCollectionFolder: vi.fn(),
-  createApiEnvironment: vi.fn(),
+  createWorkspaceEnvironment: vi.fn(),
   deleteApiCollection: vi.fn(),
   deleteApiCollectionFolder: vi.fn(),
-  deleteApiEnvironment: vi.fn(),
+  deleteWorkspaceEnvironment: vi.fn(),
   deleteApiRequest: vi.fn(),
   duplicateApiRequest: vi.fn(),
   listApiCollections: vi.fn(),
   listApiCollectionFolders: vi.fn(),
-  listApiEnvironments: vi.fn(),
+  listWorkspaceEnvironments: vi.fn(),
   listApiHistory: vi.fn(),
   listSavedApiRequests: vi.fn(),
   moveApiCollectionFolder: vi.fn(),
@@ -28,33 +28,41 @@ vi.mock("@unfour/command-client", () => ({
   renameApiCollectionFolder: vi.fn(),
   reorderApiCollectionFolders: vi.fn(),
   reorderApiRequests: vi.fn(),
-  updateApiEnvironment: vi.fn(),
+  updateWorkspaceEnvironmentVariables: vi.fn(),
   updateApiRequest: vi.fn(),
 }));
 
 import {
   listApiCollections,
   listApiCollectionFolders,
-  listApiEnvironments,
+  listWorkspaceEnvironments,
   listApiHistory,
   listSavedApiRequests,
+  setActiveWorkspaceEnvironment,
 } from "@unfour/command-client";
 
 const listCollectionsMock = vi.mocked(listApiCollections);
 const listFoldersMock = vi.mocked(listApiCollectionFolders);
 const listSavedMock = vi.mocked(listSavedApiRequests);
 const listHistoryMock = vi.mocked(listApiHistory);
-const listEnvironmentsMock = vi.mocked(listApiEnvironments);
+const listEnvironmentsMock = vi.mocked(listWorkspaceEnvironments);
 
-function environment(overrides: Partial<ApiEnvironment> = {}): ApiEnvironment {
+function environment(
+  overrides: Partial<WorkspaceEnvironment> = {},
+): WorkspaceEnvironment {
   return {
     id: "env-1",
     workspaceId: "ws-1",
     name: "Local",
+    sortOrder: 0,
     variables: [],
     isActive: false,
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",
+    deletedAt: null,
+    revision: 1,
+    syncStatus: "local",
+    remoteId: null,
     ...overrides,
   };
 }
@@ -76,6 +84,7 @@ function renderSidebar(overrides: Partial<Parameters<typeof ApiClientSidebar>[0]
   const props = {
     environmentPanelActive: false,
     onEditEnvironment: vi.fn(),
+    onEditWorkspaceVariables: vi.fn(),
     onNewEnvironment: vi.fn(),
     onNewRequest: vi.fn(),
     onOpenEnvironments: vi.fn(),
@@ -131,5 +140,14 @@ describe("ApiClientSidebar environment panel", () => {
     fireEvent.click(await screen.findByRole("button", { name: "New" }));
 
     await waitFor(() => expect(props.onNewEnvironment).toHaveBeenCalledTimes(1));
+  });
+
+  it("selects an environment for editing without changing the active environment", async () => {
+    const props = renderSidebar({ environmentPanelActive: true });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Staging" }));
+
+    expect(props.onEditEnvironment).toHaveBeenCalledWith("env-2");
+    expect(vi.mocked(setActiveWorkspaceEnvironment)).not.toHaveBeenCalled();
   });
 });

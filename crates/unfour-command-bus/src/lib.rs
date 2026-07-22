@@ -22,7 +22,8 @@ use unfour_core::models::{
     SshReconnectCancelInput, SshResizeInput, SshSessionEvent, SshSessionInput, SshSessionSummary,
     SshTask, SshTaskCancelInput, SshTaskCleanupInput, SshTaskCleanupResult, SshTaskDetail,
     SshTaskRun, SshTaskRunInput, SshTaskSaveInput, SshTestResult, SystemHealth, Workspace,
-    WorkspaceLayout, WorkspaceState,
+    WorkspaceEnvironment, WorkspaceLayout, WorkspaceState, WorkspaceVariable,
+    WorkspaceVariableInput,
 };
 use unfour_core::sync_reserved;
 use unfour_core::AppResult;
@@ -39,6 +40,7 @@ mod core_commands;
 mod credential_commands;
 mod database_commands;
 mod ssh_commands;
+mod workspace_variable_commands;
 
 pub use command_models::*;
 

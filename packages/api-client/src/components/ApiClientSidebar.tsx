@@ -3,8 +3,8 @@ import { Circle, Clock, FolderOpen, MoreHorizontal, Plus, Settings2 } from "luci
 import { useQuery } from "@tanstack/react-query";
 import {
   listApiHistory,
-  type ApiEnvironment,
   type ApiHistoryItem,
+  type WorkspaceEnvironment,
 } from "@unfour/command-client";
 import {
   Button,
@@ -22,6 +22,7 @@ import type { ApiOpenIntent } from "../model/types";
 import { nextEnvironmentName } from "../request-utils";
 import { ApiCollectionTree } from "./ApiCollectionTree";
 import { ApiHistoryTree } from "./ApiHistoryTree";
+import { WORKSPACE_VARIABLES_SELECTION_ID } from "./environment-manager-selection";
 
 type SidebarTab = "collections" | "history" | "environments";
 
@@ -34,6 +35,7 @@ const sidebarTabs: Array<{ id: SidebarTab; icon: ReactNode; labelKey: string }> 
 export function ApiClientSidebar({
   environmentPanelActive = false,
   onEditEnvironment,
+  onEditWorkspaceVariables,
   onNewEnvironment,
   onNewRequest,
   onOpenEnvironments,
@@ -45,6 +47,7 @@ export function ApiClientSidebar({
 }: {
   environmentPanelActive?: boolean;
   onEditEnvironment: (environmentId: string) => void;
+  onEditWorkspaceVariables: () => void;
   onNewEnvironment: () => void;
   onNewRequest: () => void;
   onOpenEnvironments: () => void;
@@ -129,6 +132,7 @@ export function ApiClientSidebar({
         {activeTab === "environments" && (
           <EnvironmentsPanel
             onEditEnvironment={onEditEnvironment}
+            onEditWorkspaceVariables={onEditWorkspaceVariables}
             onNewEnvironment={onNewEnvironment}
             selectedEnvironmentId={selectedEnvironmentId}
             workspaceId={workspaceId}
@@ -141,29 +145,41 @@ export function ApiClientSidebar({
 
 function EnvironmentsPanel({
   onEditEnvironment,
+  onEditWorkspaceVariables,
   onNewEnvironment,
   selectedEnvironmentId,
   workspaceId,
 }: {
   onEditEnvironment: (environmentId: string) => void;
+  onEditWorkspaceVariables: () => void;
   onNewEnvironment: () => void;
   selectedEnvironmentId: string | null;
   workspaceId: string;
 }) {
   const { t } = useI18n();
   const handleError = useFeedbackErrorHandler();
-  const { activateMut, createMut, deleteMut, environments, isLoading, updateMut } =
+  const { createMut, deleteMut, environments, isLoading, updateMut } =
     useApiEnvironments(workspaceId);
-  const [deleteTarget, setDeleteTarget] = useState<ApiEnvironment | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<WorkspaceEnvironment | null>(null);
 
-  const handleDuplicate = async (environment: ApiEnvironment) => {
+  const handleDuplicate = async (environment: WorkspaceEnvironment) => {
     const name = nextEnvironmentName(environment.name, environments);
     try {
       const created = await createMut.mutateAsync(name);
       await updateMut.mutateAsync({
         id: created.id,
         name,
-        variables: environment.variables,
+        // Drop persisted IDs so the replace path inserts copies for the new
+        // environment instead of updating rows scoped to the source.
+        variables: environment.variables.map((variable) => ({
+          id: null,
+          key: variable.key,
+          value: variable.value,
+          isSecret: variable.isSecret,
+          isEnabled: variable.isEnabled,
+          description: variable.description,
+          sortOrder: variable.sortOrder,
+        })),
       });
     } catch (error) {
       handleError(error, { key: "feedback.api.environmentDuplicateFailed" });
@@ -172,9 +188,27 @@ function EnvironmentsPanel({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 items-center justify-between gap-2 px-2 py-2">
+      <div className="shrink-0 px-2 pt-2">
         <span className="text-[11px] font-semibold uppercase text-[var(--u-color-text-soft)]">
-          {t("api.sidebar.environments")}
+          {t("variables.workspaceGroup")}
+        </span>
+        <button
+          className={cn(
+            "mt-1 flex w-full cursor-pointer items-center gap-2 rounded-[var(--u-radius-md)] px-2 py-1.5 text-left text-[12px] font-medium transition-colors",
+            selectedEnvironmentId === WORKSPACE_VARIABLES_SELECTION_ID
+              ? "bg-[var(--u-color-surface-active)] text-[var(--u-color-text)]"
+              : "text-[var(--u-color-text-muted)] hover:bg-[var(--u-color-surface-hover)] hover:text-[var(--u-color-text)]",
+          )}
+          onClick={onEditWorkspaceVariables}
+          type="button"
+        >
+          <Settings2 size={13} />
+          <span className="truncate">{t("variables.workspaceVariables")}</span>
+        </button>
+      </div>
+      <div className="flex shrink-0 items-center justify-between gap-2 px-2 pt-3 pb-1">
+        <span className="text-[11px] font-semibold uppercase text-[var(--u-color-text-soft)]">
+          {t("variables.environmentsGroup")}
         </span>
         <Button onClick={onNewEnvironment} size="sm" type="button" variant="ghost">
           <Plus size={13} />
@@ -196,9 +230,6 @@ function EnvironmentsPanel({
               <EnvironmentRow
                 environment={environment}
                 key={environment.id}
-                onActivate={() =>
-                  activateMut.mutate(environment.isActive ? null : environment.id)
-                }
                 onDelete={() => setDeleteTarget(environment)}
                 onDuplicate={() => handleDuplicate(environment)}
                 onSelect={() => onEditEnvironment(environment.id)}
@@ -233,14 +264,12 @@ function EnvironmentsPanel({
 
 function EnvironmentRow({
   environment,
-  onActivate,
   onDelete,
   onDuplicate,
   onSelect,
   selected,
 }: {
-  environment: ApiEnvironment;
-  onActivate: () => void;
+  environment: WorkspaceEnvironment;
   onDelete: () => void;
   onDuplicate: () => void;
   onSelect: () => void;
@@ -257,32 +286,22 @@ function EnvironmentRow({
           : "text-[var(--u-color-text-muted)] hover:bg-[var(--u-color-surface-hover)] hover:text-[var(--u-color-text)]",
       )}
     >
-      <button
-        aria-label={
-          environment.isActive
-            ? t("api.environment.deactivate")
-            : t("api.environment.activate")
-        }
+      <span
+        aria-label={environment.isActive ? t("api.environment.activeBadge") : undefined}
         className={cn(
           "inline-flex shrink-0 items-center justify-center rounded-full transition-colors",
           environment.isActive
             ? "text-[var(--u-color-primary)]"
-            : "text-[var(--u-color-text-muted)] opacity-0 group-hover:opacity-100",
+            : "text-transparent",
         )}
-        onClick={onActivate}
-        title={
-          environment.isActive
-            ? t("api.environment.deactivate")
-            : t("api.environment.activate")
-        }
-        type="button"
+        title={environment.isActive ? t("api.environment.activeBadge") : undefined}
       >
         <Circle
           fill={environment.isActive ? "currentColor" : "none"}
           size={10}
           strokeWidth={2}
         />
-      </button>
+      </span>
       <button
         aria-label={environment.name}
         className="min-w-0 flex-1 truncate font-medium"

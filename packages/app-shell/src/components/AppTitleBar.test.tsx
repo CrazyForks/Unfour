@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import type { Workspace } from "@unfour/command-client";
+import type { Workspace, WorkspaceEnvironment } from "@unfour/command-client";
 import { I18nProvider, ThemeProvider } from "@unfour/ui";
 import { AppTitleBar } from "./AppTitleBar";
 import type { DesktopAppExtensionContext } from "../extensions";
@@ -63,6 +63,23 @@ function extensionContext(activeWorkspace: Workspace): DesktopAppExtensionContex
   return {
     activeTab: { id: "api-main", kind: "api", title: "API Client" },
     activeWorkspace,
+  };
+}
+
+function environment(id: string, name: string, isActive = false): WorkspaceEnvironment {
+  return {
+    id,
+    workspaceId: "ws-default",
+    name,
+    sortOrder: 0,
+    isActive,
+    variables: [],
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    deletedAt: null,
+    revision: 1,
+    syncStatus: "local",
+    remoteId: null,
   };
 }
 
@@ -139,5 +156,41 @@ describe("AppTitleBar settings entry", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Account" }));
 
     expect(within(dialog).getByText("Account for Default Workspace")).toBeTruthy();
+  });
+
+  it("switches the active workspace environment and opens variable management", async () => {
+    const activeWorkspace = workspace();
+    const onSelectEnvironment = vi.fn();
+    const onManageVariables = vi.fn();
+    render(
+      <AppTitleBar
+        activeEnvironmentId="env-dev"
+        activeWorkspace={activeWorkspace}
+        environments={[
+          environment("env-dev", "Development", true),
+          environment("env-test", "Test"),
+        ]}
+        extensionContext={extensionContext(activeWorkspace)}
+        onActivateWorkspace={vi.fn()}
+        onManageVariables={onManageVariables}
+        onSelectEnvironment={onSelectEnvironment}
+        workspaces={[activeWorkspace]}
+      />,
+      { wrapper: createWrapper() },
+    );
+
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Active environment" }), {
+      button: 0,
+      ctrlKey: false,
+    });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Test" }));
+    expect(onSelectEnvironment).toHaveBeenCalledWith("env-test");
+
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Active environment" }), {
+      button: 0,
+      ctrlKey: false,
+    });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Manage variables" }));
+    expect(onManageVariables).toHaveBeenCalledTimes(1);
   });
 });

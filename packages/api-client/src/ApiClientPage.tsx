@@ -9,7 +9,6 @@ import {
 } from "./model/request-tabs";
 import type { ApiOpenIntent } from "./model/types";
 import { ApiRequestTabs } from "./components/ApiRequestTabs";
-import { EnvironmentControl } from "./components/EnvironmentControl";
 import type { SaveIdentity } from "./components/ApiSaveDialog";
 import { findDuplicateRequestName } from "./request-utils";
 import { ApiClientSidebar } from "./components/ApiClientSidebar";
@@ -19,11 +18,13 @@ import {
   EnvironmentManagerPage,
   type EnvironmentManagerInitialMode,
 } from "./components/EnvironmentManagerPage";
+import { WORKSPACE_VARIABLES_SELECTION_ID } from "./components/environment-manager-selection";
 
 type ApiWorkspaceView = "request" | "environments";
 type EnvironmentManagerOpenMode =
   | { kind: "manage" }
   | { kind: "new" }
+  | { kind: "workspace" }
   | { environmentId: string; kind: "edit" };
 
 export function ApiClientPage({
@@ -31,17 +32,21 @@ export function ApiClientPage({
   onActiveSavedRequestChange,
   onShellSidebarChange,
   openIntent,
+  variableManagerRequest,
   workspaceId,
 }: {
   active?: boolean;
   onActiveSavedRequestChange?: (requestId: string | null) => void;
   onShellSidebarChange?: (sidebar: ReactNode | null) => void;
   openIntent: ApiOpenIntent | null;
+  variableManagerRequest?: {
+    environmentId: string | null;
+    nonce: number;
+  };
   workspaceId: string;
 }) {
   const { t } = useI18n();
   const {
-    activateEnvironment,
     activeEnvironment,
     activeTab,
     closeTab,
@@ -107,6 +112,8 @@ export function ApiClientPage({
       const nextSelectedEnvironmentId =
         mode.kind === "edit"
           ? mode.environmentId
+          : mode.kind === "workspace"
+            ? WORKSPACE_VARIABLES_SELECTION_ID
           : mode.kind === "new"
             ? null
             : activeEnvironment?.id ?? selectedEnvironmentId;
@@ -119,6 +126,16 @@ export function ApiClientPage({
     },
     [activeEnvironment?.id, selectedEnvironmentId],
   );
+
+  useEffect(() => {
+    if (!variableManagerRequest) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the shell emits an explicit manager-open intent
+    openEnvironmentManager(
+      variableManagerRequest.environmentId
+        ? { kind: "edit", environmentId: variableManagerRequest.environmentId }
+        : { kind: "workspace" },
+    );
+  }, [openEnvironmentManager, variableManagerRequest]);
 
   const closeEnvironmentTab = useCallback(() => {
     setEnvironmentTabOpen(false);
@@ -384,6 +401,9 @@ export function ApiClientPage({
         onEditEnvironment={(environmentId) =>
           openEnvironmentManager({ kind: "edit", environmentId })
         }
+        onEditWorkspaceVariables={() =>
+          openEnvironmentManager({ kind: "workspace" })
+        }
         onNewEnvironment={() => openEnvironmentManager({ kind: "new" })}
         onNewRequest={handleNewRequest}
         onOpenEnvironments={() => openEnvironmentManager()}
@@ -422,14 +442,6 @@ export function ApiClientPage({
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <ApiRequestTabs
             activeId={workspaceView === "environments" ? null : state.activeTabId}
-            endControl={
-              <EnvironmentControl
-                activeEnvironmentId={activeEnvironment?.id ?? null}
-                onManageEnvironments={() => openEnvironmentManager()}
-                onSelectEnvironment={activateEnvironment}
-                workspaceId={workspaceId}
-              />
-            }
             environmentTab={{
               active: workspaceView === "environments",
               dirty: environmentTabDirty,

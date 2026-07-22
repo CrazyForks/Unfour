@@ -2,6 +2,7 @@ use super::*;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use unfour_core::models::{
     ApiCollectionExportFormat, ApiRequestInput, DatabaseConnectionInput, SshConnectionInput,
+    WorkspaceVariableInput,
 };
 use unfour_local_storage::LocalDb;
 
@@ -393,4 +394,85 @@ async fn api_read_commands_use_real_collection_ids() {
     assert_eq!(requests.count, 1);
     assert_eq!(requests.requests[0].id, saved.id);
     assert_eq!(requests.requests[0].collection_id, collection.id);
+}
+
+#[tokio::test]
+async fn api_request_resolution_uses_current_workspace_environment_then_workspace_values() {
+    let bus = test_bus().await;
+    let workspace_id = bus.list_workspaces().await.unwrap().active_workspace_id;
+    bus.workspace_variables_replace(
+        workspace_id.clone(),
+        vec![WorkspaceVariableInput {
+            id: None,
+            key: "HOST".to_string(),
+            value: "workspace.example".to_string(),
+            is_secret: false,
+            is_enabled: true,
+            description: None,
+            sort_order: 0,
+        }],
+    )
+    .await
+    .expect("save workspace variable");
+    let environment = bus
+        .workspace_environment_create(workspace_id.clone(), "Development".to_string())
+        .await
+        .expect("create environment");
+    bus.workspace_environment_update(
+        workspace_id.clone(),
+        environment.id.clone(),
+        environment.name,
+        vec![WorkspaceVariableInput {
+            id: None,
+            key: "HOST".to_string(),
+            value: "environment.example".to_string(),
+            is_secret: false,
+            is_enabled: true,
+            description: None,
+            sort_order: 0,
+        }],
+    )
+    .await
+    .expect("save environment variable");
+    bus.workspace_environment_set_active(workspace_id.clone(), Some(environment.id.clone()))
+        .await
+        .expect("activate environment");
+
+    let input = ApiRequestInput {
+        workspace_id: workspace_id.clone(),
+        name: None,
+        parent_folder_id: None,
+        collection_id: None,
+        auth_json: None,
+        method: "POST".to_string(),
+        url: "https://{{HOST}}/users".to_string(),
+        headers: vec![KeyValue {
+            key: "X-Origin".to_string(),
+            value: "{{HOST}}".to_string(),
+            enabled: true,
+        }],
+        query: vec![],
+        body: Some("{\"host\":\"{{HOST}}\"}".to_string()),
+        body_kind: "json".to_string(),
+        timeout_ms: None,
+    };
+    let resolved = bus
+        .resolve_api_request_input(input.clone())
+        .await
+        .expect("resolve request with active environment");
+    assert_eq!(resolved.url, "https://environment.example/users");
+    assert_eq!(resolved.headers[0].value, "environment.example");
+    assert_eq!(
+        resolved.body.as_deref(),
+        Some("{\"host\":\"environment.example\"}")
+    );
+
+    bus.workspace_environment_set_active(workspace_id, None)
+        .await
+        .expect("clear active environment");
+    let fallback = bus
+        .resolve_api_request_input(input)
+        .await
+        .expect("resolve with workspace variables only");
+    assert_eq!(fallback.url, "https://workspace.example/users");
 }

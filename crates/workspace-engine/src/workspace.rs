@@ -1,4 +1,5 @@
 mod layout;
+mod variables;
 
 use chrono::Utc;
 use unfour_core::models::{Workspace, WorkspaceLayout, WorkspaceState};
@@ -56,6 +57,18 @@ impl WorkspaceService {
               revision, sync_status
             )
             VALUES (?1, '{}', ?2, ?2, 1, 'local')
+            "#,
+        )
+        .bind(&id)
+        .bind(&now)
+        .execute(self.db.pool())
+        .await?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO workspace_local_state (
+              workspace_id, active_environment_id, created_at, updated_at
+            ) VALUES (?1, NULL, ?2, ?2)
             "#,
         )
         .bind(&id)
@@ -151,11 +164,23 @@ impl WorkspaceService {
         .execute(self.db.pool())
         .await?;
 
+        sqlx::query(
+            r#"
+            INSERT INTO workspace_local_state (
+              workspace_id, active_environment_id, created_at, updated_at
+            ) VALUES (?1, NULL, ?2, ?2)
+            "#,
+        )
+        .bind(&id)
+        .bind(&now)
+        .execute(self.db.pool())
+        .await?;
+
         self.write_setting("active_workspace_id", &id).await?;
         self.get(&id).await
     }
 
-    pub async fn update_environment(
+    pub async fn update_environment_type(
         &self,
         workspace_id: String,
         environment_type: String,

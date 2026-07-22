@@ -61,6 +61,8 @@ The current SQLite-backed records include:
 - app settings;
 - workspaces;
 - workspace settings;
+- workspace-local active environment state;
+- workspace variables, environments, and normalized environment variables;
 - API requests;
 - API history (local-only log, no sync fields);
 - connection metadata (parent `connections` table plus `ssh_connections` /
@@ -140,7 +142,9 @@ The first good candidates for future sync are durable workspace business data:
 - `api_collections`
 - `api_collection_folders`
 - `api_requests`
-- `api_environments`
+- `workspace_variables`
+- `workspace_environments`
+- `workspace_environment_variables`
 - `saved_sql`
 
 Data that can remain local-only for now:
@@ -184,15 +188,13 @@ and do not need to know which subtype the row belongs to. The schema enforces
 same-workspace connection references; deleting a connection nulls nullable
 history/snippet references and cascades terminal history rows.
 
-## Single Active Environment
+## Active Environment State
 
-`api_environments.is_active` is constrained to a single active row per
-workspace by the partial unique index
-`uq_api_environments_active_per_workspace`. The application layer in
-`http-engine` still wraps activate/deactivate in one transaction, but the
-index is the source of truth: it enforces uniqueness at the statement level,
-so the activate flow must deactivate other rows **before** activating the
-target.
+The current environment is local workspace state in `workspace_local_state`,
+not a property of a syncable environment record. Its
+`active_environment_id` is validated against `workspace_environments` in the
+same workspace. Deleting the active environment falls back to the first
+available environment by sort order, or to no environment when none remain.
 
 ## Default Workspace
 
@@ -203,9 +205,11 @@ attempt to manage multiple default rows.
 
 ## Workspace Environments
 
-Workspace environments are ordinary workspace data. API requests resolve
-placeholders such as `{{base_url}}` in URL, headers, query parameters, and body
-before sending.
+Workspace variables and environments are ordinary workspace data. Environment
+variables override workspace variables with the same key. API requests resolve
+placeholders such as `{{base_url}}` in URL, auth metadata, headers, query
+parameters, and body before sending. Resolution is workspace-scoped and an
+environment ID is rejected unless it belongs to the supplied workspace.
 
 Environment values are not encrypted. Do not store long-lived secrets in
 workspace environment variables. Use credential references for passwords,

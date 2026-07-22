@@ -4,11 +4,7 @@ impl ApiClientService {
     pub async fn send(&self, input: ApiRequestInput) -> AppResult<ApiResponse> {
         validate_workspace_id(&input.workspace_id)?;
         let method = parse_method(&input.method)?;
-        let environment = self
-            .active_environment_variables(&input.workspace_id)
-            .await?;
-        let resolved = resolve_input(input.clone(), &environment)?;
-        let url = build_url(&resolved.url, &resolved.query)?;
+        let url = build_url(&input.url, &input.query)?;
         let timeout =
             Duration::from_millis(input.timeout_ms.unwrap_or(60_000).clamp(1_000, 300_000));
         let request_id = unfour_diag::new_request_id();
@@ -25,7 +21,7 @@ impl ApiClientService {
             .timeout(timeout);
         let mut has_content_type = false;
 
-        for header in resolved.headers.iter().filter(|item| item.enabled) {
+        for header in input.headers.iter().filter(|item| item.enabled) {
             if header.key.trim().eq_ignore_ascii_case("content-type") {
                 has_content_type = true;
             }
@@ -38,7 +34,7 @@ impl ApiClientService {
             builder = builder.header(name, value);
         }
 
-        if let Some(body) = resolved.body.clone().filter(|body| !body.is_empty()) {
+        if let Some(body) = input.body.clone().filter(|body| !body.is_empty()) {
             if input.body_kind == "json" && !has_content_type {
                 builder = builder.header(CONTENT_TYPE, "application/json");
             }
@@ -100,7 +96,7 @@ impl ApiClientService {
         };
         let history_id = match self
             .insert_history(
-                &resolved,
+                &input,
                 status.as_u16(),
                 duration_ms,
                 &response_headers,
