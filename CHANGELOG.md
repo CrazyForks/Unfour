@@ -6,6 +6,58 @@ This file is the user-facing change history for Unfour, following
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-22
+
+Minor release focused on SSH file transfer and task automation, shared workspace
+variables, and multi-statement Database execution.
+
+### Added
+
+- **SSH SFTP remote files** — Browse remote directories, transfer files, and manage
+  remote paths from a dedicated SFTP panel with context menus, multi-select, and
+  drag-and-drop upload.
+- **SSH Task automation** — Create and run multi-step SSH tasks (command, upload,
+  download) with workspace-scoped sync-safe templates, local bindings, run
+  history, streamed transcripts, and Save / Run editor UX.
+- **Task run inputs from workspace env** — Prefill task run placeholders from the
+  active workspace environment and echo the executed commands in the run output.
+- **Shared workspace variables** — Promote API environments to workspace-scoped
+  variables with title-bar active-environment switching; API request resolution
+  overlays workspace defaults.
+- **`@unfour/workspace-environments` package** — Extract environment/variable
+  management into a dedicated frontend package mounted from the app shell, with
+  module navigation and dirty-leave confirmation while editing.
+- **Database multi-statement Run** — Split editor SQL on semicolons and run
+  Current / All statements sequentially, showing multiple result sets as
+  sub-tabs.
+
+### Fixed
+
+- **SFTP transfer UI** — Keep transfer progress in sync and improve transfer
+  throughput.
+- **SSH task downloads** — Prevent task downloads from overwriting local
+  directories; treat missing SSH exit status as failure so failed steps are not
+  marked success.
+- **SSH task navigation** — Improve task workspace navigation and keep module
+  shortcuts scoped so hidden modules do not steal focus (e.g. API Ctrl+S).
+- **Database table preview** — Stabilize table preview loading and remove
+  placeholder loading rows that could flash incorrect grid content.
+
+### Changed
+
+- **API environments ownership** — Environment CRUD and storage move from the
+  API Client / http-engine path to workspace variables in `workspace-engine`
+  and the new environments package; API Client consumes the shared workspace
+  active environment.
+- **SSH module surface** — SSH Terminal sidebar gains Connections / Files /
+  Tasks modes for terminal, SFTP, and task automation workflows.
+
+### Docs
+
+- Updated architecture docs for workspace variables package boundaries, data
+  storage, and project structure.
+- Updated SSH Terminal and API Client package docs for the new surfaces.
+
 ## [0.1.2] - 2026-07-20
 
 Feature and reliability release focused on API interoperability, Database row
@@ -137,6 +189,7 @@ First public release.
 - macOS and Linux artifacts remain experimental/unverified until real-device
   smoke checks are complete.
 
+[0.2.0]: https://github.com/zyqzyq/Unfour/releases/tag/v0.2.0
 [0.1.2]: https://github.com/zyqzyq/Unfour/releases/tag/v0.1.2
 [0.1.1]: https://github.com/zyqzyq/Unfour/releases/tag/v0.1.1
 [0.1.0]: https://github.com/zyqzyq/Unfour/releases/tag/v0.1.0
