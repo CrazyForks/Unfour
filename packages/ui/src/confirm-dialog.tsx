@@ -28,8 +28,11 @@ export function ConfirmDialog({
   description,
   onConfirm,
   onOpenChange,
+  onSecondary,
   open,
   pending = false,
+  secondaryLabel,
+  secondaryTone = "secondary",
   title,
   tone = "danger",
 }: {
@@ -38,8 +41,12 @@ export function ConfirmDialog({
   description?: React.ReactNode;
   onConfirm: () => void;
   onOpenChange: (open: boolean) => void;
+  /** Optional middle action (e.g. Discard between Cancel and Save). */
+  onSecondary?: () => void;
   open: boolean;
   pending?: boolean;
+  secondaryLabel?: string;
+  secondaryTone?: "secondary" | "danger";
   title: string;
   tone?: "default" | "danger";
 }) {
@@ -62,6 +69,16 @@ export function ConfirmDialog({
               {cancelLabel ?? t("common.confirm.cancel")}
             </Button>
           </DialogClose>
+          {secondaryLabel && onSecondary ? (
+            <Button
+              disabled={pending}
+              onClick={onSecondary}
+              type="button"
+              variant={secondaryTone === "danger" ? "danger" : "secondary"}
+            >
+              {secondaryLabel}
+            </Button>
+          ) : null}
           <Button
             disabled={pending}
             onClick={onConfirm}

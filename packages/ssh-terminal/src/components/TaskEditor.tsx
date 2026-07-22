@@ -5,16 +5,19 @@ import type {
   SshTaskStepInput,
   SshTaskStepType,
 } from "@unfour/command-client";
-import type { ReactNode } from "react";
-import { Badge, Button, IconButton, Input, Select, useI18n } from "@unfour/ui";
-import { ArrowDown, ArrowUp, Copy, Play, Save, Trash2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import type { PointerEvent as ReactPointerEvent } from "react";
+import { Badge, Button, Input, Select, useI18n } from "@unfour/ui";
+import { Play, Save } from "lucide-react";
 import {
   createTaskStep,
   detectTaskInputs,
   duplicateTaskStep,
   moveTaskStep,
   removeTaskStep,
+  reorderTaskStep,
 } from "../model/task-template";
+import { AddStepMenu, StepInsertSlot, StepRow } from "./TaskEditorSteps";
 
 export function TaskEditor({
   connections,
@@ -22,6 +25,7 @@ export function TaskEditor({
   onChange,
   onRun,
   onSave,
+  runDisabledReason,
   saving,
 }: {
   connections: SshConnection[];
@@ -29,10 +33,87 @@ export function TaskEditor({
   onChange: (draft: SshTaskSaveInput) => void;
   onRun: () => void;
   onSave: () => void;
+  runDisabledReason?: string | null;
   saving: boolean;
 }) {
   const { t } = useI18n();
   const inputs = detectTaskInputs(draft.steps);
+  const [expandedIndex, setExpandedIndex] = useState<number | null>(
+    draft.steps.length ? 0 : null,
+  );
+  const [showDescription, setShowDescription] = useState(Boolean(draft.description.trim()));
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [overIndex, setOverIndex] = useState<number | null>(null);
+  const dragFromRef = useRef<number | null>(null);
+  const overIndexRef = useRef<number | null>(null);
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  const canRun = !runDisabledReason && !saving;
+
+  useEffect(() => {
+    overIndexRef.current = overIndex;
+  }, [overIndex]);
+
+  function finishStepDrag() {
+    const from = dragFromRef.current;
+    const to = overIndexRef.current;
+    dragFromRef.current = null;
+    const current = draftRef.current;
+    if (from !== null && to !== null && from !== to) {
+      onChange({
+        ...current,
+        steps: reorderTaskStep(current.steps, from, to),
+      });
+      setExpandedIndex(to);
+    }
+    setDragIndex(null);
+    setOverIndex(null);
+  }
+
+  function onStepDragHandlePointerDown(
+    index: number,
+    event: ReactPointerEvent<HTMLSpanElement>,
+  ) {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    dragFromRef.current = index;
+    overIndexRef.current = index;
+    setDragIndex(index);
+    setOverIndex(index);
+    const target = event.currentTarget;
+    target.setPointerCapture(event.pointerId);
+
+    function onMove(moveEvent: PointerEvent) {
+      const el = document.elementFromPoint(moveEvent.clientX, moveEvent.clientY);
+      const row = el?.closest("[data-step-index]");
+      if (!row) return;
+      const next = Number(row.getAttribute("data-step-index"));
+      if (Number.isNaN(next)) return;
+      overIndexRef.current = next;
+      setOverIndex(next);
+    }
+
+    function onUp() {
+      target.releasePointerCapture(event.pointerId);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+      finishStepDrag();
+    }
+
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+  }
+
+  useEffect(() => {
+    if (expandedIndex === null) return;
+    if (expandedIndex >= draft.steps.length) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clamp expansion when steps shrink below the active index
+      setExpandedIndex(draft.steps.length ? draft.steps.length - 1 : null);
+    }
+  }, [draft.steps.length, expandedIndex]);
 
   function updateStep(index: number, patch: Partial<SshTaskStepInput>) {
     onChange({
@@ -53,270 +134,197 @@ export function TaskEditor({
     });
   }
 
-  function addStep(stepType: SshTaskStepType) {
-    onChange({
-      ...draft,
-      steps: [...draft.steps, createTaskStep(stepType, draft.steps.length)],
-    });
+  function addStep(stepType: SshTaskStepType, atIndex?: number) {
+    const step = createTaskStep(stepType, draft.steps.length);
+    const nextSteps =
+      atIndex === undefined
+        ? [...draft.steps, step]
+        : [
+            ...draft.steps.slice(0, atIndex),
+            step,
+            ...draft.steps.slice(atIndex),
+          ].map((item, position) => ({ ...item, position }));
+    onChange({ ...draft, steps: nextSteps });
+    setExpandedIndex(atIndex ?? nextSteps.length - 1);
+    setAdvancedOpen(false);
   }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex h-[var(--u-size-section-toolbar)] shrink-0 items-center justify-between border-b border-[var(--u-color-border)] px-2">
-        <span className="truncate text-[13px] font-semibold text-[var(--u-color-text)]">
-          {draft.name || t("ssh.tasks.editor.untitled")}
-        </span>
-        <div className="flex items-center gap-1">
-          <Button disabled={!draft.name.trim() || saving} onClick={onSave} size="sm" variant="secondary">
+      <div className="flex h-[var(--u-size-section-toolbar)] shrink-0 items-center gap-2 border-b border-[var(--u-color-border)] px-2">
+        <Input
+          aria-label={t("ssh.tasks.editor.name")}
+          className="h-7 max-w-[220px] shrink-0"
+          id="ssh-task-name"
+          maxLength={128}
+          onChange={(event) => onChange({ ...draft, name: event.target.value })}
+          placeholder={t("ssh.tasks.editor.untitled")}
+          value={draft.name}
+        />
+        <Select
+          aria-label={t("ssh.tasks.editor.defaultConnection")}
+          className="h-7 max-w-[260px] shrink-0"
+          id="ssh-task-default-connection"
+          onChange={(event) =>
+            onChange({
+              ...draft,
+              defaultConnectionId: event.target.value || null,
+            })
+          }
+          value={draft.defaultConnectionId ?? ""}
+        >
+          <option value="">{t("ssh.tasks.editor.noDefaultConnection")}</option>
+          {connections.map((connection) => (
+            <option key={connection.id} value={connection.id}>
+              {connection.name} · {connection.host}
+            </option>
+          ))}
+        </Select>
+        <Button
+          onClick={() => setShowDescription((open) => !open)}
+          size="sm"
+          variant="ghost"
+        >
+          {showDescription
+            ? t("ssh.tasks.editor.hideDescription")
+            : t("ssh.tasks.editor.showDescription")}
+        </Button>
+        {inputs.length > 0 && (
+          <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
+            <span className="shrink-0 text-[11px] text-[var(--u-color-text-soft)]">
+              {t("ssh.tasks.editor.detectedInputs")}
+            </span>
+            {inputs.map((input) => (
+              <Badge key={input}>{`{{${input}}}`}</Badge>
+            ))}
+          </div>
+        )}
+        <div className="ml-auto flex shrink-0 items-center gap-1">
+          <Button
+            disabled={!draft.name.trim() || saving}
+            onClick={onSave}
+            size="sm"
+            title="Ctrl+S"
+            variant="secondary"
+          >
             <Save size={13} />
             {saving ? t("ssh.tasks.actions.saving") : t("ssh.tasks.actions.save")}
           </Button>
-          <Button disabled={!draft.id || draft.steps.every((step) => !step.enabled)} onClick={onRun} size="sm">
+          <Button
+            disabled={!canRun}
+            onClick={onRun}
+            size="sm"
+            title={runDisabledReason ?? "Ctrl+Enter"}
+          >
             <Play size={13} />
-            {t("ssh.tasks.actions.run")}
+            {saving ? t("ssh.tasks.actions.saving") : t("ssh.tasks.actions.run")}
           </Button>
         </div>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto p-2">
-        <div className="mx-auto flex max-w-[1100px] flex-col gap-3">
-          <section className="grid grid-cols-[minmax(0,1fr)_240px] gap-2">
-            <Field label={t("ssh.tasks.editor.name")}>
-              <Input
-                id="ssh-task-name"
-                maxLength={128}
-                onChange={(event) => onChange({ ...draft, name: event.target.value })}
-                value={draft.name}
-              />
-            </Field>
-            <Field label={t("ssh.tasks.editor.defaultConnection")}>
-              <Select
-                id="ssh-task-default-connection"
-                onChange={(event) =>
-                  onChange({
-                    ...draft,
-                    defaultConnectionId: event.target.value || null,
-                  })
-                }
-                value={draft.defaultConnectionId ?? ""}
-              >
-                <option value="">{t("ssh.tasks.editor.noDefaultConnection")}</option>
-                {connections.map((connection) => (
-                  <option key={connection.id} value={connection.id}>
-                    {connection.name} · {connection.host}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            <Field className="col-span-2" label={t("ssh.tasks.editor.description")}>
-              <textarea
-                className="min-h-12 w-full resize-y rounded-[var(--u-radius-sm)] border border-[var(--u-color-input)] bg-[var(--u-color-surface)] px-2 py-1.5 text-[13px] text-[var(--u-color-text)] outline-none transition-colors focus:border-[var(--u-color-focus)] focus:ring-2 focus:ring-[color:color-mix(in_srgb,var(--u-color-focus)_16%,transparent)]"
-                id="ssh-task-description"
-                maxLength={2000}
-                onChange={(event) => onChange({ ...draft, description: event.target.value })}
-                value={draft.description}
-              />
-            </Field>
-          </section>
 
-          <section>
-            <div className="mb-1.5 flex items-center justify-between">
+      {showDescription && (
+        <div className="shrink-0 border-b border-[var(--u-color-border)] px-2 py-2">
+          <textarea
+            aria-label={t("ssh.tasks.editor.description")}
+            className="min-h-14 w-full resize-y rounded-[var(--u-radius-sm)] border border-[var(--u-color-input)] bg-[var(--u-color-surface)] px-2 py-1.5 text-[13px] text-[var(--u-color-text)] outline-none transition-colors focus:border-[var(--u-color-focus)] focus:ring-2 focus:ring-[color:color-mix(in_srgb,var(--u-color-focus)_16%,transparent)]"
+            id="ssh-task-description"
+            maxLength={2000}
+            onChange={(event) => onChange({ ...draft, description: event.target.value })}
+            placeholder={t("ssh.tasks.editor.descriptionPlaceholder")}
+            value={draft.description}
+          />
+        </div>
+      )}
+
+      <div className="min-h-0 flex-1 overflow-y-auto p-2">
+        <div className="mx-auto flex max-w-[920px] flex-col">
+          <div className="mb-1.5 flex items-center justify-between gap-2">
+            <div className="min-w-0">
               <h3 className="text-[12px] font-semibold text-[var(--u-color-text)]">
                 {t("ssh.tasks.editor.steps")}
               </h3>
-              <div className="flex gap-1">
-                <Button onClick={() => addStep("command")} size="sm" variant="outline">
-                  {t("ssh.tasks.actions.addCommand")}
-                </Button>
-                <Button onClick={() => addStep("upload")} size="sm" variant="outline">
-                  {t("ssh.tasks.actions.addUpload")}
-                </Button>
-                <Button onClick={() => addStep("download")} size="sm" variant="outline">
-                  {t("ssh.tasks.actions.addDownload")}
-                </Button>
-              </div>
+              <p className="text-[11px] text-[var(--u-color-text-soft)]">
+                {t("ssh.tasks.editor.inputHint")}
+              </p>
             </div>
-            <div className="flex flex-col gap-1.5">
-              {draft.steps.length ? (
-                draft.steps.map((step, index) => (
-                  <StepEditor
+            <AddStepMenu onAdd={(type) => addStep(type)} />
+          </div>
+
+          {draft.steps.length ? (
+            <div className="flex flex-col">
+              {draft.steps.map((step, index) => (
+                <div key={step.id ?? `${step.stepType}-${index}`}>
+                  {index > 0 && (
+                    <StepInsertSlot onAdd={(type) => addStep(type, index)} />
+                  )}
+                  <StepRow
+                    advancedOpen={advancedOpen && expandedIndex === index}
+                    dragOver={overIndex === index && dragIndex !== index}
+                    dragging={dragIndex === index}
+                    expanded={expandedIndex === index}
                     index={index}
-                    key={step.id ?? `${step.stepType}-${index}`}
                     onConfigChange={(key, value) => updateConfig(index, key, value)}
-                    onDuplicate={() => onChange({ ...draft, steps: duplicateTaskStep(draft.steps, index) })}
-                    onMove={(direction) => onChange({ ...draft, steps: moveTaskStep(draft.steps, index, direction) })}
-                    onRemove={() => onChange({ ...draft, steps: removeTaskStep(draft.steps, index) })}
+                    onDragHandlePointerDown={(event) =>
+                      onStepDragHandlePointerDown(index, event)
+                    }
+                    onDuplicate={() => {
+                      onChange({
+                        ...draft,
+                        steps: duplicateTaskStep(draft.steps, index),
+                      });
+                      setExpandedIndex(index + 1);
+                    }}
+                    onMove={(direction) => {
+                      onChange({
+                        ...draft,
+                        steps: moveTaskStep(draft.steps, index, direction),
+                      });
+                      setExpandedIndex(index + direction);
+                    }}
+                    onRemove={() => {
+                      onChange({
+                        ...draft,
+                        steps: removeTaskStep(draft.steps, index),
+                      });
+                      setExpandedIndex((current) => {
+                        if (current === null) return null;
+                        if (draft.steps.length <= 1) return null;
+                        if (current > index) return current - 1;
+                        if (current === index) return Math.max(0, index - 1);
+                        return current;
+                      });
+                    }}
+                    onToggleAdvanced={() => {
+                      setExpandedIndex(index);
+                      setAdvancedOpen((open) => (expandedIndex === index ? !open : true));
+                    }}
+                    onToggleExpand={() => {
+                      setExpandedIndex((current) => (current === index ? null : index));
+                      setAdvancedOpen(false);
+                    }}
                     onUpdate={(patch) => updateStep(index, patch)}
                     step={step}
                     stepCount={draft.steps.length}
                   />
-                ))
-              ) : (
-                <div className="border border-dashed border-[var(--u-color-border)] p-4 text-center text-[12px] text-[var(--u-color-text-muted)]">
-                  {t("ssh.tasks.editor.noSteps")}
                 </div>
-              )}
+              ))}
+              <div className="mt-1 flex justify-center py-1">
+                <AddStepMenu onAdd={(type) => addStep(type)} variant="ghost" />
+              </div>
             </div>
-          </section>
-
-          <section className="border-t border-[var(--u-color-border)] pt-3">
-            <h3 className="text-[12px] font-semibold text-[var(--u-color-text)]">
-              {t("ssh.tasks.editor.detectedInputs")}
-            </h3>
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {inputs.length ? (
-                inputs.map((input) => <Badge key={input}>{input}</Badge>)
-              ) : (
-                <span className="text-[12px] text-[var(--u-color-text-muted)]">
-                  {t("ssh.tasks.editor.noDetectedInputs")}
-                </span>
-              )}
+          ) : (
+            <div className="flex flex-col items-center gap-3 border border-dashed border-[var(--u-color-border)] px-4 py-8 text-center">
+              <p className="text-[12px] text-[var(--u-color-text-muted)]">
+                {t("ssh.tasks.editor.noSteps")}
+              </p>
+              <p className="text-[11px] text-[var(--u-color-text-soft)]">
+                {t("ssh.tasks.editor.inputHint")}
+              </p>
+              <AddStepMenu onAdd={(type) => addStep(type)} />
             </div>
-          </section>
+          )}
         </div>
       </div>
     </div>
-  );
-}
-
-function StepEditor({
-  index,
-  onConfigChange,
-  onDuplicate,
-  onMove,
-  onRemove,
-  onUpdate,
-  step,
-  stepCount,
-}: {
-  index: number;
-  onConfigChange: (key: string, value: string | number | boolean) => void;
-  onDuplicate: () => void;
-  onMove: (direction: -1 | 1) => void;
-  onRemove: () => void;
-  onUpdate: (patch: Partial<SshTaskStepInput>) => void;
-  step: SshTaskStepInput;
-  stepCount: number;
-}) {
-  const { t } = useI18n();
-  const config = step.configJson as unknown as Record<string, string | number | boolean>;
-  return (
-    <article className={`border border-[var(--u-color-border)] bg-[var(--u-color-surface)] ${step.enabled ? "" : "opacity-60"}`}>
-      <div className="flex h-8 items-center gap-1.5 border-b border-[var(--u-color-border)] bg-[var(--u-color-surface-subtle)] px-2">
-        <span className="w-5 text-center font-mono text-[11px] text-[var(--u-color-text-soft)]">
-          {index + 1}
-        </span>
-        <Badge>{t(`ssh.tasks.stepTypes.${step.stepType}`)}</Badge>
-        <Input
-          aria-label={t("ssh.tasks.editor.stepName")}
-          className="h-6 min-w-0 flex-1"
-          maxLength={128}
-          onChange={(event) => onUpdate({ name: event.target.value })}
-          value={step.name}
-        />
-        <label className="flex cursor-pointer items-center gap-1 text-[11px] text-[var(--u-color-text-muted)]">
-          <input
-            checked={step.enabled}
-            onChange={(event) => onUpdate({ enabled: event.target.checked })}
-            type="checkbox"
-          />
-          {t("ssh.tasks.editor.enabled")}
-        </label>
-        <IconButton disabled={index === 0} label={t("ssh.tasks.actions.moveUp")} onClick={() => onMove(-1)} size="compact">
-          <ArrowUp size={12} />
-        </IconButton>
-        <IconButton disabled={index === stepCount - 1} label={t("ssh.tasks.actions.moveDown")} onClick={() => onMove(1)} size="compact">
-          <ArrowDown size={12} />
-        </IconButton>
-        <IconButton label={t("ssh.tasks.actions.duplicateStep")} onClick={onDuplicate} size="compact">
-          <Copy size={12} />
-        </IconButton>
-        <IconButton className="text-[var(--u-color-danger)]" label={t("ssh.tasks.actions.deleteStep")} onClick={onRemove} size="compact">
-          <Trash2 size={12} />
-        </IconButton>
-      </div>
-      <div className="grid grid-cols-2 gap-2 p-2">
-        {step.stepType === "command" ? (
-          <>
-            <Field className="col-span-2" label={t("ssh.tasks.editor.command")}>
-              <textarea
-                className="min-h-10 w-full resize-y rounded-[var(--u-radius-sm)] border border-[var(--u-color-input)] bg-[var(--u-color-bg)] px-2 py-1.5 font-mono text-[12px] leading-5 text-[var(--u-color-text)] outline-none focus:border-[var(--u-color-focus)]"
-                onChange={(event) => onConfigChange("command", event.target.value)}
-                rows={1}
-                value={String(config.command ?? "")}
-              />
-            </Field>
-            <div className="col-span-2 flex flex-wrap items-center gap-2">
-              <div className="flex min-w-[260px] flex-1 items-center gap-2">
-                <span className="shrink-0 text-[11px] font-medium text-[var(--u-color-text-muted)]">
-                  {t("ssh.tasks.editor.workingDirectory")}
-                </span>
-                <Input
-                  aria-label={t("ssh.tasks.editor.workingDirectory")}
-                  className="h-7"
-                  onChange={(event) => onConfigChange("workingDirectory", event.target.value)}
-                  value={String(config.workingDirectory ?? "")}
-                />
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="shrink-0 text-[11px] font-medium text-[var(--u-color-text-muted)]">
-                  {t("ssh.tasks.editor.timeoutSeconds")}
-                </span>
-                <Input
-                  aria-label={t("ssh.tasks.editor.timeoutSeconds")}
-                  className="h-7 w-20"
-                  max={3600}
-                  min={1}
-                  onChange={(event) =>
-                    onConfigChange("timeoutSeconds", Number(event.target.value))
-                  }
-                  type="number"
-                  value={Number(config.timeoutSeconds ?? 300)}
-                />
-              </div>
-              <label className="flex h-7 cursor-pointer items-center gap-1.5 text-[11px] text-[var(--u-color-text-muted)]">
-                <input
-                  checked={Boolean(config.continueOnError)}
-                  onChange={(event) =>
-                    onConfigChange("continueOnError", event.target.checked)
-                  }
-                  type="checkbox"
-                />
-                {t("ssh.tasks.editor.continueOnError")}
-              </label>
-            </div>
-          </>
-        ) : (
-          <>
-            <Field label={t("ssh.tasks.editor.localPath")}>
-              <Input onChange={(event) => onConfigChange("localPath", event.target.value)} value={String(config.localPath ?? "")} />
-            </Field>
-            <Field label={t("ssh.tasks.editor.remotePath")}>
-              <Input onChange={(event) => onConfigChange("remotePath", event.target.value)} value={String(config.remotePath ?? "")} />
-            </Field>
-            <label className="col-span-2 flex cursor-pointer items-center gap-2 text-[12px] text-[var(--u-color-text-muted)]">
-              <input checked={Boolean(config.overwrite)} onChange={(event) => onConfigChange("overwrite", event.target.checked)} type="checkbox" />
-              {t("ssh.tasks.editor.overwrite")}
-            </label>
-          </>
-        )}
-      </div>
-    </article>
-  );
-}
-
-function Field({
-  children,
-  className = "",
-  label,
-}: {
-  children: ReactNode;
-  className?: string;
-  label: string;
-}) {
-  return (
-    <label className={`flex min-w-0 flex-col gap-1 ${className}`}>
-      <span className="text-[11px] font-medium text-[var(--u-color-text-muted)]">{label}</span>
-      {children}
-    </label>
   );
 }

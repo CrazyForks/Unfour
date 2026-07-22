@@ -6,6 +6,7 @@ import {
   moveTaskStep,
   preferredTaskConnectionId,
   removeTaskStep,
+  reorderTaskStep,
 } from "./task-template";
 
 describe("SSH task editor logic", () => {
@@ -28,7 +29,7 @@ describe("SSH task editor logic", () => {
         ...task.steps[0].configJson,
         command: "echo {{disabled_value}}",
         ignored: "{{not_scanned}}",
-      } as typeof task.steps[0]["configJson"],
+      } as unknown as typeof task.steps[0]["configJson"],
     };
     expect(detectTaskInputs(task.steps, true)).not.toContain("disabled_value");
     expect(detectTaskInputs(task.steps)).not.toContain("not_scanned");
@@ -46,6 +47,16 @@ describe("SSH task editor logic", () => {
     const moved = moveTaskStep(duplicated, 1, 1);
     expect(moved[2].id).toBeUndefined();
     expect(removeTaskStep(moved, 0).map((step) => step.position)).toEqual([0, 1]);
+  });
+
+  it("reorders steps to an absolute index", () => {
+    const steps = dockerImageExportTemplate("workspace").steps.slice(0, 3);
+    steps[0] = { ...steps[0], id: "a" };
+    steps[1] = { ...steps[1], id: "b" };
+    steps[2] = { ...steps[2], id: "c" };
+    const reordered = reorderTaskStep(steps, 0, 2);
+    expect(reordered.map((step) => step.id)).toEqual(["b", "c", "a"]);
+    expect(reordered.map((step) => step.position)).toEqual([0, 1, 2]);
   });
 
   it("requires selection without a local binding and otherwise prefers the default", () => {

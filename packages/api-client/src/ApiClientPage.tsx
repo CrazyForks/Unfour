@@ -27,11 +27,13 @@ type EnvironmentManagerOpenMode =
   | { environmentId: string; kind: "edit" };
 
 export function ApiClientPage({
+  active = true,
   onActiveSavedRequestChange,
   onShellSidebarChange,
   openIntent,
   workspaceId,
 }: {
+  active?: boolean;
   onActiveSavedRequestChange?: (requestId: string | null) => void;
   onShellSidebarChange?: (sidebar: ReactNode | null) => void;
   openIntent: ApiOpenIntent | null;
@@ -192,6 +194,7 @@ export function ApiClientPage({
   }, [activeTab, sendTab]);
 
   useEffect(() => {
+    if (!active) return;
     function onKeyDown(event: KeyboardEvent) {
       if (!(event.ctrlKey || event.metaKey) || !activeTab) {
         return;
@@ -212,7 +215,7 @@ export function ApiClientPage({
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [activeTab, requestSave, sendTab]);
+  }, [active, activeTab, requestSave, sendTab]);
 
   const saveDialogTab =
     state.tabs.find((tab) => tab.id === saveDialogTabId) ?? null;

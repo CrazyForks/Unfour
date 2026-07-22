@@ -230,6 +230,7 @@ export function DesktopApp({ extensions }: DesktopAppProps) {
             {activeWorkspace && (
               <div className={activeTab.kind === "api" ? "h-full" : "hidden"}>
                 <ApiClientPage
+                  active={activeTab.kind === "api"}
                   onShellSidebarChange={handleApiSidebarChange}
                   onActiveSavedRequestChange={setSelectedApiRequest}
                   openIntent={null}

@@ -6,19 +6,23 @@ export function TaskHistory({
   clearing,
   loading,
   onClear,
+  onSelectRun,
   runs,
+  selectedRunId,
 }: {
   clearing: boolean;
   loading: boolean;
   onClear: () => void;
+  onSelectRun: (run: SshTaskRun) => void;
   runs: SshTaskRun[];
+  selectedRunId?: string | null;
 }) {
   const { t } = useI18n();
   if (loading) {
     return <LoadingState>{t("ssh.tasks.history.loading")}</LoadingState>;
   }
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col border-t border-[var(--u-color-border)] bg-[var(--u-color-surface)]">
       <div className="flex h-[var(--u-size-section-toolbar)] items-center justify-between border-b border-[var(--u-color-border)] px-2">
         <span className="text-[12px] font-semibold text-[var(--u-color-text)]">
           {t("ssh.tasks.history.title")}
@@ -41,15 +45,50 @@ export function TaskHistory({
               </tr>
             </thead>
             <tbody>
-              {runs.map((run) => (
-                <tr className="h-9 border-b border-[var(--u-color-border)] text-[var(--u-color-text)]" key={run.id}>
-                  <td className="px-2"><StatusBadge tone={tone(run.status)}>{t(`ssh.tasks.run.status.${run.status}`)}</StatusBadge></td>
-                  <td className="truncate px-2">{formatDate(run.startedAt)}</td>
-                  <td className="truncate px-2">{run.finishedAt ? formatDate(run.finishedAt) : "—"}</td>
-                  <td className="truncate px-2 text-[var(--u-color-danger)]" title={run.errorMessage ?? undefined}>{run.errorMessage ?? "—"}</td>
-                  <td className="truncate px-2 font-mono text-[11px] text-[var(--u-color-text-muted)]" title={run.logPath}>{run.logPath}</td>
-                </tr>
-              ))}
+              {runs.map((run) => {
+                const selected = selectedRunId === run.id;
+                return (
+                  <tr
+                    className={`h-9 cursor-pointer border-b border-[var(--u-color-border)] text-[var(--u-color-text)] ${
+                      selected
+                        ? "bg-[var(--u-color-surface-active)]"
+                        : "hover:bg-[var(--u-color-surface-hover)]"
+                    }`}
+                    key={run.id}
+                    onClick={() => onSelectRun(run)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        onSelectRun(run);
+                      }
+                    }}
+                    role="button"
+                    tabIndex={0}
+                  >
+                    <td className="px-2">
+                      <StatusBadge tone={tone(run.status)}>
+                        {t(`ssh.tasks.run.status.${run.status}`)}
+                      </StatusBadge>
+                    </td>
+                    <td className="truncate px-2">{formatDate(run.startedAt)}</td>
+                    <td className="truncate px-2">
+                      {run.finishedAt ? formatDate(run.finishedAt) : "—"}
+                    </td>
+                    <td
+                      className="truncate px-2 text-[var(--u-color-danger)]"
+                      title={run.errorMessage ?? undefined}
+                    >
+                      {run.errorMessage ?? "—"}
+                    </td>
+                    <td
+                      className="truncate px-2 font-mono text-[11px] text-[var(--u-color-text-muted)]"
+                      title={run.logPath}
+                    >
+                      {run.logPath}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

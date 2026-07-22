@@ -3,6 +3,7 @@ import type {
   SshTaskSaveInput,
   SshTaskStepInput,
   SshTaskStepType,
+  SshTaskDetail,
 } from "@unfour/command-client";
 
 const TEMPLATE_FIELDS: Record<SshTaskStepType, string[]> = {
@@ -131,12 +132,26 @@ export function moveTaskStep(
   index: number,
   direction: -1 | 1,
 ): SshTaskStepInput[] {
-  const target = index + direction;
-  if (index < 0 || target < 0 || index >= steps.length || target >= steps.length) {
+  return reorderTaskStep(steps, index, index + direction);
+}
+
+export function reorderTaskStep(
+  steps: SshTaskStepInput[],
+  fromIndex: number,
+  toIndex: number,
+): SshTaskStepInput[] {
+  if (
+    fromIndex === toIndex ||
+    fromIndex < 0 ||
+    toIndex < 0 ||
+    fromIndex >= steps.length ||
+    toIndex >= steps.length
+  ) {
     return steps;
   }
   const copy = steps.slice();
-  [copy[index], copy[target]] = [copy[target], copy[index]];
+  const [item] = copy.splice(fromIndex, 1);
+  copy.splice(toIndex, 0, item);
   return normalizePositions(copy);
 }
 
@@ -146,4 +161,23 @@ export function removeTaskStep(steps: SshTaskStepInput[], index: number) {
 
 export function normalizePositions(steps: SshTaskStepInput[]) {
   return steps.map((step, position) => ({ ...step, position }));
+}
+
+export function taskDetailToDraft(detail: SshTaskDetail): SshTaskSaveInput {
+  return {
+    id: detail.task.id,
+    workspaceId: detail.task.workspaceId,
+    name: detail.task.name,
+    description: detail.task.description,
+    defaultConnectionId: detail.localBinding?.defaultConnectionId ?? null,
+    steps: detail.steps.map((step) => ({
+      id: step.id,
+      name: step.name,
+      stepType: step.stepType,
+      position: step.position,
+      enabled: step.enabled,
+      configVersion: step.configVersion,
+      configJson: { ...step.configJson },
+    })),
+  };
 }
