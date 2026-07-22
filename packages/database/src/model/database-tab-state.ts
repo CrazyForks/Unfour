@@ -54,6 +54,7 @@ type DatabaseTabStore = {
     connectionId: string,
     table: DatabaseTable,
     segment?: TableSegment,
+    loading?: boolean,
   ) => DatabaseWorkspaceTabId;
   removeConnectionTabs: (
     workspaceId: string,
@@ -101,12 +102,14 @@ function createTableTab(
   connectionId: string,
   table: DatabaseTable,
   segment: TableSegment,
+  loading = false,
 ): DatabaseTableWorkspaceTab {
   return {
     connectionId,
     error: null,
     id,
     kind: "table",
+    loading,
     pendingChanges: [],
     queryResult: null,
     segment,
@@ -192,7 +195,7 @@ export const useDatabaseTabStore = create<DatabaseTabStore>((set, get) => ({
     );
     return tab.id;
   },
-  openTableTab: (workspaceId, connectionId, table, segment = "data") => {
+  openTableTab: (workspaceId, connectionId, table, segment = "data", loading = false) => {
     const tabId = databaseTableTabId(connectionId, table);
     set((state) =>
       withWorkspace(state, workspaceId, (slice) => {
@@ -202,9 +205,9 @@ export const useDatabaseTabStore = create<DatabaseTabStore>((set, get) => ({
           activeTabId: tabId,
           tabs: exists
             ? slice.tabs.map((tab) =>
-                tab.id === tabId && tab.kind === "table" ? { ...tab, segment } : tab,
+                tab.id === tabId && tab.kind === "table" ? { ...tab, loading, segment } : tab,
               )
-            : [...slice.tabs, createTableTab(tabId, connectionId, table, segment)],
+            : [...slice.tabs, createTableTab(tabId, connectionId, table, segment, loading)],
         };
       }),
     );

@@ -53,8 +53,12 @@ export function useDatabaseTabs(options: DatabaseTabsOptions = {}) {
     [workspaceId, formatQueryTitle],
   );
   const openTableTab = useCallback(
-    (connectionId: string, table: DatabaseTable, segment: "data" | "structure" = "data") =>
-      useDatabaseTabStore.getState().openTableTab(workspaceId, connectionId, table, segment),
+    (
+      connectionId: string,
+      table: DatabaseTable,
+      segment: "data" | "structure" = "data",
+      loading = false,
+    ) => useDatabaseTabStore.getState().openTableTab(workspaceId, connectionId, table, segment, loading),
     [workspaceId],
   );
   const closeTab = useCallback(

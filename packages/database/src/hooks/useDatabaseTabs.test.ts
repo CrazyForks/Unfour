@@ -82,6 +82,21 @@ describe("useDatabaseTabs", () => {
     });
   });
 
+  it("opens a new table directly in its loading state", () => {
+    const users = table("users");
+    const { result } = renderHook(() => useDatabaseTabs());
+
+    act(() => {
+      result.current.openTableTab("conn-1", users, "data", true);
+    });
+
+    expect(result.current.activeTab).toMatchObject({
+      kind: "table",
+      loading: true,
+      table: users,
+    });
+  });
+
   it("keeps query and table state isolated by tab", () => {
     const users = table("users");
     const { result } = renderHook(() => useDatabaseTabs());

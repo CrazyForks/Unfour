@@ -167,6 +167,7 @@ export function DatabaseWorkspace({
                   editing={tableEditing}
                   error={renderTable.error}
                   executePending={executePending}
+                  key={renderTable.id}
                   loading={Boolean(renderTable.loading)}
                   onPageChange={onTablePageChange}
                   onRefresh={() =>

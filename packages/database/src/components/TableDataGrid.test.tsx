@@ -62,4 +62,11 @@ describe("TableDataGrid", () => {
 
     expect(calculateAutoFitWidth).toHaveBeenCalledTimes(result.columns.length);
   });
+
+  it("keeps the grid body neutral during an initial load instead of flashing fake rows", () => {
+    const { container } = render(<TableDataGrid loading result={result} />);
+
+    expect(screen.queryByText("Ada")).toBeNull();
+    expect(container.querySelector(".animate-pulse")).toBeNull();
+  });
 });

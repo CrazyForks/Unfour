@@ -336,6 +336,8 @@ export function TableDataGrid({
     })),
   ];
 
+  const gridRows = isLoading ? [] : visibleRows;
+
   return (
     <div aria-busy={isLoading} className="flex min-h-0 flex-1 flex-col">
       <div className="flex h-8 shrink-0 items-center gap-2 border-b border-[var(--u-color-border)] px-2">
@@ -372,7 +374,7 @@ export function TableDataGrid({
         getColumnResizeLabel={(column) => t("database.grid.resizeColumn", { column: column.id === "__row_actions" ? "#" : column.id })}
         onColumnResize={(columnId, width) => setColumnsWidths((current) => ({ ...current, [columnId]: width }))}
         onSelectionChange={setSelection}
-        rows={visibleRows}
+        rows={gridRows}
         selection={selection}
       />
       <div className="flex h-7 shrink-0 items-center justify-between border-t border-[var(--u-color-border)] px-2 text-[11px] text-[var(--u-color-text-soft)]">

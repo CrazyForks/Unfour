@@ -1,4 +1,4 @@
-import { type Dispatch, type FormEvent, type SetStateAction, useEffect, useRef, useState } from "react";
+import { type Dispatch, type FormEvent, type SetStateAction, useRef, useState } from "react";
 import type { QueryClient } from "@tanstack/react-query";
 import {
   getDatabaseSchema,
@@ -17,7 +17,7 @@ import { databaseTableTabId, useDatabaseTabs } from "./useDatabaseTabs";
 import { useDatabaseQueryWorkspaceActions } from "./useDatabaseQueryWorkspaceActions";
 import { useQueryHistory } from "./useQueryHistory";
 import { useSavedSql } from "./useSavedSql";
-import { useTableData } from "./useTableData";
+import { useTableData, type TableBrowseRequest } from "./useTableData";
 import { useTableRowMutations } from "./useTableRowMutations";
 import { resolveExecutableStatements } from "../model/sql-statements";
 import { executeSqlBatch, type SqlBatchState } from "../model/run-sql-batch";
@@ -129,48 +129,55 @@ export function useDatabaseWorkspaceController({
   const filterDebounceRef = useRef<number | null>(null);
   const cancelledRef = useRef(false);
   const executingRef = useRef<{ connectionId: string | null; sql: string; tabId: string } | null>(null);
-  const browsingRef = useRef<{ connectionId: string; table: DatabaseTable; tabId: string } | null>(null);
+  const browsingRef = useRef<TableBrowseRequest | null>(null);
+  const cancelledBrowseRequestsRef = useRef(new WeakSet<TableBrowseRequest>());
   const batchRef = useRef<SqlBatchState | null>(null);
   const [sqlRunning, setSqlRunning] = useState(false);
 
   const browseMutation = useTableData({
-    onBrowseStart: () => {
-      cancelledRef.current = false;
-      const browse = browsingRef.current;
-      if (browse) {
-        databaseTabs.updateTableTab(browse.tabId, {
-          error: null,
-          loading: true,
-          segment: "data",
+    onBrowseStart: (request) => {
+      databaseTabs.updateTableTab(request.tabId, {
+        error: null,
+        loading: true,
+        segment: "data",
+      });
+    },
+    onError: (error, request) => {
+      if (cancelledBrowseRequestsRef.current.has(request)) {
+        return;
+      }
+      const description = describeDatabaseError(error);
+      databaseTabs.updateTableTab(request.tabId, { error, loading: false });
+      if (["connection", "network", "permission"].includes(description.category)) {
+        setConnectionState(request.connectionId, {
+          message: description.message,
+          status: "failed",
         });
       }
     },
-    onSuccess: (browse) => {
-      if (cancelledRef.current) {
+    onSuccess: (browse, request) => {
+      if (cancelledBrowseRequestsRef.current.has(request)) {
         return;
       }
-      const target = browsingRef.current;
-      if (target) {
-        databaseTabs.updateTableTab(target.tabId, {
-          error: null,
-          loading: false,
-          queryResult: browse.result,
-          segment: "data",
-          tableView: {
-            pageIndex: Math.floor(browse.offset / Math.max(1, browse.limit)),
-            pageSize: browse.limit,
-            readOnly: browse.readOnly,
-            tableName: browse.tableName,
-            totalRows: browse.totalRows,
-          },
-        });
-        setConnectionState(target.connectionId, {
-          message: t("database.query.previewLoaded", {
-            count: browse.result.rows.length,
-          }),
-          status: "connected",
-        });
-      }
+      databaseTabs.updateTableTab(request.tabId, {
+        error: null,
+        loading: false,
+        queryResult: browse.result,
+        segment: "data",
+        tableView: {
+          pageIndex: Math.floor(browse.offset / Math.max(1, browse.limit)),
+          pageSize: browse.limit,
+          readOnly: browse.readOnly,
+          tableName: browse.tableName,
+          totalRows: browse.totalRows,
+        },
+      });
+      setConnectionState(request.connectionId, {
+        message: t("database.query.previewLoaded", {
+          count: browse.result.rows.length,
+        }),
+        status: "connected",
+      });
     },
     workspaceId,
   });
@@ -181,22 +188,6 @@ export function useDatabaseWorkspaceController({
     refreshTablePage,
     workspaceId,
   });
-
-  useEffect(() => {
-    const browse = browsingRef.current;
-    if (!browse || !browseMutation.error) {
-      return;
-    }
-
-    const description = describeDatabaseError(browseMutation.error);
-    databaseTabs.updateTableTab(browse.tabId, { error: browseMutation.error, loading: false });
-    if (["connection", "network", "permission"].includes(description.category)) {
-      setConnectionState(browse.connectionId, {
-        message: description.message,
-        status: "failed",
-      });
-    }
-  }, [browseMutation.error]);
 
   function updateForm(patch: Partial<DatabaseConnectionInput>) {
     setForm((current) => ({ ...current, ...patch, workspaceId }));
@@ -400,7 +391,7 @@ export function useDatabaseWorkspaceController({
     const existingTab = databaseTabs.tabs.find((tab) => tab.id === databaseTableTabId(connectionId, table));
     const effectiveQuery =
       query ?? (existingTab?.kind === "table" ? existingTab.tableQuery : { ...emptyTableQuery });
-    const tabId = databaseTabs.openTableTab(connectionId, table, "data");
+    const tabId = databaseTabs.openTableTab(connectionId, table, "data", true);
     if (connectionId !== selectedConnectionId) {
       selectConnection(connectionId);
     }
@@ -410,19 +401,21 @@ export function useDatabaseWorkspaceController({
       segment: "data",
       tableQuery: effectiveQuery,
     });
-    browsingRef.current = { connectionId, table, tabId };
     browseMutation.reset();
-    browseMutation.mutate({
+    const request: TableBrowseRequest = {
       connectionId,
       catalog: table.catalog,
       pageIndex: Math.max(0, pageIndex),
       pageSize,
       schema: table.schema,
+      tabId,
       tableName: table.name,
       orderBy: effectiveQuery.orderBy,
       orderDescending: effectiveQuery.orderDescending,
       filter: effectiveQuery.filter || null,
-    });
+    };
+    browsingRef.current = request;
+    browseMutation.mutate(request);
   }
 
   // Cycle a column through ascending -> descending -> unsorted, re-querying the
@@ -543,6 +536,11 @@ export function useDatabaseWorkspaceController({
     cancelledRef.current = false;
     setSqlRunning(true);
     batchRef.current = batch;
+    executingRef.current = {
+      connectionId: batch.connectionId,
+      sql: batch.statements[batch.nextIndex] ?? "",
+      tabId: batch.tabId,
+    };
     databaseTabs.updateQueryTab(batch.tabId, {
       error: null,
       loading: true,
@@ -719,29 +717,34 @@ export function useDatabaseWorkspaceController({
   // Stop a running query/preview. The in-flight statement keeps running
   // server-side until it finishes or hits its timeout, but late results are ignored.
   function stopQuery() {
-    const wasRunning = sqlRunning || browseMutation.isPending;
+    const stoppingExecution = sqlRunning ? executingRef.current : null;
+    const stoppingBrowse = browseMutation.isPending ? browsingRef.current : null;
+    const wasRunning = Boolean(sqlRunning || stoppingBrowse);
     if (!wasRunning) {
       return;
     }
-    cancelledRef.current = true;
+    if (sqlRunning) {
+      cancelledRef.current = true;
+    }
     browseMutation.reset();
     setSqlRunning(false);
     const cancelledError = { code: "QUERY_CANCELLED", message: t("database.query.cancelled") };
-    if (executingRef.current) {
-      databaseTabs.updateQueryTab(executingRef.current.tabId, {
+    if (stoppingExecution) {
+      databaseTabs.updateQueryTab(stoppingExecution.tabId, {
         error: cancelledError,
         loading: false,
         pendingConfirmation: false,
         resultTab: "results",
       });
     }
-    if (browsingRef.current) {
-      databaseTabs.updateTableTab(browsingRef.current.tabId, {
+    if (stoppingBrowse) {
+      cancelledBrowseRequestsRef.current.add(stoppingBrowse);
+      databaseTabs.updateTableTab(stoppingBrowse.tabId, {
         error: cancelledError,
         loading: false,
       });
     }
-    const connectionId = executingRef.current?.connectionId ?? browsingRef.current?.connectionId;
+    const connectionId = stoppingExecution?.connectionId ?? stoppingBrowse?.connectionId;
     if (connectionId) {
       setConnectionState(connectionId, {
         message: t("database.query.cancelled"),
