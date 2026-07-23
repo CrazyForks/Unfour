@@ -36,20 +36,15 @@ what Codex can access and execute; connecting Codex does not grant unrestricted
 access by default.
 
 > [!WARNING]
-> Unfour `v0.1.1`. Installers are unsigned and may trigger SmartScreen or other
+> Unfour `v0.2.0`. Installers are unsigned and may trigger SmartScreen or other
 > operating-system security warnings; validate the release against your own
 > requirements.
 
 ## Download
 
-Download [`v0.1.1` from GitHub Releases](https://github.com/zyqzyq/Unfour/releases/tag/v0.1.1).
+Download [`v0.2.0` from GitHub Releases](https://github.com/zyqzyq/Unfour/releases/tag/v0.2.0).
 
-- Windows: NSIS `.exe` is recommended for ordinary users. MSI `.msi` is also
-  available for users who prefer MSI or need software deployment management;
-  both install the same Unfour version, so choose one.
-- Do not install both Windows formats on the same device: duplicate shortcuts or
-  uninstall entries and confusing upgrade paths may result. Cross-format
-  detection, automatic uninstall, and cross-upgrade are not implemented yet.
+- Windows: NSIS `.exe` installer.
 - macOS and Linux packages are experimental and unverified until real-device
   smoke checks are recorded; do not treat them as supported or verified yet.
 - Verify downloaded installers with the release `SHA256SUMS.txt` asset.
@@ -70,14 +65,18 @@ capability crates and the command bus.
 ## Modules
 
 - **API Client** - Compose and send HTTP requests, organize saved requests into
-  collections and folders, resolve workspace environments, inspect response
+  collections and folders, resolve shared workspace variables, inspect response
   body/headers/cookies/timing, and keep redacted history.
-- **SSH Terminal** - Manage SSH connections, start terminal sessions, use split
-  panes and search, handle host-key trust, and export redacted session logs.
+- **SSH Terminal** - Manage SSH connections and terminal sessions (split panes,
+  search, host-key trust, redacted logs), browse and transfer remote files over
+  SFTP, and automate multi-step SSH tasks (command, upload, download) from the
+  Connections / Files / Tasks sidebar.
 - **Database** - Manage database connections, browse schemas, run SQL with
-  confirmation-aware safety checks, preview table data, and review query output.
-- **Workspace** - Scope saved requests, environments, connections, activity,
-  tabs, and layout state to a local workspace.
+  confirmation-aware safety checks (including multi-statement Run Current /
+  Run All), preview and edit table rows, and review query output.
+- **Workspace** - Scope saved requests, shared environments/variables,
+  connections, activity, tabs, and layout state to a local workspace, with
+  title-bar active-environment switching.
 - **MCP integration for Codex-powered API, SSH, and database debugging** -
   Expose safe local diagnostic tools to MCP clients (such as Codex, Claude
   Code, or Cursor) through the same command bus used by the desktop app, so
@@ -93,7 +92,7 @@ capability crates and the command bus.
 
 ![API Client](docs/screenshots/api-client.png)
 
-**SSH Terminal — connection and session management**
+**SSH Terminal — connections, sessions, remote files, and tasks**
 
 ![SSH Terminal](docs/screenshots/ssh-terminal.png)
 
@@ -113,13 +112,14 @@ Install and run:
 
 ```bash
 pnpm install
-pnpm run dev
+pnpm tauri dev
 ```
 
 Common commands:
 
 ```bash
-pnpm run build          # build the desktop frontend
+pnpm tauri build        # create Tauri release bundles
+pnpm run build          # build the desktop frontend only
 pnpm run check          # frontend build + Rust check + large-file check
 pnpm run lint           # ESLint
 pnpm run test           # frontend unit tests (Vitest)
@@ -127,7 +127,6 @@ pnpm run test:e2e       # Playwright smoke tests
 pnpm run check:rust     # cargo check --workspace
 pnpm run check:rust:ssh # cargo check with the ssh-native feature
 pnpm run test:rust      # cargo test --workspace
-pnpm run tauri build    # create Tauri release bundles
 ```
 
 Run commands from the repository root unless a package document says otherwise.
@@ -142,6 +141,7 @@ Run commands from the repository root unless a package document says otherwise.
 | `packages/ssh-terminal` | SSH Terminal frontend module. |
 | `packages/database` | Database frontend module. |
 | `packages/workspace-core` | Shared frontend workspace state. |
+| `packages/workspace-environments` | Workspace environments and variables management UI. |
 | `packages/workspace-local` | Reserved local workspace lifecycle boundary. |
 | `packages/ui` | Shared UI primitives and stateless layout helpers. |
 | `packages/command-client` | Typed Tauri command wrappers and frontend command types. |
@@ -152,7 +152,7 @@ map.
 
 ## Release Status
 
-The current published version is `v0.1.1`. Release readiness is documented in:
+The current published version is `v0.2.0`. Release readiness is documented in:
 
 - `docs/testing/release-verification.md`
 - `docs/testing/manual-test-cases.md`
@@ -160,13 +160,11 @@ The current published version is `v0.1.1`. Release readiness is documented in:
 - `docs/release/distribution.md`
 - `docs/release/signing.md`
 
-Windows distribution provides NSIS `.exe` and MSI `.msi`. NSIS is recommended
-for ordinary users; MSI is for MSI preference or software deployment
-management. Choose one format. Installers are unsigned and may trigger
-SmartScreen. macOS and Linux remain
-experimental/unverified until real-device smoke checks are complete.
-Do not claim a release check passes unless it was run successfully for the
-target platform or is backed by current repository evidence.
+Windows distributes an NSIS `.exe` installer. Installers are unsigned and may
+trigger SmartScreen. macOS and Linux remain experimental/unverified until
+real-device smoke checks are complete. Do not claim a release check passes
+unless it was run successfully for the target platform or is backed by current
+repository evidence.
 
 ## Documentation
 
