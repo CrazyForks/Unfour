@@ -1,5 +1,5 @@
 import { Eye, EyeOff, Plus, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Button } from "./button";
 import { Input } from "./input";
 import { useI18n } from "./i18n";
@@ -19,11 +19,13 @@ export function VariableTable<T extends VariableTableItem>({
   items,
   onChange,
   overridingKeys,
+  renderDecoration,
   title,
 }: {
   items: T[];
   onChange: (items: T[]) => void;
   overridingKeys?: ReadonlySet<string>;
+  renderDecoration?: (item: T) => ReactNode;
   title: string;
 }) {
   const { t } = useI18n();
@@ -73,12 +75,20 @@ export function VariableTable<T extends VariableTableItem>({
         </Button>
       </div>
       <div className="overflow-x-auto rounded-[var(--u-radius-sm)] border border-[var(--u-color-border)]">
-        <div className="grid min-h-[28px] min-w-[720px] grid-cols-[28px_minmax(150px,1fr)_minmax(190px,1.3fr)_70px_minmax(150px,1fr)_32px] items-center gap-2 border-b border-[var(--u-color-border)] bg-[var(--u-color-surface-subtle)] px-2 text-[11px] font-semibold uppercase text-[var(--u-color-text-soft)]">
+        <div
+          className={cn(
+            "grid min-h-[28px] min-w-[720px] items-center gap-2 border-b border-[var(--u-color-border)] bg-[var(--u-color-surface-subtle)] px-2 text-[11px] font-semibold uppercase text-[var(--u-color-text-soft)]",
+            renderDecoration
+              ? "grid-cols-[28px_minmax(150px,1fr)_minmax(190px,1.3fr)_70px_minmax(150px,1fr)_auto_32px]"
+              : "grid-cols-[28px_minmax(150px,1fr)_minmax(190px,1.3fr)_70px_minmax(150px,1fr)_32px]",
+          )}
+        >
           <span title={t("variables.enabled")}>{t("variables.enabledShort")}</span>
           <span>{t("variables.key")}</span>
           <span>{t("variables.value")}</span>
           <span>{t("variables.secret")}</span>
           <span>{t("variables.description")}</span>
+          {renderDecoration && <span />}
           <span />
         </div>
         {items.length === 0 ? (
@@ -95,7 +105,12 @@ export function VariableTable<T extends VariableTableItem>({
             );
             return (
               <div
-                className="grid min-h-[38px] min-w-[720px] grid-cols-[28px_minmax(150px,1fr)_minmax(190px,1.3fr)_70px_minmax(150px,1fr)_32px] items-center gap-2 border-b border-[var(--u-color-border)] px-2 last:border-b-0"
+                className={cn(
+                  "grid min-h-[38px] min-w-[720px] items-center gap-2 border-b border-[var(--u-color-border)] px-2 last:border-b-0",
+                  renderDecoration
+                    ? "grid-cols-[28px_minmax(150px,1fr)_minmax(190px,1.3fr)_70px_minmax(150px,1fr)_auto_32px]"
+                    : "grid-cols-[28px_minmax(150px,1fr)_minmax(190px,1.3fr)_70px_minmax(150px,1fr)_32px]",
+                )}
                 key={rowId}
               >
                 <input
@@ -164,6 +179,7 @@ export function VariableTable<T extends VariableTableItem>({
                   placeholder={t("variables.description")}
                   value={item.description ?? ""}
                 />
+                {renderDecoration && <div className="shrink-0">{renderDecoration(item)}</div>}
                 <button
                   aria-label={t("variables.deleteRow", { key: item.key || String(index + 1) })}
                   className="grid h-7 w-7 cursor-pointer place-items-center rounded-[var(--u-radius-sm)] text-[var(--u-color-text-soft)] hover:bg-[var(--u-color-surface-hover)] hover:text-[var(--u-color-danger)]"

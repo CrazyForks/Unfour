@@ -54,8 +54,6 @@ function environmentVariable(
     updatedAt: "2026-01-01T00:00:00Z",
     deletedAt: null,
     revision: 1,
-    syncStatus: "local",
-    remoteId: null,
     ...overrides,
   };
 }
@@ -72,8 +70,6 @@ function environment(overrides: Partial<WorkspaceEnvironment> = {}): WorkspaceEn
     updatedAt: "2026-01-01T00:00:00Z",
     deletedAt: null,
     revision: 1,
-    syncStatus: "local",
-    remoteId: null,
     ...overrides,
   };
 }
@@ -97,11 +93,17 @@ function createWrapper() {
   };
 }
 
-function renderPage(initialEnvironmentId: string | null = "env-1") {
+function renderPage(
+  initialEnvironmentId: string | null = "env-1",
+  variableDecoration?: (
+    variable: WorkspaceVariable | WorkspaceEnvironmentVariable,
+  ) => ReactNode,
+) {
   render(
     <WorkspaceEnvironmentsPage
       initialEnvironmentId={initialEnvironmentId}
       onClose={vi.fn()}
+      variableDecoration={variableDecoration}
       workspaceId="ws-1"
     />,
     { wrapper: createWrapper() },
@@ -175,5 +177,20 @@ describe("WorkspaceEnvironmentsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(createMock).toHaveBeenCalledWith("ws-1", "QA"));
+  });
+
+  it("decorates persisted workspace and environment variables", async () => {
+    const environmentValue = environmentVariable({ id: "env-var" });
+    listEnvironmentsMock.mockResolvedValue([
+      environment({ isActive: true, variables: [environmentValue] }),
+    ]);
+    listVariablesMock.mockResolvedValue([workspaceVariable({ id: "workspace-var" })]);
+    renderPage("env-1", (variable) => (
+      <span>{`decor-${"environmentId" in variable ? "environment" : "workspace"}-${variable.id}`}</span>
+    ));
+
+    expect(await screen.findByText("decor-environment-env-var")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Workspace Variables" }));
+    expect(await screen.findByText("decor-workspace-workspace-var")).toBeTruthy();
   });
 });

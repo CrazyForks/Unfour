@@ -83,6 +83,12 @@ async fn workspace_variable_migration_preserves_legacy_api_environments() {
     .execute(db.pool())
     .await
     .expect("apply workspace variable migration");
+    sqlx::raw_sql(include_str!(
+        "../../../migrations/20260723091537_core_workspace_domain_cleanup.sql"
+    ))
+    .execute(db.pool())
+    .await
+    .expect("apply workspace domain cleanup migration");
 
     let environment: (String, String, String, i64) = sqlx::query_as(
         "SELECT id, workspace_id, name, revision FROM workspace_environments WHERE id = 'environment-a'",
@@ -128,6 +134,21 @@ async fn workspace_variable_migration_preserves_legacy_api_environments() {
     .await
     .expect("migrated active environment");
     assert_eq!(active.0.as_deref(), Some("environment-a"));
+
+    for table in [
+        "workspace_variables",
+        "workspace_environments",
+        "workspace_environment_variables",
+    ] {
+        let columns: Vec<(i64, String, String, i64, Option<String>, i64)> =
+            sqlx::query_as(&format!("PRAGMA table_info({table})"))
+                .fetch_all(db.pool())
+                .await
+                .expect("read cleaned table columns");
+        let names: Vec<&str> = columns.iter().map(|column| column.1.as_str()).collect();
+        assert!(!names.contains(&"sync_status"));
+        assert!(!names.contains(&"remote_id"));
+    }
 }
 
 #[tokio::test]

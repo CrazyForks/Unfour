@@ -7,5 +7,4 @@ pub struct SystemHealth {
     pub storage_ready: bool,
     pub command_bus_ready: bool,
     pub ai_reserved_capabilities: Vec<String>,
-    pub sync_strategy: String,
 }

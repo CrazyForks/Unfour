@@ -1,4 +1,9 @@
-import type { Workspace, WorkspaceTab } from "@unfour/command-client";
+import type {
+  Workspace,
+  WorkspaceEnvironmentVariable,
+  WorkspaceTab,
+  WorkspaceVariable,
+} from "@unfour/command-client";
 import type { ComponentType, ReactNode } from "react";
 
 export type DesktopAppExtensionId = `${string}.${string}`;
@@ -22,10 +27,46 @@ export type DesktopAppCommandPaletteAction = Readonly<{
   run: (context: DesktopAppExtensionContext) => void | Promise<unknown>;
 }>;
 
+export type DesktopAppWorkspaceDecorationProps = DesktopAppExtensionContext &
+  Readonly<{
+    active: boolean;
+    placement: "trigger" | "listItem";
+    workspace: Readonly<Workspace>;
+  }>;
+
+export type DesktopAppWorkspaceDecoration =
+  ComponentType<DesktopAppWorkspaceDecorationProps>;
+
+export type DesktopAppWorkspaceActionContext = DesktopAppExtensionContext &
+  Readonly<{ workspace: Readonly<Workspace> }>;
+
+export type DesktopAppWorkspaceAction = Readonly<{
+  id: DesktopAppExtensionId;
+  label: ReactNode;
+  icon?: ReactNode;
+  disabled?: boolean | ((context: DesktopAppWorkspaceActionContext) => boolean);
+  disabledReason?:
+    | ReactNode
+    | ((context: DesktopAppWorkspaceActionContext) => ReactNode);
+  run: (context: DesktopAppWorkspaceActionContext) => void | Promise<unknown>;
+}>;
+
+export type DesktopAppWorkspaceVariableDecorationProps =
+  DesktopAppExtensionContext &
+    Readonly<{
+      variable: Readonly<WorkspaceVariable | WorkspaceEnvironmentVariable>;
+    }>;
+
+export type DesktopAppWorkspaceVariableDecoration =
+  ComponentType<DesktopAppWorkspaceVariableDecorationProps>;
+
 export type DesktopAppExtensions = Readonly<{
   titleBarEnd?: DesktopAppExtensionSlot;
   statusBarEnd?: DesktopAppExtensionSlot;
   settingsSections?: readonly DesktopAppSettingsSection[];
   commandPaletteActions?: readonly DesktopAppCommandPaletteAction[];
+  workspaceDecoration?: DesktopAppWorkspaceDecoration;
+  workspaceActions?: readonly DesktopAppWorkspaceAction[];
+  workspaceVariableDecoration?: DesktopAppWorkspaceVariableDecoration;
   overlays?: DesktopAppExtensionSlot;
 }>;

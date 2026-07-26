@@ -1,6 +1,7 @@
 use crate::LocalDb;
 use chrono::Utc;
 use serde_json::Value;
+use sqlx::SqliteConnection;
 use unfour_core::AppResult;
 
 /// A single persisted activity-trail row, returned verbatim from storage. The
@@ -33,6 +34,20 @@ impl ActivityLogService {
         target: Option<&str>,
         details: Value,
     ) -> AppResult<()> {
+        let mut connection = self.db.pool().acquire().await?;
+        Self::record_on(&mut connection, workspace_id, action, target, details).await
+    }
+
+    /// Record an event on a caller-owned connection. Command coordinators use
+    /// this entry point so the activity row shares the domain transaction and
+    /// is rolled back with domain data and transactional-hook writes.
+    pub async fn record_on(
+        connection: &mut SqliteConnection,
+        workspace_id: Option<&str>,
+        action: &str,
+        target: Option<&str>,
+        details: Value,
+    ) -> AppResult<()> {
         // This is a local activity trail, not a compliance log. Callers should
         // pass only redacted summaries and avoid routine read/UI noise.
         sqlx::query(
@@ -47,7 +62,7 @@ impl ActivityLogService {
         .bind(target)
         .bind(serde_json::to_string(&details)?)
         .bind(Utc::now().to_rfc3339())
-        .execute(self.db.pool())
+        .execute(connection)
         .await?;
 
         Ok(())

@@ -1,4 +1,6 @@
 use super::*;
+use crate::transaction::CommandActivity;
+use unfour_core::domain::CommandContext;
 
 impl CommandBus {
     pub async fn workspace_variables_list(
@@ -13,19 +15,128 @@ impl CommandBus {
         workspace_id: String,
         variables: Vec<WorkspaceVariableInput>,
     ) -> AppResult<Vec<WorkspaceVariable>> {
-        let variables = self
-            .workspace
-            .replace_variables(workspace_id.clone(), variables)
-            .await?;
-        self.activity_log
-            .record(
-                Some(&workspace_id),
-                "workspace.variables.update",
-                Some(&workspace_id),
-                serde_json::json!({ "variableCount": variables.len() }),
-            )
-            .await?;
-        Ok(variables)
+        let context = CommandContext::local("workspace.variables.replace");
+        let executor_context = context.clone();
+        let service = self.workspace.clone();
+        let activity_workspace_id = workspace_id.clone();
+        let variable_count = variables.len();
+        self.execute_domain_command(
+            context,
+            Some(CommandActivity {
+                workspace_id: Some(activity_workspace_id.clone()),
+                action: "workspace.variables.update",
+                target: Some(activity_workspace_id),
+                details: serde_json::json!({ "variableCount": variable_count }),
+            }),
+            move |connection| {
+                Box::pin(async move {
+                    service
+                        .replace_variables_on(
+                            connection,
+                            &executor_context,
+                            workspace_id,
+                            variables,
+                        )
+                        .await
+                })
+            },
+        )
+        .await
+    }
+
+    pub async fn workspace_variable_create(
+        &self,
+        workspace_id: String,
+        input: WorkspaceVariableInput,
+    ) -> AppResult<WorkspaceVariable> {
+        let context = CommandContext::local("workspace.variable.create");
+        let executor_context = context.clone();
+        let service = self.workspace.clone();
+        let activity_workspace_id = workspace_id.clone();
+        self.execute_domain_command(
+            context,
+            Some(entity_activity(
+                &activity_workspace_id,
+                "workspace.variable.create",
+                None,
+            )),
+            move |connection| {
+                Box::pin(async move {
+                    service
+                        .create_variable_on(connection, &executor_context, workspace_id, input)
+                        .await
+                })
+            },
+        )
+        .await
+    }
+
+    pub async fn workspace_variable_update(
+        &self,
+        workspace_id: String,
+        variable_id: String,
+        input: WorkspaceVariableInput,
+    ) -> AppResult<WorkspaceVariable> {
+        let context = CommandContext::local("workspace.variable.update");
+        let executor_context = context.clone();
+        let service = self.workspace.clone();
+        let activity_workspace_id = workspace_id.clone();
+        let activity_variable_id = variable_id.clone();
+        self.execute_domain_command(
+            context,
+            Some(entity_activity(
+                &activity_workspace_id,
+                "workspace.variable.update",
+                Some(activity_variable_id),
+            )),
+            move |connection| {
+                Box::pin(async move {
+                    service
+                        .update_variable_on(
+                            connection,
+                            &executor_context,
+                            workspace_id,
+                            variable_id,
+                            input,
+                        )
+                        .await
+                })
+            },
+        )
+        .await
+    }
+
+    pub async fn workspace_variable_delete(
+        &self,
+        workspace_id: String,
+        variable_id: String,
+    ) -> AppResult<Vec<WorkspaceVariable>> {
+        let context = CommandContext::local("workspace.variable.delete");
+        let executor_context = context.clone();
+        let service = self.workspace.clone();
+        let activity_workspace_id = workspace_id.clone();
+        let activity_variable_id = variable_id.clone();
+        self.execute_domain_command(
+            context,
+            Some(entity_activity(
+                &activity_workspace_id,
+                "workspace.variable.delete",
+                Some(activity_variable_id),
+            )),
+            move |connection| {
+                Box::pin(async move {
+                    service
+                        .delete_variable_on(
+                            connection,
+                            &executor_context,
+                            workspace_id,
+                            variable_id,
+                        )
+                        .await
+                })
+            },
+        )
+        .await
     }
 
     pub async fn workspace_environments_list(
@@ -40,19 +151,26 @@ impl CommandBus {
         workspace_id: String,
         name: String,
     ) -> AppResult<WorkspaceEnvironment> {
-        let environment = self
-            .workspace
-            .create_environment(workspace_id.clone(), name)
-            .await?;
-        self.activity_log
-            .record(
-                Some(&workspace_id),
+        let context = CommandContext::local("workspace.environment.create");
+        let executor_context = context.clone();
+        let service = self.workspace.clone();
+        let activity_workspace_id = workspace_id.clone();
+        self.execute_domain_command(
+            context,
+            Some(entity_activity(
+                &activity_workspace_id,
                 "workspace.environment.create",
-                Some(&environment.id),
-                serde_json::json!({ "name": environment.name }),
-            )
-            .await?;
-        Ok(environment)
+                None,
+            )),
+            move |connection| {
+                Box::pin(async move {
+                    service
+                        .create_environment_on(connection, &executor_context, workspace_id, name)
+                        .await
+                })
+            },
+        )
+        .await
     }
 
     pub async fn workspace_environment_update(
@@ -62,22 +180,107 @@ impl CommandBus {
         name: String,
         variables: Vec<WorkspaceVariableInput>,
     ) -> AppResult<WorkspaceEnvironment> {
-        let environment = self
-            .workspace
-            .update_environment(workspace_id.clone(), environment_id, name, variables)
-            .await?;
-        self.activity_log
-            .record(
-                Some(&workspace_id),
-                "workspace.environment.update",
-                Some(&environment.id),
-                serde_json::json!({
-                    "name": environment.name,
-                    "variableCount": environment.variables.len(),
-                }),
-            )
-            .await?;
-        Ok(environment)
+        let context = CommandContext::local("workspace.environment.update");
+        let executor_context = context.clone();
+        let service = self.workspace.clone();
+        let activity_workspace_id = workspace_id.clone();
+        let activity_environment_id = environment_id.clone();
+        let variable_count = variables.len();
+        self.execute_domain_command(
+            context,
+            Some(CommandActivity {
+                workspace_id: Some(activity_workspace_id),
+                action: "workspace.environment.update",
+                target: Some(activity_environment_id),
+                details: serde_json::json!({ "variableCount": variable_count }),
+            }),
+            move |connection| {
+                Box::pin(async move {
+                    service
+                        .update_environment_on(
+                            connection,
+                            &executor_context,
+                            workspace_id,
+                            environment_id,
+                            name,
+                            variables,
+                        )
+                        .await
+                })
+            },
+        )
+        .await
+    }
+
+    pub async fn workspace_environment_update_metadata(
+        &self,
+        workspace_id: String,
+        environment_id: String,
+        name: String,
+        sort_order: i64,
+    ) -> AppResult<WorkspaceEnvironment> {
+        let context = CommandContext::local("workspace.environment.metadata.update");
+        let executor_context = context.clone();
+        let service = self.workspace.clone();
+        let activity_workspace_id = workspace_id.clone();
+        let activity_environment_id = environment_id.clone();
+        self.execute_domain_command(
+            context,
+            Some(entity_activity(
+                &activity_workspace_id,
+                "workspace.environment.metadata.update",
+                Some(activity_environment_id),
+            )),
+            move |connection| {
+                Box::pin(async move {
+                    service
+                        .update_environment_metadata_on(
+                            connection,
+                            &executor_context,
+                            workspace_id,
+                            environment_id,
+                            name,
+                            sort_order,
+                        )
+                        .await
+                })
+            },
+        )
+        .await
+    }
+
+    pub async fn workspace_environments_reorder(
+        &self,
+        workspace_id: String,
+        environment_ids: Vec<String>,
+    ) -> AppResult<Vec<WorkspaceEnvironment>> {
+        let context = CommandContext::local("workspace.environments.reorder");
+        let executor_context = context.clone();
+        let service = self.workspace.clone();
+        let activity_workspace_id = workspace_id.clone();
+        let count = environment_ids.len();
+        self.execute_domain_command(
+            context,
+            Some(CommandActivity {
+                workspace_id: Some(activity_workspace_id.clone()),
+                action: "workspace.environments.reorder",
+                target: Some(activity_workspace_id),
+                details: serde_json::json!({ "environmentCount": count }),
+            }),
+            move |connection| {
+                Box::pin(async move {
+                    service
+                        .reorder_environments_on(
+                            connection,
+                            &executor_context,
+                            workspace_id,
+                            environment_ids,
+                        )
+                        .await
+                })
+            },
+        )
+        .await
     }
 
     pub async fn workspace_environment_delete(
@@ -85,19 +288,32 @@ impl CommandBus {
         workspace_id: String,
         environment_id: String,
     ) -> AppResult<Vec<WorkspaceEnvironment>> {
-        let environments = self
-            .workspace
-            .delete_environment(workspace_id.clone(), environment_id.clone())
-            .await?;
-        self.activity_log
-            .record(
-                Some(&workspace_id),
+        let context = CommandContext::local("workspace.environment.delete");
+        let executor_context = context.clone();
+        let service = self.workspace.clone();
+        let activity_workspace_id = workspace_id.clone();
+        let activity_environment_id = environment_id.clone();
+        self.execute_domain_command(
+            context,
+            Some(entity_activity(
+                &activity_workspace_id,
                 "workspace.environment.delete",
-                Some(&environment_id),
-                serde_json::json!({ "softDelete": true }),
-            )
-            .await?;
-        Ok(environments)
+                Some(activity_environment_id),
+            )),
+            move |connection| {
+                Box::pin(async move {
+                    service
+                        .delete_environment_on(
+                            connection,
+                            &executor_context,
+                            workspace_id,
+                            environment_id,
+                        )
+                        .await
+                })
+            },
+        )
+        .await
     }
 
     pub async fn workspace_environment_set_active(
@@ -105,9 +321,165 @@ impl CommandBus {
         workspace_id: String,
         environment_id: Option<String>,
     ) -> AppResult<Vec<WorkspaceEnvironment>> {
-        self.workspace
-            .set_active_environment(workspace_id, environment_id)
-            .await
+        let context = CommandContext::local("workspace.environment.activate");
+        let executor_context = context.clone();
+        let service = self.workspace.clone();
+        self.execute_domain_command(context, None, move |connection| {
+            Box::pin(async move {
+                service
+                    .set_active_environment_on(
+                        connection,
+                        &executor_context,
+                        workspace_id,
+                        environment_id,
+                    )
+                    .await
+            })
+        })
+        .await
+    }
+
+    pub async fn workspace_environment_variable_create(
+        &self,
+        workspace_id: String,
+        environment_id: String,
+        input: WorkspaceVariableInput,
+    ) -> AppResult<WorkspaceEnvironmentVariable> {
+        let context = CommandContext::local("workspace.environment_variable.create");
+        let executor_context = context.clone();
+        let service = self.workspace.clone();
+        let activity_workspace_id = workspace_id.clone();
+        self.execute_domain_command(
+            context,
+            Some(entity_activity(
+                &activity_workspace_id,
+                "workspace.environment_variable.create",
+                None,
+            )),
+            move |connection| {
+                Box::pin(async move {
+                    service
+                        .create_environment_variable_on(
+                            connection,
+                            &executor_context,
+                            workspace_id,
+                            environment_id,
+                            input,
+                        )
+                        .await
+                })
+            },
+        )
+        .await
+    }
+
+    pub async fn workspace_environment_variable_update(
+        &self,
+        workspace_id: String,
+        environment_id: String,
+        variable_id: String,
+        input: WorkspaceVariableInput,
+    ) -> AppResult<WorkspaceEnvironmentVariable> {
+        let context = CommandContext::local("workspace.environment_variable.update");
+        let executor_context = context.clone();
+        let service = self.workspace.clone();
+        let activity_workspace_id = workspace_id.clone();
+        let activity_variable_id = variable_id.clone();
+        self.execute_domain_command(
+            context,
+            Some(entity_activity(
+                &activity_workspace_id,
+                "workspace.environment_variable.update",
+                Some(activity_variable_id),
+            )),
+            move |connection| {
+                Box::pin(async move {
+                    service
+                        .update_environment_variable_on(
+                            connection,
+                            &executor_context,
+                            workspace_id,
+                            environment_id,
+                            variable_id,
+                            input,
+                        )
+                        .await
+                })
+            },
+        )
+        .await
+    }
+
+    pub async fn workspace_environment_variables_replace(
+        &self,
+        workspace_id: String,
+        environment_id: String,
+        variables: Vec<WorkspaceVariableInput>,
+    ) -> AppResult<Vec<WorkspaceEnvironmentVariable>> {
+        let context = CommandContext::local("workspace.environment_variables.replace");
+        let executor_context = context.clone();
+        let service = self.workspace.clone();
+        let activity_workspace_id = workspace_id.clone();
+        let activity_environment_id = environment_id.clone();
+        let count = variables.len();
+        self.execute_domain_command(
+            context,
+            Some(CommandActivity {
+                workspace_id: Some(activity_workspace_id),
+                action: "workspace.environment_variables.replace",
+                target: Some(activity_environment_id),
+                details: serde_json::json!({ "variableCount": count }),
+            }),
+            move |connection| {
+                Box::pin(async move {
+                    service
+                        .replace_environment_variables_on(
+                            connection,
+                            &executor_context,
+                            workspace_id,
+                            environment_id,
+                            variables,
+                        )
+                        .await
+                })
+            },
+        )
+        .await
+    }
+
+    pub async fn workspace_environment_variable_delete(
+        &self,
+        workspace_id: String,
+        environment_id: String,
+        variable_id: String,
+    ) -> AppResult<Vec<WorkspaceEnvironmentVariable>> {
+        let context = CommandContext::local("workspace.environment_variable.delete");
+        let executor_context = context.clone();
+        let service = self.workspace.clone();
+        let activity_workspace_id = workspace_id.clone();
+        let activity_variable_id = variable_id.clone();
+        self.execute_domain_command(
+            context,
+            Some(entity_activity(
+                &activity_workspace_id,
+                "workspace.environment_variable.delete",
+                Some(activity_variable_id),
+            )),
+            move |connection| {
+                Box::pin(async move {
+                    service
+                        .delete_environment_variable_on(
+                            connection,
+                            &executor_context,
+                            workspace_id,
+                            environment_id,
+                            variable_id,
+                        )
+                        .await
+                })
+            },
+        )
+        .await
     }
 
     pub async fn workspace_variables_resolve(
@@ -195,6 +567,19 @@ impl CommandBus {
             });
         }
         Ok(resolved)
+    }
+}
+
+fn entity_activity(
+    workspace_id: &str,
+    action: &'static str,
+    target: Option<String>,
+) -> CommandActivity {
+    CommandActivity {
+        workspace_id: Some(workspace_id.to_string()),
+        action,
+        target,
+        details: serde_json::json!({}),
     }
 }
 

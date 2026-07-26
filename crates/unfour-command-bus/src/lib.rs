@@ -1,5 +1,6 @@
 mod activity_summary;
 mod storage_paths;
+mod transaction;
 
 use activity_summary::{command_activity_kind, truncate_url_preview};
 use serde::{Deserialize, Serialize};
@@ -22,10 +23,9 @@ use unfour_core::models::{
     SshReconnectCancelInput, SshResizeInput, SshSessionEvent, SshSessionInput, SshSessionSummary,
     SshTask, SshTaskCancelInput, SshTaskCleanupInput, SshTaskCleanupResult, SshTaskDetail,
     SshTaskRun, SshTaskRunInput, SshTaskSaveInput, SshTestResult, SystemHealth, Workspace,
-    WorkspaceEnvironment, WorkspaceLayout, WorkspaceState, WorkspaceVariable,
-    WorkspaceVariableInput,
+    WorkspaceEnvironment, WorkspaceEnvironmentVariable, WorkspaceLayout, WorkspaceState,
+    WorkspaceVariable, WorkspaceVariableInput,
 };
-use unfour_core::sync_reserved;
 use unfour_core::AppResult;
 use unfour_database_engine::DatabaseService;
 use unfour_http_engine::ApiClientService;
@@ -39,10 +39,12 @@ mod command_models;
 mod core_commands;
 mod credential_commands;
 mod database_commands;
+mod domain_commands;
 mod ssh_commands;
 mod workspace_variable_commands;
 
 pub use command_models::*;
+pub use transaction::{CommandBusExtensions, TransactionalCommandHook};
 
 /// OS keychain service name under which credentials are stored. Must match the
 /// value the desktop app passes to `SecretStore::new` (see
@@ -56,6 +58,8 @@ const MAX_ACTIVITY_LIMIT: i64 = 200;
 
 #[derive(Clone)]
 pub struct CommandBus {
+    pub(crate) db: LocalDb,
+    pub(crate) extensions: CommandBusExtensions,
     pub(crate) api_client: ApiClientService,
     pub(crate) activity_log: ActivityLogService,
     pub(crate) database: DatabaseService,

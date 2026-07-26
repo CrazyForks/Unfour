@@ -12,7 +12,7 @@ vi.mock("@tanstack/react-query", () => ({
   useMutation: () => ({ mutate: vi.fn() }),
   useQuery: ({ queryKey }: { queryKey: readonly unknown[] }) => {
     if (queryKey[0] === "system-health") {
-      return { data: { storageReady: true, syncStrategy: "local-first" } };
+      return { data: { storageReady: true } };
     }
     if (queryKey[0] === "workspaces") {
       return {
@@ -28,9 +28,7 @@ vi.mock("@tanstack/react-query", () => ({
               lastOpenedAt: null,
               mcpPolicy: "auto",
               name: "Default Workspace",
-              remoteId: null,
               revision: 1,
-              syncStatus: "local",
               updatedAt: "2026-01-01T00:00:00.000Z",
             },
           ],

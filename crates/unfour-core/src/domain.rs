@@ -1,0 +1,378 @@
+use std::fmt;
+
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum MutationOrigin {
+    Local,
+    External,
+    Migration,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum MutationOperation {
+    Upsert,
+    Delete,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DomainEntityType {
+    Workspace,
+    WorkspaceVariable,
+    WorkspaceEnvironment,
+    WorkspaceEnvironmentVariable,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DomainEntityKey {
+    pub entity_type: DomainEntityType,
+    pub workspace_id: String,
+    pub entity_id: String,
+    #[serde(default)]
+    pub parent_entity_id: Option<String>,
+}
+
+impl DomainEntityKey {
+    pub fn new(
+        entity_type: DomainEntityType,
+        workspace_id: impl Into<String>,
+        entity_id: impl Into<String>,
+    ) -> Self {
+        Self {
+            entity_type,
+            workspace_id: workspace_id.into(),
+            entity_id: entity_id.into(),
+            parent_entity_id: None,
+        }
+    }
+
+    pub fn with_parent_entity_id(mut self, parent_entity_id: impl Into<String>) -> Self {
+        self.parent_entity_id = Some(parent_entity_id.into());
+        self
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DomainMutation {
+    pub origin: MutationOrigin,
+    pub operation: MutationOperation,
+    pub entity: DomainEntityKey,
+    pub revision: i64,
+}
+
+impl DomainMutation {
+    pub fn new(
+        origin: MutationOrigin,
+        operation: MutationOperation,
+        entity: DomainEntityKey,
+        revision: i64,
+    ) -> Self {
+        Self {
+            origin,
+            operation,
+            entity,
+            revision,
+        }
+    }
+
+    pub fn with_parent_entity_id(mut self, parent_entity_id: impl Into<String>) -> Self {
+        self.entity.parent_entity_id = Some(parent_entity_id.into());
+        self
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommandContext {
+    pub command_id: String,
+    pub command_name: String,
+    pub origin: MutationOrigin,
+}
+
+impl CommandContext {
+    pub fn new(command_name: impl Into<String>, origin: MutationOrigin) -> Self {
+        Self {
+            command_id: crate::id::new_id(),
+            command_name: command_name.into(),
+            origin,
+        }
+    }
+
+    pub fn local(command_name: impl Into<String>) -> Self {
+        Self::new(command_name, MutationOrigin::Local)
+    }
+
+    pub fn external(command_name: impl Into<String>) -> Self {
+        Self::new(command_name, MutationOrigin::External)
+    }
+
+    pub fn migration(command_name: impl Into<String>) -> Self {
+        Self::new(command_name, MutationOrigin::Migration)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DomainCommandResult<T> {
+    pub value: T,
+    pub mutations: Vec<DomainMutation>,
+}
+
+impl<T> DomainCommandResult<T> {
+    pub fn new(value: T, mutations: Vec<DomainMutation>) -> Self {
+        Self { value, mutations }
+    }
+
+    pub fn unchanged(value: T) -> Self {
+        Self {
+            value,
+            mutations: Vec::new(),
+        }
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "value", rename_all = "camelCase")]
+pub enum SnapshotVariableValue {
+    Plain(String),
+    SecretRedacted,
+}
+
+impl fmt::Debug for SnapshotVariableValue {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Plain(value) => formatter.debug_tuple("Plain").field(value).finish(),
+            Self::SecretRedacted => formatter.write_str("SecretRedacted"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceSnapshot {
+    pub id: String,
+    pub name: String,
+    pub is_default: bool,
+    pub last_opened_at: Option<String>,
+    pub environment_type: String,
+    pub mcp_policy: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub revision: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceVariableSnapshot {
+    pub id: String,
+    pub workspace_id: String,
+    pub key: String,
+    pub value: SnapshotVariableValue,
+    pub is_secret: bool,
+    pub is_enabled: bool,
+    pub description: Option<String>,
+    pub sort_order: i64,
+    pub created_at: String,
+    pub updated_at: String,
+    pub revision: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceEnvironmentSnapshot {
+    pub id: String,
+    pub workspace_id: String,
+    pub name: String,
+    pub sort_order: i64,
+    pub created_at: String,
+    pub updated_at: String,
+    pub revision: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceEnvironmentVariableSnapshot {
+    pub id: String,
+    pub workspace_id: String,
+    pub environment_id: String,
+    pub key: String,
+    pub value: SnapshotVariableValue,
+    pub is_secret: bool,
+    pub is_enabled: bool,
+    pub description: Option<String>,
+    pub sort_order: i64,
+    pub created_at: String,
+    pub updated_at: String,
+    pub revision: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TombstoneSnapshot {
+    pub entity: DomainEntityKey,
+    pub deleted_at: String,
+    pub revision: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "entityType", content = "snapshot", rename_all = "camelCase")]
+pub enum DomainSnapshot {
+    Workspace(WorkspaceSnapshot),
+    WorkspaceVariable(WorkspaceVariableSnapshot),
+    WorkspaceEnvironment(WorkspaceEnvironmentSnapshot),
+    WorkspaceEnvironmentVariable(WorkspaceEnvironmentVariableSnapshot),
+    Tombstone(TombstoneSnapshot),
+}
+
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "operation", content = "value", rename_all = "camelCase")]
+pub enum ExternalVariableValue {
+    Set(String),
+    PreserveLocal,
+    Clear,
+}
+
+impl fmt::Debug for ExternalVariableValue {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Set(_) => formatter.write_str("Set([REDACTED])"),
+            Self::PreserveLocal => formatter.write_str("PreserveLocal"),
+            Self::Clear => formatter.write_str("Clear"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExternalDelete {
+    pub entity: DomainEntityKey,
+    pub deleted_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExternalWorkspaceUpsert {
+    pub id: String,
+    pub name: String,
+    pub is_default: bool,
+    pub last_opened_at: Option<String>,
+    pub environment_type: String,
+    pub mcp_policy: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExternalWorkspaceVariableUpsert {
+    pub id: String,
+    pub workspace_id: String,
+    pub key: String,
+    pub value: ExternalVariableValue,
+    pub is_secret: bool,
+    pub is_enabled: bool,
+    pub description: Option<String>,
+    pub sort_order: i64,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExternalWorkspaceEnvironmentUpsert {
+    pub id: String,
+    pub workspace_id: String,
+    pub name: String,
+    pub sort_order: i64,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExternalWorkspaceEnvironmentVariableUpsert {
+    pub id: String,
+    pub workspace_id: String,
+    pub environment_id: String,
+    pub key: String,
+    pub value: ExternalVariableValue,
+    pub is_secret: bool,
+    pub is_enabled: bool,
+    pub description: Option<String>,
+    pub sort_order: i64,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+macro_rules! external_change {
+    ($name:ident, $upsert:ty) => {
+        #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+        #[serde(tag = "operation", content = "record", rename_all = "camelCase")]
+        pub enum $name {
+            Upsert($upsert),
+            Delete(ExternalDelete),
+        }
+    };
+}
+
+external_change!(ExternalWorkspaceApply, ExternalWorkspaceUpsert);
+external_change!(
+    ExternalWorkspaceVariableApply,
+    ExternalWorkspaceVariableUpsert
+);
+external_change!(
+    ExternalWorkspaceEnvironmentApply,
+    ExternalWorkspaceEnvironmentUpsert
+);
+external_change!(
+    ExternalWorkspaceEnvironmentVariableApply,
+    ExternalWorkspaceEnvironmentVariableUpsert
+);
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExternalApplyPage {
+    pub workspaces: Vec<ExternalWorkspaceApply>,
+    pub workspace_variables: Vec<ExternalWorkspaceVariableApply>,
+    pub workspace_environments: Vec<ExternalWorkspaceEnvironmentApply>,
+    pub workspace_environment_variables: Vec<ExternalWorkspaceEnvironmentVariableApply>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SecretMaterialStatus {
+    Present,
+    Missing,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SecretMaterialOutcome {
+    pub entity: DomainEntityKey,
+    pub status: SecretMaterialStatus,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExternalApplyReport {
+    pub applied_count: usize,
+    pub mutations: Vec<DomainMutation>,
+    pub secret_material_outcomes: Vec<SecretMaterialOutcome>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn external_variable_value_debug_never_exposes_the_value() {
+        let value = ExternalVariableValue::Set("top-secret".to_string());
+        let debug = format!("{value:?}");
+        assert!(!debug.contains("top-secret"));
+        assert!(debug.contains("REDACTED"));
+    }
+}

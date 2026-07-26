@@ -18,8 +18,6 @@ export type Workspace = {
   updatedAt: string;
   deletedAt: string | null;
   revision: number;
-  syncStatus: string;
-  remoteId: string | null;
 };
 
 export type WorkspaceState = {
@@ -44,8 +42,6 @@ export type WorkspaceVariable = WorkspaceVariableInput & {
   updatedAt: string;
   deletedAt: string | null;
   revision: number;
-  syncStatus: string;
-  remoteId: string | null;
 };
 
 export type WorkspaceEnvironmentVariable = WorkspaceVariable & {
@@ -63,8 +59,6 @@ export type WorkspaceEnvironment = {
   updatedAt: string;
   deletedAt: string | null;
   revision: number;
-  syncStatus: string;
-  remoteId: string | null;
 };
 
 export type WorkspaceTab = {

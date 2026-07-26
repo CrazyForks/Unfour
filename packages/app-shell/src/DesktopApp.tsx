@@ -251,6 +251,7 @@ export function DesktopApp({ extensions }: DesktopAppProps) {
   const TitleBarEnd = extensions?.titleBarEnd;
   const StatusBarEnd = extensions?.statusBarEnd;
   const Overlays = extensions?.overlays;
+  const WorkspaceVariableDecoration = extensions?.workspaceVariableDecoration;
   const layoutControls = useMemo(
     () => (
       <LayoutControls
@@ -325,6 +326,8 @@ export function DesktopApp({ extensions }: DesktopAppProps) {
               })
             }
             settingsSections={extensions?.settingsSections}
+            workspaceActions={extensions?.workspaceActions}
+            workspaceDecoration={extensions?.workspaceDecoration}
             workspaces={workspaceQuery.data?.workspaces ?? []}
           />
         }
@@ -367,7 +370,6 @@ export function DesktopApp({ extensions }: DesktopAppProps) {
               activeWorkspace={activeWorkspace}
               healthReady={healthQuery.data?.storageReady === true}
               rightAccessory={statusBarRightAccessory}
-              syncStrategy={healthQuery.data?.syncStrategy ?? "local-first"}
             />
           )
         }
@@ -430,6 +432,16 @@ export function DesktopApp({ extensions }: DesktopAppProps) {
                 key={`${activeWorkspace.id}:${variableManagerRequest.nonce}`}
                 onClose={closeVariableManager}
                 onDirtyChange={setVariableManagerDirty}
+                variableDecoration={
+                  WorkspaceVariableDecoration
+                    ? (variable) => (
+                        <WorkspaceVariableDecoration
+                          {...extensionContext}
+                          variable={variable}
+                        />
+                      )
+                    : undefined
+                }
                 workspaceId={activeWorkspace.id}
               />
             )}

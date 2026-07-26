@@ -2,6 +2,7 @@ import { call } from "./invoke";
 import type {
   Workspace,
   WorkspaceEnvironment,
+  WorkspaceEnvironmentVariable,
   WorkspaceEnvironmentType,
   WorkspaceLayout,
   WorkspaceMcpPolicy,
@@ -44,6 +45,17 @@ export function updateWorkspaceEnvironment(
   });
 }
 
+export function updateWorkspaceMcpPolicy(
+  workspaceId: string,
+  mcpPolicy: WorkspaceMcpPolicy,
+) {
+  return call<Workspace>("workspace_update_mcp_policy", { workspaceId, mcpPolicy });
+}
+
+export function setDefaultWorkspace(workspaceId: string) {
+  return call<WorkspaceState>("workspace_set_default", { workspaceId });
+}
+
 export function getWorkspaceLayout(workspaceId: string) {
   return call<WorkspaceLayout>("workspace_layout_get", { workspaceId });
 }
@@ -66,6 +78,32 @@ export function replaceWorkspaceVariables(
   return call<WorkspaceVariable[]>("workspace_variables_replace", {
     workspaceId,
     variables,
+  });
+}
+
+export function createWorkspaceVariable(
+  workspaceId: string,
+  input: WorkspaceVariableInput,
+) {
+  return call<WorkspaceVariable>("workspace_variable_create", { workspaceId, input });
+}
+
+export function updateWorkspaceVariable(
+  workspaceId: string,
+  variableId: string,
+  input: WorkspaceVariableInput,
+) {
+  return call<WorkspaceVariable>("workspace_variable_update", {
+    workspaceId,
+    variableId,
+    input,
+  });
+}
+
+export function deleteWorkspaceVariable(workspaceId: string, variableId: string) {
+  return call<WorkspaceVariable[]>("workspace_variable_delete", {
+    workspaceId,
+    variableId,
   });
 }
 
@@ -94,6 +132,30 @@ export function updateWorkspaceEnvironmentVariables(
   });
 }
 
+export function updateWorkspaceEnvironmentMetadata(
+  workspaceId: string,
+  environmentId: string,
+  name: string,
+  sortOrder: number,
+) {
+  return call<WorkspaceEnvironment>("workspace_environment_update_metadata", {
+    workspaceId,
+    environmentId,
+    name,
+    sortOrder,
+  });
+}
+
+export function reorderWorkspaceEnvironments(
+  workspaceId: string,
+  environmentIds: string[],
+) {
+  return call<WorkspaceEnvironment[]>("workspace_environments_reorder", {
+    workspaceId,
+    environmentIds,
+  });
+}
+
 export function deleteWorkspaceEnvironment(
   workspaceId: string,
   environmentId: string,
@@ -111,6 +173,56 @@ export function setActiveWorkspaceEnvironment(
   return call<WorkspaceEnvironment[]>("workspace_environment_set_active", {
     workspaceId,
     environmentId,
+  });
+}
+
+export function createWorkspaceEnvironmentVariable(
+  workspaceId: string,
+  environmentId: string,
+  input: WorkspaceVariableInput,
+) {
+  return call<WorkspaceEnvironmentVariable>("workspace_environment_variable_create", {
+    workspaceId,
+    environmentId,
+    input,
+  });
+}
+
+export function updateWorkspaceEnvironmentVariable(
+  workspaceId: string,
+  environmentId: string,
+  variableId: string,
+  input: WorkspaceVariableInput,
+) {
+  return call<WorkspaceEnvironmentVariable>("workspace_environment_variable_update", {
+    workspaceId,
+    environmentId,
+    variableId,
+    input,
+  });
+}
+
+export function replaceWorkspaceEnvironmentVariables(
+  workspaceId: string,
+  environmentId: string,
+  variables: WorkspaceVariableInput[],
+) {
+  return call<WorkspaceEnvironmentVariable[]>("workspace_environment_variables_replace", {
+    workspaceId,
+    environmentId,
+    variables,
+  });
+}
+
+export function deleteWorkspaceEnvironmentVariable(
+  workspaceId: string,
+  environmentId: string,
+  variableId: string,
+) {
+  return call<WorkspaceEnvironmentVariable[]>("workspace_environment_variable_delete", {
+    workspaceId,
+    environmentId,
+    variableId,
   });
 }
 

@@ -32,8 +32,6 @@ export const mockWorkspace: Workspace = {
   updatedAt: new Date().toISOString(),
   deletedAt: null,
   revision: 1,
-  syncStatus: "local",
-  remoteId: null,
 };
 
 export const mockState: WorkspaceState = {
@@ -91,8 +89,6 @@ export const mockStore = {
           updatedAt: new Date().toISOString(),
           deletedAt: null,
           revision: 1,
-          syncStatus: "local",
-          remoteId: null,
         },
         {
           id: "env-default-source-mock",
@@ -108,16 +104,12 @@ export const mockStore = {
           updatedAt: new Date().toISOString(),
           deletedAt: null,
           revision: 1,
-          syncStatus: "local",
-          remoteId: null,
         },
       ],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       deletedAt: null,
       revision: 1,
-      syncStatus: "local",
-      remoteId: null,
     },
   ] as WorkspaceEnvironment[],
   collections: [] as ApiCollection[],

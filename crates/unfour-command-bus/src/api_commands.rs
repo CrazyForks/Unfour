@@ -6,8 +6,7 @@ impl CommandBus {
         workspace_id: String,
     ) -> AppResult<Vec<ApiEnvironment>> {
         Ok(self
-            .workspace
-            .list_environments(workspace_id)
+            .workspace_environments_list(workspace_id)
             .await?
             .into_iter()
             .map(crate::workspace_variable_commands::legacy_api_environment)
@@ -19,20 +18,10 @@ impl CommandBus {
         workspace_id: String,
         name: String,
     ) -> AppResult<ApiEnvironment> {
-        let environment = crate::workspace_variable_commands::legacy_api_environment(
-            self.workspace
-                .create_environment(workspace_id.clone(), name)
+        Ok(crate::workspace_variable_commands::legacy_api_environment(
+            self.workspace_environment_create(workspace_id, name)
                 .await?,
-        );
-        self.activity_log
-            .record(
-                Some(&workspace_id),
-                "api.environment.create",
-                Some(&environment.id),
-                serde_json::json!({ "name": environment.name }),
-            )
-            .await?;
-        Ok(environment)
+        ))
     }
 
     pub async fn api_environment_update(
@@ -68,20 +57,10 @@ impl CommandBus {
                 }
             })
             .collect();
-        let environment = crate::workspace_variable_commands::legacy_api_environment(
-            self.workspace
-                .update_environment(workspace_id.clone(), environment_id, name, variables)
+        Ok(crate::workspace_variable_commands::legacy_api_environment(
+            self.workspace_environment_update(workspace_id, environment_id, name, variables)
                 .await?,
-        );
-        self.activity_log
-            .record(
-                Some(&workspace_id),
-                "api.environment.update",
-                Some(&environment.id),
-                serde_json::json!({ "variableCount": environment.variables.len() }),
-            )
-            .await?;
-        Ok(environment)
+        ))
     }
 
     pub async fn api_environment_delete(
@@ -90,20 +69,11 @@ impl CommandBus {
         environment_id: String,
     ) -> AppResult<Vec<ApiEnvironment>> {
         let environments = self
-            .workspace
-            .delete_environment(workspace_id.clone(), environment_id.clone())
+            .workspace_environment_delete(workspace_id, environment_id)
             .await?
             .into_iter()
             .map(crate::workspace_variable_commands::legacy_api_environment)
             .collect();
-        self.activity_log
-            .record(
-                Some(&workspace_id),
-                "api.environment.delete",
-                Some(&environment_id),
-                serde_json::json!({ "softDelete": true }),
-            )
-            .await?;
         Ok(environments)
     }
 
@@ -113,8 +83,7 @@ impl CommandBus {
         environment_id: Option<String>,
     ) -> AppResult<Vec<ApiEnvironment>> {
         Ok(self
-            .workspace
-            .set_active_environment(workspace_id, environment_id)
+            .workspace_environment_set_active(workspace_id, environment_id)
             .await?
             .into_iter()
             .map(crate::workspace_variable_commands::legacy_api_environment)

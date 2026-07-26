@@ -22,18 +22,33 @@ impl CommandBus {
         db: LocalDb,
         secret_store: SecretStore,
     ) -> AppResult<Self> {
+        Self::from_db_with_secret_store_and_extensions(
+            db,
+            secret_store,
+            CommandBusExtensions::default(),
+        )
+        .await
+    }
+
+    pub async fn from_db_with_secret_store_and_extensions(
+        db: LocalDb,
+        secret_store: SecretStore,
+        extensions: CommandBusExtensions,
+    ) -> AppResult<Self> {
         let activity_log = ActivityLogService::new(db.clone());
         let workspace = WorkspaceService::new(db.clone());
-        workspace.ensure_default_workspace().await?;
-
-        Ok(Self {
+        let bus = Self {
+            db: db.clone(),
+            extensions,
             api_client: ApiClientService::new(db.clone()),
             activity_log,
             database: DatabaseService::new(db.clone()).with_secret_store(secret_store.clone()),
             secret_store: secret_store.clone(),
             ssh: SshService::new(db, secret_store).with_task_log_dir(task_log_dir()?),
             workspace,
-        })
+        };
+        bus.ensure_default_workspace().await?;
+        Ok(bus)
     }
 
     /// Construct a `CommandBus` with an in-memory secret store for tests and
@@ -41,6 +56,14 @@ impl CommandBus {
     pub async fn from_db(db: LocalDb) -> AppResult<Self> {
         let secret_store = SecretStore::in_memory("unfour-test");
         Self::from_db_with_secret_store(db, secret_store).await
+    }
+
+    pub async fn from_db_with_extensions(
+        db: LocalDb,
+        extensions: CommandBusExtensions,
+    ) -> AppResult<Self> {
+        let secret_store = SecretStore::in_memory("unfour-test");
+        Self::from_db_with_secret_store_and_extensions(db, secret_store, extensions).await
     }
 
     /// Construct a `CommandBus` over an existing DB without seeding the
@@ -65,6 +88,8 @@ impl CommandBus {
         let workspace = WorkspaceService::new(db.clone());
 
         Ok(Self {
+            db: db.clone(),
+            extensions: CommandBusExtensions::default(),
             api_client: ApiClientService::new(db.clone()),
             activity_log,
             database: DatabaseService::new(db.clone()).with_secret_store(secret_store.clone()),
@@ -98,7 +123,6 @@ impl CommandBus {
             storage_ready: true,
             command_bus_ready: true,
             ai_reserved_capabilities: ai_reserved::capability_ids(),
-            sync_strategy: sync_reserved::default_policy().strategy,
         })
     }
 
@@ -378,23 +402,32 @@ impl CommandBus {
         environment_type: Option<String>,
         mcp_policy: Option<String>,
     ) -> AppResult<Workspace> {
-        let workspace = self
-            .workspace
-            .create_with_options(name, environment_type, mcp_policy)
-            .await?;
-        self.activity_log
-            .record(
-                Some(&workspace.id),
-                "workspace.create",
-                Some(&workspace.id),
-                serde_json::json!({
-                    "name": workspace.name,
-                    "environment_type": workspace.environment_type,
-                    "mcp_policy": workspace.mcp_policy,
-                }),
-            )
-            .await?;
-        Ok(workspace)
+        let context = unfour_core::domain::CommandContext::local("workspace.create");
+        let executor_context = context.clone();
+        let service = self.workspace.clone();
+        self.execute_domain_command(
+            context,
+            Some(crate::transaction::CommandActivity {
+                workspace_id: None,
+                action: "workspace.create",
+                target: None,
+                details: serde_json::json!({ "businessFields": true }),
+            }),
+            move |connection| {
+                Box::pin(async move {
+                    service
+                        .create_with_options_on(
+                            connection,
+                            &executor_context,
+                            name,
+                            environment_type,
+                            mcp_policy,
+                        )
+                        .await
+                })
+            },
+        )
+        .await
     }
 
     pub async fn update_workspace_environment(
@@ -402,22 +435,65 @@ impl CommandBus {
         workspace_id: String,
         environment_type: String,
     ) -> AppResult<Workspace> {
-        let workspace = self
-            .workspace
-            .update_environment_type(workspace_id, environment_type)
-            .await?;
-        self.activity_log
-            .record(
-                Some(&workspace.id),
-                "workspace.environment.update",
-                Some(&workspace.id),
-                serde_json::json!({
-                    "environment_type": workspace.environment_type,
-                    "mcp_policy": workspace.mcp_policy,
-                }),
-            )
-            .await?;
-        Ok(workspace)
+        let context = unfour_core::domain::CommandContext::local("workspace.environment.update");
+        let executor_context = context.clone();
+        let service = self.workspace.clone();
+        let activity_workspace_id = workspace_id.clone();
+        self.execute_domain_command(
+            context,
+            Some(crate::transaction::CommandActivity {
+                workspace_id: Some(activity_workspace_id.clone()),
+                action: "workspace.environment.update",
+                target: Some(activity_workspace_id),
+                details: serde_json::json!({ "environmentType": environment_type }),
+            }),
+            move |connection| {
+                Box::pin(async move {
+                    service
+                        .update_environment_type_on(
+                            connection,
+                            &executor_context,
+                            workspace_id,
+                            environment_type,
+                        )
+                        .await
+                })
+            },
+        )
+        .await
+    }
+
+    pub async fn update_workspace_mcp_policy(
+        &self,
+        workspace_id: String,
+        mcp_policy: String,
+    ) -> AppResult<Workspace> {
+        let context = unfour_core::domain::CommandContext::local("workspace.mcp_policy.update");
+        let executor_context = context.clone();
+        let service = self.workspace.clone();
+        let activity_workspace_id = workspace_id.clone();
+        self.execute_domain_command(
+            context,
+            Some(crate::transaction::CommandActivity {
+                workspace_id: Some(activity_workspace_id.clone()),
+                action: "workspace.mcp_policy.update",
+                target: Some(activity_workspace_id),
+                details: serde_json::json!({ "mcpPolicy": mcp_policy }),
+            }),
+            move |connection| {
+                Box::pin(async move {
+                    service
+                        .update_mcp_policy_on(
+                            connection,
+                            &executor_context,
+                            workspace_id,
+                            mcp_policy,
+                        )
+                        .await
+                })
+            },
+        )
+        .await
     }
 
     pub async fn rename_workspace(
@@ -425,33 +501,122 @@ impl CommandBus {
         workspace_id: String,
         name: String,
     ) -> AppResult<Workspace> {
-        let workspace = self.workspace.rename(workspace_id, name).await?;
-        self.activity_log
-            .record(
-                Some(&workspace.id),
-                "workspace.rename",
-                Some(&workspace.id),
-                serde_json::json!({ "name": workspace.name }),
-            )
-            .await?;
-        Ok(workspace)
+        let context = unfour_core::domain::CommandContext::local("workspace.rename");
+        let executor_context = context.clone();
+        let service = self.workspace.clone();
+        let activity_workspace_id = workspace_id.clone();
+        self.execute_domain_command(
+            context,
+            Some(crate::transaction::CommandActivity {
+                workspace_id: Some(activity_workspace_id.clone()),
+                action: "workspace.rename",
+                target: Some(activity_workspace_id),
+                details: serde_json::json!({ "name": name }),
+            }),
+            move |connection| {
+                Box::pin(async move {
+                    service
+                        .rename_on(connection, &executor_context, workspace_id, name)
+                        .await
+                })
+            },
+        )
+        .await
+    }
+
+    pub async fn set_default_workspace(&self, workspace_id: String) -> AppResult<WorkspaceState> {
+        let context = unfour_core::domain::CommandContext::local("workspace.default.set");
+        let executor_context = context.clone();
+        let service = self.workspace.clone();
+        let activity_workspace_id = workspace_id.clone();
+        self.execute_domain_command(
+            context,
+            Some(crate::transaction::CommandActivity {
+                workspace_id: Some(activity_workspace_id.clone()),
+                action: "workspace.default.set",
+                target: Some(activity_workspace_id),
+                details: serde_json::json!({}),
+            }),
+            move |connection| {
+                Box::pin(async move {
+                    service
+                        .set_default_on(connection, &executor_context, workspace_id)
+                        .await
+                })
+            },
+        )
+        .await
     }
 
     pub async fn delete_workspace(&self, workspace_id: String) -> AppResult<WorkspaceState> {
-        let state = self.workspace.delete(workspace_id.clone()).await?;
-        self.activity_log
-            .record(
-                Some(&workspace_id),
-                "workspace.delete",
-                Some(&workspace_id),
-                serde_json::json!({ "softDelete": true }),
-            )
-            .await?;
-        Ok(state)
+        let context = unfour_core::domain::CommandContext::local("workspace.delete");
+        let executor_context = context.clone();
+        let service = self.workspace.clone();
+        let activity_workspace_id = workspace_id.clone();
+        self.execute_domain_command(
+            context,
+            Some(crate::transaction::CommandActivity {
+                workspace_id: Some(activity_workspace_id.clone()),
+                action: "workspace.delete",
+                target: Some(activity_workspace_id),
+                details: serde_json::json!({ "softDelete": true }),
+            }),
+            move |connection| {
+                Box::pin(async move {
+                    service
+                        .delete_on(connection, &executor_context, workspace_id)
+                        .await
+                })
+            },
+        )
+        .await
     }
 
     pub async fn set_active_workspace(&self, workspace_id: String) -> AppResult<WorkspaceState> {
-        self.workspace.set_active(workspace_id).await
+        let context = unfour_core::domain::CommandContext::local("workspace.activate");
+        let executor_context = context.clone();
+        let service = self.workspace.clone();
+        let activity_workspace_id = workspace_id.clone();
+        self.execute_domain_command(
+            context,
+            Some(crate::transaction::CommandActivity {
+                workspace_id: Some(activity_workspace_id.clone()),
+                action: "workspace.activate",
+                target: Some(activity_workspace_id),
+                details: serde_json::json!({ "lastOpenedAtChanged": true }),
+            }),
+            move |connection| {
+                Box::pin(async move {
+                    service
+                        .set_active_on(connection, &executor_context, workspace_id)
+                        .await
+                })
+            },
+        )
+        .await
+    }
+
+    async fn ensure_default_workspace(&self) -> AppResult<()> {
+        let context = unfour_core::domain::CommandContext::migration("workspace.ensure_default");
+        let executor_context = context.clone();
+        let service = self.workspace.clone();
+        self.execute_domain_command(
+            context,
+            Some(crate::transaction::CommandActivity {
+                workspace_id: None,
+                action: "workspace.ensure_default",
+                target: None,
+                details: serde_json::json!({}),
+            }),
+            move |connection| {
+                Box::pin(async move {
+                    service
+                        .ensure_default_workspace_on(connection, &executor_context)
+                        .await
+                })
+            },
+        )
+        .await
     }
 }
 

@@ -57,6 +57,19 @@ fn ephemeral_adapter_executes_environment_crud() {
         .expect("create environment");
     assert_eq!(created.name, "QA");
     assert!(created.variables.is_empty());
+    let activity = adapter
+        .execute_read(ReadCommand::ListActivity {
+            workspace_id: Some(workspace.workspace_id.clone()),
+            limit: Some(10),
+        })
+        .expect("read environment activity through adapter");
+    let ReadCommandResult::Activity(activity) = activity else {
+        panic!("expected activity result");
+    };
+    assert!(activity
+        .activity
+        .iter()
+        .any(|item| item.action == "workspace.environment.create"));
 
     let updated = adapter
         .update_api_environment(

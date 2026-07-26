@@ -11,7 +11,7 @@ pub mod commands;
 
 use std::sync::{Arc, Mutex};
 use tauri::{ipc::Channel, Manager, Runtime};
-use unfour_command_bus::CommandBus;
+use unfour_command_bus::{CommandBus, CommandBusExtensions};
 use unfour_local_storage::LocalDb;
 use unfour_secret_store::SecretStore;
 
@@ -145,6 +145,11 @@ pub struct AppState {
     _logging_guard: Option<unfour_diag::LoggingGuard>,
 }
 
+#[derive(Clone, Default)]
+pub struct UnfourAppExtensions {
+    pub command_bus: CommandBusExtensions,
+}
+
 /// Apply the shared plugins and command-bus setup to a Tauri builder.
 ///
 /// The caller is responsible for the per-edition tail of the chain:
@@ -171,6 +176,17 @@ pub fn configure_core_app<R>(
 where
     R: Runtime,
 {
+    configure_core_app_with_extensions(builder, config, UnfourAppExtensions::default())
+}
+
+pub fn configure_core_app_with_extensions<R>(
+    builder: tauri::Builder<R>,
+    config: UnfourAppConfig,
+    extensions: UnfourAppExtensions,
+) -> tauri::Builder<R>
+where
+    R: Runtime,
+{
     let config = normalize_config(config);
     builder
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
@@ -188,8 +204,12 @@ where
                 let paths = unfour_paths::initialize_unfour_storage()?;
                 let db = LocalDb::connect_path(paths.database_path).await?;
                 db.migrate().await?;
-                CommandBus::from_db_with_secret_store(db, SecretStore::new(SECRET_STORE_NAMESPACE))
-                    .await
+                CommandBus::from_db_with_secret_store_and_extensions(
+                    db,
+                    SecretStore::new(SECRET_STORE_NAMESPACE),
+                    extensions.command_bus.clone(),
+                )
+                .await
             })?;
 
             let terminal_channel: TerminalChannelSlot = Arc::new(Mutex::new(None));
@@ -401,12 +421,21 @@ macro_rules! generate_handlers {
             unfour_app::commands::workspace_list,
             unfour_app::commands::workspace_variables_list,
             unfour_app::commands::workspace_variables_replace,
+            unfour_app::commands::workspace_variable_create,
+            unfour_app::commands::workspace_variable_update,
+            unfour_app::commands::workspace_variable_delete,
             unfour_app::commands::workspace_variables_resolve,
             unfour_app::commands::workspace_environments_list,
             unfour_app::commands::workspace_environment_create,
             unfour_app::commands::workspace_environment_update,
+            unfour_app::commands::workspace_environment_update_metadata,
+            unfour_app::commands::workspace_environments_reorder,
             unfour_app::commands::workspace_environment_delete,
             unfour_app::commands::workspace_environment_set_active,
+            unfour_app::commands::workspace_environment_variable_create,
+            unfour_app::commands::workspace_environment_variable_update,
+            unfour_app::commands::workspace_environment_variables_replace,
+            unfour_app::commands::workspace_environment_variable_delete,
             unfour_app::commands::api_environments_list,
             unfour_app::commands::api_environment_create,
             unfour_app::commands::api_environment_update,
@@ -431,6 +460,8 @@ macro_rules! generate_handlers {
             unfour_app::commands::workspace_rename,
             unfour_app::commands::workspace_set_active,
             unfour_app::commands::workspace_update_environment,
+            unfour_app::commands::workspace_update_mcp_policy,
+            unfour_app::commands::workspace_set_default,
             unfour_app::commands::api_history_detail,
             unfour_app::commands::api_history_list,
             unfour_app::commands::api_request_delete,

@@ -9,13 +9,11 @@ export function StatusBarPlaceholder({
   activeWorkspace,
   healthReady,
   rightAccessory,
-  syncStrategy,
 }: {
   activeTab: WorkspaceTab;
   activeWorkspace?: Workspace;
   healthReady: boolean;
   rightAccessory?: ReactNode;
-  syncStrategy: string;
 }) {
   const { t } = useI18n();
 
@@ -46,7 +44,6 @@ export function StatusBarPlaceholder({
           <Wifi size={13} />
           {t("app.status.connected")}
         </span>
-        <span className="hidden opacity-90 xl:inline">{syncStrategy}</span>
         <span className="hidden font-mono opacity-90 lg:inline">UTF-8</span>
         <span className="hidden font-mono opacity-90 md:inline">
           {activeTab.kind === "api" ? "JSON" : moduleLabel(activeTab, t)}

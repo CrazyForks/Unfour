@@ -29,7 +29,6 @@ pub(super) fn registered_tools() -> Vec<RegisteredTool> {
                         "type": "array",
                         "items": { "type": "string" }
                     },
-                    "syncStrategy": { "type": "string" },
                     "source": { "type": "string", "const": "command-bus" }
                 },
                 "required": ["appName", "storageReady", "commandBusReady", "source"],
@@ -60,7 +59,6 @@ fn system_health(
         "storageReady": health.storage_ready,
         "commandBusReady": health.command_bus_ready,
         "aiReservedCapabilities": health.ai_reserved_capabilities,
-        "syncStrategy": health.sync_strategy,
         "source": "command-bus"
     }))
 }

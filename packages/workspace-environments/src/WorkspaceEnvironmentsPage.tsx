@@ -1,6 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Circle, MoreHorizontal, Plus, Settings2, X } from "lucide-react";
-import type { WorkspaceEnvironment } from "@unfour/command-client";
+import type {
+  WorkspaceEnvironment,
+  WorkspaceEnvironmentVariable,
+  WorkspaceVariable,
+} from "@unfour/command-client";
 import {
   Button,
   cn,
@@ -32,11 +36,15 @@ export function WorkspaceEnvironmentsPage({
   initialEnvironmentId = null,
   onClose,
   onDirtyChange,
+  variableDecoration,
   workspaceId,
 }: {
   initialEnvironmentId?: string | null;
   onClose: () => void;
   onDirtyChange?: (dirty: boolean) => void;
+  variableDecoration?: (
+    variable: WorkspaceVariable | WorkspaceEnvironmentVariable,
+  ) => ReactNode;
   workspaceId: string;
 }) {
   const { t } = useI18n();
@@ -169,6 +177,7 @@ export function WorkspaceEnvironmentsPage({
           saving={createMut.isPending || updateMut.isPending || replaceMut.isPending}
           workspaceVariables={workspaceVariables}
           workspaceVariablesLoading={workspaceVariablesLoading}
+          variableDecoration={variableDecoration}
         />
       </div>
       <ConfirmDialog

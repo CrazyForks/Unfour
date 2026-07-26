@@ -9,4 +9,10 @@ export type {
   DesktopAppExtensions,
   DesktopAppExtensionSlot,
   DesktopAppSettingsSection,
+  DesktopAppWorkspaceAction,
+  DesktopAppWorkspaceActionContext,
+  DesktopAppWorkspaceDecoration,
+  DesktopAppWorkspaceDecorationProps,
+  DesktopAppWorkspaceVariableDecoration,
+  DesktopAppWorkspaceVariableDecorationProps,
 } from "./extensions";

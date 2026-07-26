@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type {
   WorkspaceEnvironment,
+  WorkspaceEnvironmentVariable,
   WorkspaceVariable,
   WorkspaceVariableInput,
 } from "@unfour/command-client";
@@ -47,6 +48,7 @@ export function WorkspaceEnvironmentEditor({
   saving,
   workspaceVariables,
   workspaceVariablesLoading,
+  variableDecoration,
 }: {
   environments: WorkspaceEnvironment[];
   environmentsLoading: boolean;
@@ -66,6 +68,9 @@ export function WorkspaceEnvironmentEditor({
   saving: boolean;
   workspaceVariables: WorkspaceVariable[];
   workspaceVariablesLoading: boolean;
+  variableDecoration?: (
+    variable: WorkspaceVariable | WorkspaceEnvironmentVariable,
+  ) => ReactNode;
 }) {
   const { t } = useI18n();
   const [draft, setDraft] = useState<EnvironmentDraft>({ kind: "none" });
@@ -89,6 +94,9 @@ export function WorkspaceEnvironmentEditor({
     () => new Set(workspaceVariables.map((variable) => variable.key)),
     [workspaceVariables],
   );
+  const decoratedVariables = isWorkspaceDraft(draft)
+    ? workspaceVariables
+    : selectedEnvironment?.variables ?? [];
 
   useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange]);
 
@@ -261,6 +269,16 @@ export function WorkspaceEnvironmentEditor({
             )
           }
           overridingKeys={isWorkspace ? undefined : overridingKeys}
+          renderDecoration={
+            variableDecoration
+              ? (item) => {
+                  const variable = decoratedVariables.find(
+                    (candidate) => candidate.id === item.id,
+                  );
+                  return variable ? variableDecoration(variable) : null;
+                }
+              : undefined
+          }
           title={t("variables.variablesLabel")}
         />
         {saveError && (
@@ -333,4 +351,8 @@ function hasDuplicateKeys(variables: WorkspaceVariableInput[]) {
     keys.add(key);
   }
   return false;
+}
+
+function isWorkspaceDraft(draft: EnvironmentDraft): draft is WorkspaceVariablesDraft {
+  return draft.kind === "workspace";
 }

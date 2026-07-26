@@ -1,7 +1,16 @@
+mod external_apply;
 mod layout;
+mod snapshot;
+mod variable_executor;
+mod variable_persistence;
 mod variables;
 
 use chrono::Utc;
+use sqlx::SqliteConnection;
+use unfour_core::domain::{
+    CommandContext, DomainCommandResult, DomainEntityKey, DomainEntityType, DomainMutation,
+    MutationOperation,
+};
 use unfour_core::models::{Workspace, WorkspaceLayout, WorkspaceState};
 use unfour_core::{AppError, AppResult};
 use unfour_local_storage::LocalDb;
@@ -13,7 +22,7 @@ const DEFAULT_MCP_POLICY: &str = "auto";
 
 #[derive(Clone)]
 pub struct WorkspaceService {
-    db: LocalDb,
+    pub(crate) db: LocalDb,
 }
 
 impl WorkspaceService {
@@ -21,113 +30,88 @@ impl WorkspaceService {
         Self { db }
     }
 
-    pub async fn ensure_default_workspace(&self) -> AppResult<()> {
-        let count: (i64,) =
-            sqlx::query_as("SELECT COUNT(*) FROM workspaces WHERE deleted_at IS NULL")
-                .fetch_one(self.db.pool())
+    pub async fn ensure_default_workspace_on(
+        &self,
+        connection: &mut SqliteConnection,
+        context: &CommandContext,
+    ) -> AppResult<DomainCommandResult<()>> {
+        let count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM workspaces WHERE deleted_at IS NULL")
+                .fetch_one(&mut *connection)
                 .await?;
-
-        if count.0 > 0 {
-            return Ok(());
+        if count > 0 {
+            return Ok(DomainCommandResult::unchanged(()));
         }
 
         let now = Utc::now().to_rfc3339();
         let id = unfour_core::id::new_id();
-
         sqlx::query(
             r#"
             INSERT INTO workspaces (
               id, name, is_default, last_opened_at, environment_type, mcp_policy,
-              created_at, updated_at, revision, sync_status
+              created_at, updated_at, revision
             )
-            VALUES (?1, 'Default Workspace', 1, ?2, ?3, ?4, ?2, ?2, 1, 'local')
+            VALUES (?1, 'Default Workspace', 1, ?2, ?3, ?4, ?2, ?2, 1)
             "#,
         )
         .bind(&id)
         .bind(&now)
         .bind(DEFAULT_ENVIRONMENT_TYPE)
         .bind(DEFAULT_MCP_POLICY)
-        .execute(self.db.pool())
+        .execute(&mut *connection)
         .await?;
+        insert_workspace_companions(connection, &id, &now).await?;
+        write_setting_on(connection, "active_workspace_id", &id).await?;
 
-        sqlx::query(
-            r#"
-            INSERT INTO workspace_settings (
-              workspace_id, layout_json, created_at, updated_at,
-              revision, sync_status
-            )
-            VALUES (?1, '{}', ?2, ?2, 1, 'local')
-            "#,
-        )
-        .bind(&id)
-        .bind(&now)
-        .execute(self.db.pool())
-        .await?;
-
-        sqlx::query(
-            r#"
-            INSERT INTO workspace_local_state (
-              workspace_id, active_environment_id, created_at, updated_at
-            ) VALUES (?1, NULL, ?2, ?2)
-            "#,
-        )
-        .bind(&id)
-        .bind(&now)
-        .execute(self.db.pool())
-        .await?;
-
-        self.write_setting("active_workspace_id", &id).await
+        Ok(DomainCommandResult::new(
+            (),
+            vec![workspace_mutation(
+                context,
+                MutationOperation::Upsert,
+                &id,
+                1,
+            )],
+        ))
     }
 
     pub async fn state(&self) -> AppResult<WorkspaceState> {
-        let workspaces = self.list().await?;
-        let active_workspace_id = self.active_workspace_id(&workspaces).await?;
-
-        Ok(WorkspaceState {
-            active_workspace_id,
-            workspaces,
-        })
+        let mut connection = self.db.pool().acquire().await?;
+        let state = state_on(&mut connection).await?;
+        if read_setting_on(&mut connection, "active_workspace_id")
+            .await?
+            .as_deref()
+            != Some(state.active_workspace_id.as_str())
+        {
+            write_setting_on(
+                &mut connection,
+                "active_workspace_id",
+                &state.active_workspace_id,
+            )
+            .await?;
+        }
+        Ok(state)
     }
 
     pub async fn state_read_only(&self) -> AppResult<WorkspaceState> {
-        let workspaces = self.list().await?;
-        let active_workspace_id = self.active_workspace_id_read_only(&workspaces).await?;
-
-        Ok(WorkspaceState {
-            active_workspace_id,
-            workspaces,
-        })
+        let mut connection = self.db.pool().acquire().await?;
+        state_on(&mut connection).await
     }
 
     pub async fn list(&self) -> AppResult<Vec<Workspace>> {
-        let items = sqlx::query_as::<_, Workspace>(
-            r#"
-            SELECT
-              id, name, is_default, last_opened_at, environment_type, mcp_policy,
-              created_at, updated_at, deleted_at, revision, sync_status, remote_id
-            FROM workspaces
-            WHERE deleted_at IS NULL
-            ORDER BY is_default DESC, last_opened_at DESC, created_at ASC
-            "#,
-        )
-        .fetch_all(self.db.pool())
-        .await?;
-
-        Ok(items)
+        let mut connection = self.db.pool().acquire().await?;
+        list_on(&mut connection).await
     }
 
-    pub async fn create(&self, name: String) -> AppResult<Workspace> {
-        self.create_with_options(name, None, None).await
-    }
-
-    pub async fn create_with_options(
+    pub async fn create_with_options_on(
         &self,
+        connection: &mut SqliteConnection,
+        context: &CommandContext,
         name: String,
         environment_type: Option<String>,
         mcp_policy: Option<String>,
-    ) -> AppResult<Workspace> {
+    ) -> AppResult<DomainCommandResult<Workspace>> {
         let name = normalize_name(name)?;
-        self.assert_name_unique(&name, None).await?;
+        assert_name_unique_on(connection, &name, None).await?;
         let environment_type = normalize_environment_type(environment_type)?;
         let mcp_policy = normalize_mcp_policy(mcp_policy)?;
         let now = Utc::now().to_rfc3339();
@@ -137,9 +121,9 @@ impl WorkspaceService {
             r#"
             INSERT INTO workspaces (
               id, name, is_default, last_opened_at, environment_type, mcp_policy,
-              created_at, updated_at, revision, sync_status
+              created_at, updated_at, revision
             )
-            VALUES (?1, ?2, 0, ?3, ?4, ?5, ?3, ?3, 1, 'local')
+            VALUES (?1, ?2, 0, ?3, ?4, ?5, ?3, ?3, 1)
             "#,
         )
         .bind(&id)
@@ -147,124 +131,154 @@ impl WorkspaceService {
         .bind(&now)
         .bind(&environment_type)
         .bind(&mcp_policy)
-        .execute(self.db.pool())
+        .execute(&mut *connection)
         .await?;
+        insert_workspace_companions(connection, &id, &now).await?;
+        write_setting_on(connection, "active_workspace_id", &id).await?;
 
-        sqlx::query(
-            r#"
-            INSERT INTO workspace_settings (
-              workspace_id, layout_json, created_at, updated_at,
-              revision, sync_status
-            )
-            VALUES (?1, '{}', ?2, ?2, 1, 'local')
-            "#,
-        )
-        .bind(&id)
-        .bind(&now)
-        .execute(self.db.pool())
-        .await?;
-
-        sqlx::query(
-            r#"
-            INSERT INTO workspace_local_state (
-              workspace_id, active_environment_id, created_at, updated_at
-            ) VALUES (?1, NULL, ?2, ?2)
-            "#,
-        )
-        .bind(&id)
-        .bind(&now)
-        .execute(self.db.pool())
-        .await?;
-
-        self.write_setting("active_workspace_id", &id).await?;
-        self.get(&id).await
+        let workspace = get_workspace_on(connection, &id, false).await?;
+        Ok(DomainCommandResult::new(
+            workspace,
+            vec![workspace_mutation(
+                context,
+                MutationOperation::Upsert,
+                &id,
+                1,
+            )],
+        ))
     }
 
-    pub async fn update_environment_type(
+    pub async fn update_environment_type_on(
         &self,
+        connection: &mut SqliteConnection,
+        context: &CommandContext,
         workspace_id: String,
         environment_type: String,
-    ) -> AppResult<Workspace> {
+    ) -> AppResult<DomainCommandResult<Workspace>> {
         let environment_type = normalize_environment_type(Some(environment_type))?;
-        let now = Utc::now().to_rfc3339();
-
-        let result = sqlx::query(
-            r#"
-            UPDATE workspaces
-            SET environment_type = ?1, updated_at = ?2, revision = revision + 1, sync_status = 'pending'
-            WHERE id = ?3 AND deleted_at IS NULL
-            "#,
-        )
-        .bind(environment_type)
-        .bind(now)
-        .bind(&workspace_id)
-        .execute(self.db.pool())
-        .await?;
-
-        if result.rows_affected() == 0 {
-            return Err(AppError::NotFound("workspace".to_string()));
+        let current = get_workspace_on(connection, &workspace_id, false).await?;
+        if current.environment_type == environment_type {
+            return Ok(DomainCommandResult::unchanged(current));
         }
-
-        self.get(&workspace_id).await
+        update_workspace_field(
+            connection,
+            "environment_type",
+            &environment_type,
+            &workspace_id,
+        )
+        .await?;
+        changed_workspace(connection, context, &workspace_id).await
     }
 
-    pub async fn rename(&self, workspace_id: String, name: String) -> AppResult<Workspace> {
+    pub async fn update_mcp_policy_on(
+        &self,
+        connection: &mut SqliteConnection,
+        context: &CommandContext,
+        workspace_id: String,
+        mcp_policy: String,
+    ) -> AppResult<DomainCommandResult<Workspace>> {
+        let mcp_policy = normalize_mcp_policy(Some(mcp_policy))?;
+        let current = get_workspace_on(connection, &workspace_id, false).await?;
+        if current.mcp_policy == mcp_policy {
+            return Ok(DomainCommandResult::unchanged(current));
+        }
+        update_workspace_field(connection, "mcp_policy", &mcp_policy, &workspace_id).await?;
+        changed_workspace(connection, context, &workspace_id).await
+    }
+
+    pub async fn rename_on(
+        &self,
+        connection: &mut SqliteConnection,
+        context: &CommandContext,
+        workspace_id: String,
+        name: String,
+    ) -> AppResult<DomainCommandResult<Workspace>> {
         let name = normalize_name(name)?;
-        self.assert_name_unique(&name, Some(&workspace_id)).await?;
-        let now = Utc::now().to_rfc3339();
-
-        let result = sqlx::query(
-            r#"
-            UPDATE workspaces
-            SET name = ?1, updated_at = ?2, revision = revision + 1, sync_status = 'pending'
-            WHERE id = ?3 AND deleted_at IS NULL
-            "#,
-        )
-        .bind(name)
-        .bind(now)
-        .bind(&workspace_id)
-        .execute(self.db.pool())
-        .await?;
-
-        if result.rows_affected() == 0 {
-            return Err(AppError::NotFound("workspace".to_string()));
+        let current = get_workspace_on(connection, &workspace_id, false).await?;
+        if current.name == name {
+            return Ok(DomainCommandResult::unchanged(current));
         }
-
-        self.get(&workspace_id).await
+        assert_name_unique_on(connection, &name, Some(&workspace_id)).await?;
+        update_workspace_field(connection, "name", &name, &workspace_id).await?;
+        changed_workspace(connection, context, &workspace_id).await
     }
 
-    pub async fn delete(&self, workspace_id: String) -> AppResult<WorkspaceState> {
-        let active_count: (i64,) =
-            sqlx::query_as("SELECT COUNT(*) FROM workspaces WHERE deleted_at IS NULL")
-                .fetch_one(self.db.pool())
-                .await?;
+    pub async fn set_default_on(
+        &self,
+        connection: &mut SqliteConnection,
+        context: &CommandContext,
+        workspace_id: String,
+    ) -> AppResult<DomainCommandResult<WorkspaceState>> {
+        get_workspace_on(connection, &workspace_id, false).await?;
+        let current: Vec<(String, bool)> = sqlx::query_as(
+            "SELECT id, is_default FROM workspaces WHERE deleted_at IS NULL ORDER BY id",
+        )
+        .fetch_all(&mut *connection)
+        .await?;
+        let now = Utc::now().to_rfc3339();
+        let mut mutations = Vec::new();
+        for (id, is_default) in current {
+            let next = id == workspace_id;
+            if is_default == next {
+                continue;
+            }
+            let revision: i64 = sqlx::query_scalar(
+                r#"
+                UPDATE workspaces
+                SET is_default = ?1, updated_at = ?2, revision = revision + 1
+                WHERE id = ?3 AND deleted_at IS NULL
+                RETURNING revision
+                "#,
+            )
+            .bind(next)
+            .bind(&now)
+            .bind(&id)
+            .fetch_one(&mut *connection)
+            .await?;
+            mutations.push(workspace_mutation(
+                context,
+                MutationOperation::Upsert,
+                &id,
+                revision,
+            ));
+        }
+        let state = state_on(connection).await?;
+        Ok(DomainCommandResult::new(state, mutations))
+    }
 
-        if active_count.0 <= 1 {
+    pub async fn delete_on(
+        &self,
+        connection: &mut SqliteConnection,
+        context: &CommandContext,
+        workspace_id: String,
+    ) -> AppResult<DomainCommandResult<WorkspaceState>> {
+        let active_count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM workspaces WHERE deleted_at IS NULL")
+                .fetch_one(&mut *connection)
+                .await?;
+        if active_count <= 1 {
             return Err(AppError::Validation(
                 "at least one workspace must remain".to_string(),
             ));
         }
-
+        get_workspace_on(connection, &workspace_id, false).await?;
         let now = Utc::now().to_rfc3339();
-        let result = sqlx::query(
+        let revision: i64 = sqlx::query_scalar(
             r#"
             UPDATE workspaces
-            SET deleted_at = ?1, updated_at = ?1, revision = revision + 1, sync_status = 'deleted'
+            SET deleted_at = ?1, updated_at = ?1, revision = revision + 1
             WHERE id = ?2 AND deleted_at IS NULL
+            RETURNING revision
             "#,
         )
         .bind(&now)
         .bind(&workspace_id)
-        .execute(self.db.pool())
+        .fetch_one(&mut *connection)
         .await?;
 
-        if result.rows_affected() == 0 {
-            return Err(AppError::NotFound("workspace".to_string()));
-        }
-
-        let active = self.read_setting("active_workspace_id").await?;
+        let active = read_setting_on(connection, "active_workspace_id").await?;
         if active.as_deref() == Some(&workspace_id) {
-            let next: (String,) = sqlx::query_as(
+            let next: String = sqlx::query_scalar(
                 r#"
                 SELECT id FROM workspaces
                 WHERE deleted_at IS NULL
@@ -272,32 +286,60 @@ impl WorkspaceService {
                 LIMIT 1
                 "#,
             )
-            .fetch_one(self.db.pool())
+            .fetch_one(&mut *connection)
             .await?;
-            self.write_setting("active_workspace_id", &next.0).await?;
+            write_setting_on(connection, "active_workspace_id", &next).await?;
         }
 
-        self.state().await
+        Ok(DomainCommandResult::new(
+            state_on(connection).await?,
+            vec![workspace_mutation(
+                context,
+                MutationOperation::Delete,
+                &workspace_id,
+                revision,
+            )],
+        ))
     }
 
-    pub async fn set_active(&self, workspace_id: String) -> AppResult<WorkspaceState> {
-        self.get(&workspace_id).await?;
+    pub async fn set_active_on(
+        &self,
+        connection: &mut SqliteConnection,
+        context: &CommandContext,
+        workspace_id: String,
+    ) -> AppResult<DomainCommandResult<WorkspaceState>> {
+        let current = get_workspace_on(connection, &workspace_id, false).await?;
         let now = Utc::now().to_rfc3339();
-
-        sqlx::query("UPDATE workspaces SET last_opened_at = ?1, updated_at = ?1 WHERE id = ?2")
+        let mut mutations = Vec::new();
+        if current.last_opened_at.as_deref() != Some(now.as_str()) {
+            let revision: i64 = sqlx::query_scalar(
+                r#"
+                UPDATE workspaces
+                SET last_opened_at = ?1, updated_at = ?1, revision = revision + 1
+                WHERE id = ?2 AND deleted_at IS NULL
+                RETURNING revision
+                "#,
+            )
             .bind(&now)
             .bind(&workspace_id)
-            .execute(self.db.pool())
+            .fetch_one(&mut *connection)
             .await?;
-
-        self.write_setting("active_workspace_id", &workspace_id)
-            .await?;
-        self.state().await
+            mutations.push(workspace_mutation(
+                context,
+                MutationOperation::Upsert,
+                &workspace_id,
+                revision,
+            ));
+        }
+        write_setting_on(connection, "active_workspace_id", &workspace_id).await?;
+        Ok(DomainCommandResult::new(
+            state_on(connection).await?,
+            mutations,
+        ))
     }
 
     pub async fn layout(&self, workspace_id: String) -> AppResult<WorkspaceLayout> {
         self.get(&workspace_id).await?;
-
         let row: (String, String) = sqlx::query_as(
             r#"
             SELECT layout_json, updated_at
@@ -308,7 +350,6 @@ impl WorkspaceService {
         .bind(&workspace_id)
         .fetch_one(self.db.pool())
         .await?;
-
         Ok(parse_layout(&workspace_id, &row.0, &row.1))
     }
 
@@ -321,7 +362,6 @@ impl WorkspaceService {
         let stored = StoredWorkspaceLayout::try_from_layout(&workspace_id, layout)?;
         let now = Utc::now().to_rfc3339();
         let layout_json = serde_json::to_string(&stored)?;
-
         sqlx::query(
             r#"
             UPDATE workspace_settings
@@ -334,103 +374,207 @@ impl WorkspaceService {
         .bind(&workspace_id)
         .execute(self.db.pool())
         .await?;
-
         self.layout(workspace_id).await
     }
 
-    async fn get(&self, workspace_id: &str) -> AppResult<Workspace> {
-        let workspace = sqlx::query_as::<_, Workspace>(
-            r#"
-            SELECT
-              id, name, is_default, last_opened_at, environment_type, mcp_policy,
-              created_at, updated_at, deleted_at, revision, sync_status, remote_id
-            FROM workspaces
-            WHERE id = ?1 AND deleted_at IS NULL
-            "#,
-        )
-        .bind(workspace_id)
-        .fetch_optional(self.db.pool())
-        .await?;
-
-        workspace.ok_or_else(|| AppError::NotFound("workspace".to_string()))
-    }
-
-    async fn active_workspace_id(&self, workspaces: &[Workspace]) -> AppResult<String> {
-        let stored = self.read_setting("active_workspace_id").await?;
-        if let Some(id) = stored {
-            if workspaces.iter().any(|workspace| workspace.id == id) {
-                return Ok(id);
-            }
-        }
-
-        let fallback = workspaces
-            .first()
-            .ok_or_else(|| AppError::NotFound("workspace".to_string()))?;
-        self.write_setting("active_workspace_id", &fallback.id)
-            .await?;
-        Ok(fallback.id.clone())
-    }
-
-    async fn active_workspace_id_read_only(&self, workspaces: &[Workspace]) -> AppResult<String> {
-        let stored = self.read_setting("active_workspace_id").await?;
-        if let Some(id) = stored {
-            if workspaces.iter().any(|workspace| workspace.id == id) {
-                return Ok(id);
-            }
-        }
-
-        workspaces
-            .first()
-            .map(|workspace| workspace.id.clone())
-            .ok_or_else(|| AppError::NotFound("workspace".to_string()))
-    }
-
-    async fn read_setting(&self, key: &str) -> AppResult<Option<String>> {
-        let value: Option<(String,)> =
-            sqlx::query_as("SELECT value FROM app_settings WHERE key = ?1")
-                .bind(key)
-                .fetch_optional(self.db.pool())
-                .await?;
-
-        Ok(value.map(|item| item.0))
-    }
-
-    async fn write_setting(&self, key: &str, value: &str) -> AppResult<()> {
-        sqlx::query(
-            r#"
-            INSERT INTO app_settings (key, value, updated_at)
-            VALUES (?1, ?2, ?3)
-            ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
-            "#,
-        )
-        .bind(key)
-        .bind(value)
-        .bind(Utc::now().to_rfc3339())
-        .execute(self.db.pool())
-        .await?;
-
-        Ok(())
-    }
-
-    async fn assert_name_unique(&self, name: &str, except_id: Option<&str>) -> AppResult<()> {
-        let existing: Option<(String,)> = sqlx::query_as(
-            "SELECT id FROM workspaces WHERE name COLLATE NOCASE = ?1 AND deleted_at IS NULL AND (?2 IS NULL OR id <> ?2) LIMIT 1",
-        )
-        .bind(name)
-        .bind(except_id)
-        .fetch_optional(self.db.pool())
-        .await?;
-
-        if existing.is_some() {
-            return Err(AppError::Validation(format!(
-                "workspace name already exists: {name}"
-            )));
-        }
-        Ok(())
+    pub(crate) async fn get(&self, workspace_id: &str) -> AppResult<Workspace> {
+        let mut connection = self.db.pool().acquire().await?;
+        get_workspace_on(&mut connection, workspace_id, false).await
     }
 }
 
-fn normalize_name(name: String) -> AppResult<String> {
+pub(crate) async fn get_workspace_on(
+    connection: &mut SqliteConnection,
+    workspace_id: &str,
+    include_deleted: bool,
+) -> AppResult<Workspace> {
+    let workspace = sqlx::query_as::<_, Workspace>(
+        r#"
+        SELECT
+          id, name, is_default, last_opened_at, environment_type, mcp_policy,
+          created_at, updated_at, deleted_at, revision
+        FROM workspaces
+        WHERE id = ?1 AND (?2 OR deleted_at IS NULL)
+        "#,
+    )
+    .bind(workspace_id)
+    .bind(include_deleted)
+    .fetch_optional(&mut *connection)
+    .await?;
+    workspace.ok_or_else(|| AppError::NotFound("workspace".to_string()))
+}
+
+pub(crate) async fn list_on(connection: &mut SqliteConnection) -> AppResult<Vec<Workspace>> {
+    Ok(sqlx::query_as::<_, Workspace>(
+        r#"
+        SELECT
+          id, name, is_default, last_opened_at, environment_type, mcp_policy,
+          created_at, updated_at, deleted_at, revision
+        FROM workspaces
+        WHERE deleted_at IS NULL
+        ORDER BY is_default DESC, last_opened_at DESC, created_at ASC
+        "#,
+    )
+    .fetch_all(&mut *connection)
+    .await?)
+}
+
+pub(crate) async fn state_on(connection: &mut SqliteConnection) -> AppResult<WorkspaceState> {
+    let workspaces = list_on(connection).await?;
+    let stored = read_setting_on(connection, "active_workspace_id").await?;
+    let active_workspace_id = stored
+        .filter(|id| workspaces.iter().any(|workspace| workspace.id == *id))
+        .or_else(|| workspaces.first().map(|workspace| workspace.id.clone()))
+        .ok_or_else(|| AppError::NotFound("workspace".to_string()))?;
+    Ok(WorkspaceState {
+        active_workspace_id,
+        workspaces,
+    })
+}
+
+pub(crate) async fn read_setting_on(
+    connection: &mut SqliteConnection,
+    key: &str,
+) -> AppResult<Option<String>> {
+    let value: Option<String> = sqlx::query_scalar("SELECT value FROM app_settings WHERE key = ?1")
+        .bind(key)
+        .fetch_optional(&mut *connection)
+        .await?;
+    Ok(value)
+}
+
+pub(crate) async fn write_setting_on(
+    connection: &mut SqliteConnection,
+    key: &str,
+    value: &str,
+) -> AppResult<()> {
+    sqlx::query(
+        r#"
+        INSERT INTO app_settings (key, value, updated_at)
+        VALUES (?1, ?2, ?3)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+        "#,
+    )
+    .bind(key)
+    .bind(value)
+    .bind(Utc::now().to_rfc3339())
+    .execute(&mut *connection)
+    .await?;
+    Ok(())
+}
+
+pub(crate) async fn insert_workspace_companions(
+    connection: &mut SqliteConnection,
+    workspace_id: &str,
+    now: &str,
+) -> AppResult<()> {
+    sqlx::query(
+        r#"
+        INSERT INTO workspace_settings (
+          workspace_id, layout_json, created_at, updated_at, revision, sync_status
+        ) VALUES (?1, '{}', ?2, ?2, 1, 'local')
+        "#,
+    )
+    .bind(workspace_id)
+    .bind(now)
+    .execute(&mut *connection)
+    .await?;
+    sqlx::query(
+        r#"
+        INSERT INTO workspace_local_state (
+          workspace_id, active_environment_id, created_at, updated_at
+        ) VALUES (?1, NULL, ?2, ?2)
+        "#,
+    )
+    .bind(workspace_id)
+    .bind(now)
+    .execute(&mut *connection)
+    .await?;
+    Ok(())
+}
+
+async fn assert_name_unique_on(
+    connection: &mut SqliteConnection,
+    name: &str,
+    except_id: Option<&str>,
+) -> AppResult<()> {
+    let existing: Option<String> = sqlx::query_scalar(
+        "SELECT id FROM workspaces WHERE name COLLATE NOCASE = ?1 AND deleted_at IS NULL AND (?2 IS NULL OR id <> ?2) LIMIT 1",
+    )
+    .bind(name)
+    .bind(except_id)
+    .fetch_optional(&mut *connection)
+    .await?;
+    if existing.is_some() {
+        return Err(AppError::Validation(format!(
+            "workspace name already exists: {name}"
+        )));
+    }
+    Ok(())
+}
+
+async fn update_workspace_field(
+    connection: &mut SqliteConnection,
+    field: &str,
+    value: &str,
+    workspace_id: &str,
+) -> AppResult<()> {
+    let sql = match field {
+        "name" => {
+            "UPDATE workspaces SET name = ?1, updated_at = ?2, revision = revision + 1 WHERE id = ?3 AND deleted_at IS NULL"
+        }
+        "environment_type" => {
+            "UPDATE workspaces SET environment_type = ?1, updated_at = ?2, revision = revision + 1 WHERE id = ?3 AND deleted_at IS NULL"
+        }
+        "mcp_policy" => {
+            "UPDATE workspaces SET mcp_policy = ?1, updated_at = ?2, revision = revision + 1 WHERE id = ?3 AND deleted_at IS NULL"
+        }
+        _ => return Err(AppError::Config("unsupported workspace field".to_string())),
+    };
+    let result = sqlx::query(sql)
+        .bind(value)
+        .bind(Utc::now().to_rfc3339())
+        .bind(workspace_id)
+        .execute(&mut *connection)
+        .await?;
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound("workspace".to_string()));
+    }
+    Ok(())
+}
+
+async fn changed_workspace(
+    connection: &mut SqliteConnection,
+    context: &CommandContext,
+    workspace_id: &str,
+) -> AppResult<DomainCommandResult<Workspace>> {
+    let workspace = get_workspace_on(connection, workspace_id, false).await?;
+    Ok(DomainCommandResult::new(
+        workspace.clone(),
+        vec![workspace_mutation(
+            context,
+            MutationOperation::Upsert,
+            workspace_id,
+            workspace.revision,
+        )],
+    ))
+}
+
+pub(crate) fn workspace_mutation(
+    context: &CommandContext,
+    operation: MutationOperation,
+    workspace_id: &str,
+    revision: i64,
+) -> DomainMutation {
+    DomainMutation::new(
+        context.origin,
+        operation,
+        DomainEntityKey::new(DomainEntityType::Workspace, workspace_id, workspace_id),
+        revision,
+    )
+}
+
+pub(crate) fn normalize_name(name: String) -> AppResult<String> {
     let trimmed = name.trim();
     if trimmed.is_empty() {
         return Err(AppError::Validation(
@@ -445,18 +589,13 @@ fn normalize_name(name: String) -> AppResult<String> {
     Ok(trimmed.to_string())
 }
 
-fn normalize_environment_type(value: Option<String>) -> AppResult<String> {
+pub(crate) fn normalize_environment_type(value: Option<String>) -> AppResult<String> {
     let value = value
         .and_then(|item| {
             let trimmed = item.trim().to_ascii_lowercase();
-            if trimmed.is_empty() {
-                None
-            } else {
-                Some(trimmed)
-            }
+            (!trimmed.is_empty()).then_some(trimmed)
         })
         .unwrap_or_else(|| DEFAULT_ENVIRONMENT_TYPE.to_string());
-
     if matches!(value.as_str(), "dev" | "test" | "prod") {
         Ok(value)
     } else {
@@ -466,18 +605,13 @@ fn normalize_environment_type(value: Option<String>) -> AppResult<String> {
     }
 }
 
-fn normalize_mcp_policy(value: Option<String>) -> AppResult<String> {
+pub(crate) fn normalize_mcp_policy(value: Option<String>) -> AppResult<String> {
     let value = value
         .and_then(|item| {
             let trimmed = item.trim().to_ascii_lowercase();
-            if trimmed.is_empty() {
-                None
-            } else {
-                Some(trimmed)
-            }
+            (!trimmed.is_empty()).then_some(trimmed)
         })
         .unwrap_or_else(|| DEFAULT_MCP_POLICY.to_string());
-
     if matches!(
         value.as_str(),
         "auto" | "disabled" | "read_only" | "guarded" | "full_access"

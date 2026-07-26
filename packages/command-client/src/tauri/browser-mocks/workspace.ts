@@ -48,6 +48,33 @@ export function handleWorkspaceMock<T>(
     return workspace as T;
   }
 
+  if (command === "workspace_update_mcp_policy") {
+    const workspaceId = String(args?.workspaceId ?? "");
+    const workspace = mockState.workspaces.find((item) => item.id === workspaceId);
+    if (!workspace) throw new Error("workspace not found");
+    workspace.mcpPolicy = String(args?.mcpPolicy ?? workspace.mcpPolicy) as WorkspaceMcpPolicy;
+    workspace.updatedAt = new Date().toISOString();
+    workspace.revision += 1;
+    return workspace as T;
+  }
+
+  if (command === "workspace_set_default") {
+    const workspaceId = String(args?.workspaceId ?? "");
+    if (!mockState.workspaces.some((item) => item.id === workspaceId)) {
+      throw new Error("workspace not found");
+    }
+    const now = new Date().toISOString();
+    for (const workspace of mockState.workspaces) {
+      const isDefault = workspace.id === workspaceId;
+      if (workspace.isDefault !== isDefault) {
+        workspace.isDefault = isDefault;
+        workspace.updatedAt = now;
+        workspace.revision += 1;
+      }
+    }
+    return mockState as T;
+  }
+
   if (command === "workspace_rename") {
     const workspaceId = String(args?.workspaceId ?? "");
     const workspace = mockState.workspaces.find((item) => item.id === workspaceId);
@@ -117,12 +144,54 @@ export function handleWorkspaceMock<T>(
         updatedAt: now,
         deletedAt: null,
         revision: (existing?.revision ?? 0) + 1,
-        syncStatus: "local",
-        remoteId: existing?.remoteId ?? null,
       };
     });
     mockStore.workspaceVariables = [...current, ...next];
     return next as T;
+  }
+
+  if (command === "workspace_variable_create") {
+    const workspaceId = String(args?.workspaceId ?? "");
+    const input = args?.input as WorkspaceVariableInput;
+    const now = new Date().toISOString();
+    const variable: WorkspaceVariable = {
+      ...input,
+      id: crypto.randomUUID(),
+      workspaceId,
+      createdAt: now,
+      updatedAt: now,
+      deletedAt: null,
+      revision: 1,
+    };
+    mockStore.workspaceVariables.push(variable);
+    return variable as T;
+  }
+
+  if (command === "workspace_variable_update") {
+    const workspaceId = String(args?.workspaceId ?? "");
+    const variableId = String(args?.variableId ?? "");
+    const input = args?.input as WorkspaceVariableInput;
+    const variable = mockStore.workspaceVariables.find(
+      (item) => item.id === variableId && item.workspaceId === workspaceId,
+    );
+    if (!variable) throw new Error("workspace variable not found");
+    Object.assign(variable, input, {
+      id: variableId,
+      updatedAt: new Date().toISOString(),
+      revision: variable.revision + 1,
+    });
+    return variable as T;
+  }
+
+  if (command === "workspace_variable_delete") {
+    const workspaceId = String(args?.workspaceId ?? "");
+    const variableId = String(args?.variableId ?? "");
+    mockStore.workspaceVariables = mockStore.workspaceVariables.filter(
+      (item) => item.workspaceId !== workspaceId || item.id !== variableId,
+    );
+    return mockStore.workspaceVariables.filter(
+      (item) => item.workspaceId === workspaceId,
+    ) as T;
   }
 
   if (command === "workspace_environments_list") {
@@ -146,8 +215,6 @@ export function handleWorkspaceMock<T>(
       updatedAt: now,
       deletedAt: null,
       revision: 1,
-      syncStatus: "local",
-      remoteId: null,
     };
     mockStore.workspaceEnvironments.push(environment);
     return environment as T;
@@ -177,11 +244,44 @@ export function handleWorkspaceMock<T>(
         updatedAt: now,
         deletedAt: null,
         revision: (existing?.revision ?? 0) + 1,
-        syncStatus: "local",
-        remoteId: existing?.remoteId ?? null,
       };
     });
     return environment as T;
+  }
+
+  if (command === "workspace_environment_update_metadata") {
+    const workspaceId = String(args?.workspaceId ?? "");
+    const environmentId = String(args?.environmentId ?? "");
+    const environment = findWorkspaceEnvironment(workspaceId, environmentId);
+    environment.name = String(args?.name ?? environment.name);
+    environment.sortOrder = Number(args?.sortOrder ?? environment.sortOrder);
+    environment.updatedAt = new Date().toISOString();
+    environment.revision += 1;
+    return environment as T;
+  }
+
+  if (command === "workspace_environments_reorder") {
+    const workspaceId = String(args?.workspaceId ?? "");
+    const environmentIds = (args?.environmentIds ?? []) as string[];
+    const activeIds = mockStore.workspaceEnvironments
+      .filter((environment) => environment.workspaceId === workspaceId && !environment.deletedAt)
+      .map((environment) => environment.id);
+    if (
+      environmentIds.length !== activeIds.length ||
+      new Set(environmentIds).size !== environmentIds.length ||
+      environmentIds.some((id) => !activeIds.includes(id))
+    ) {
+      throw new Error("environment reorder must include every active environment exactly once");
+    }
+    environmentIds.forEach((id, sortOrder) => {
+      const environment = findWorkspaceEnvironment(workspaceId, id);
+      if (environment.sortOrder !== sortOrder) {
+        environment.sortOrder = sortOrder;
+        environment.updatedAt = new Date().toISOString();
+        environment.revision += 1;
+      }
+    });
+    return workspaceEnvironmentList(workspaceId) as T;
   }
 
   if (command === "workspace_environment_delete") {
@@ -220,6 +320,74 @@ export function handleWorkspaceMock<T>(
     return workspaceEnvironmentList(workspaceId) as T;
   }
 
+  if (command === "workspace_environment_variable_create") {
+    const workspaceId = String(args?.workspaceId ?? "");
+    const environmentId = String(args?.environmentId ?? "");
+    const input = args?.input as WorkspaceVariableInput;
+    const environment = findWorkspaceEnvironment(workspaceId, environmentId);
+    const now = new Date().toISOString();
+    const variable: WorkspaceEnvironmentVariable = {
+      ...input,
+      id: crypto.randomUUID(),
+      workspaceId,
+      environmentId,
+      createdAt: now,
+      updatedAt: now,
+      deletedAt: null,
+      revision: 1,
+    };
+    environment.variables.push(variable);
+    return variable as T;
+  }
+
+  if (command === "workspace_environment_variable_update") {
+    const workspaceId = String(args?.workspaceId ?? "");
+    const environmentId = String(args?.environmentId ?? "");
+    const variableId = String(args?.variableId ?? "");
+    const input = args?.input as WorkspaceVariableInput;
+    const environment = findWorkspaceEnvironment(workspaceId, environmentId);
+    const variable = environment.variables.find((item) => item.id === variableId);
+    if (!variable) throw new Error("workspace environment variable not found");
+    Object.assign(variable, input, {
+      id: variableId,
+      updatedAt: new Date().toISOString(),
+      revision: variable.revision + 1,
+    });
+    return variable as T;
+  }
+
+  if (command === "workspace_environment_variables_replace") {
+    const workspaceId = String(args?.workspaceId ?? "");
+    const environmentId = String(args?.environmentId ?? "");
+    const inputs = (args?.variables ?? []) as WorkspaceVariableInput[];
+    const environment = findWorkspaceEnvironment(workspaceId, environmentId);
+    const now = new Date().toISOString();
+    environment.variables = inputs.map((input, sortOrder) => {
+      const existing = environment.variables.find((item) => item.id === input.id);
+      return {
+        ...input,
+        id: existing?.id ?? crypto.randomUUID(),
+        workspaceId,
+        environmentId,
+        sortOrder,
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+        deletedAt: null,
+        revision: (existing?.revision ?? 0) + 1,
+      };
+    });
+    return environment.variables as T;
+  }
+
+  if (command === "workspace_environment_variable_delete") {
+    const workspaceId = String(args?.workspaceId ?? "");
+    const environmentId = String(args?.environmentId ?? "");
+    const variableId = String(args?.variableId ?? "");
+    const environment = findWorkspaceEnvironment(workspaceId, environmentId);
+    environment.variables = environment.variables.filter((item) => item.id !== variableId);
+    return environment.variables as T;
+  }
+
   if (command === "workspace_variables_resolve") {
     const workspaceId = String(args?.workspaceId ?? "");
     const environmentId =
@@ -253,4 +421,12 @@ function workspaceEnvironmentList(workspaceId: string) {
   return mockStore.workspaceEnvironments
     .filter((environment) => environment.workspaceId === workspaceId && !environment.deletedAt)
     .sort((left, right) => left.sortOrder - right.sortOrder);
+}
+
+function findWorkspaceEnvironment(workspaceId: string, environmentId: string) {
+  const environment = mockStore.workspaceEnvironments.find(
+    (item) => item.id === environmentId && item.workspaceId === workspaceId,
+  );
+  if (!environment) throw new Error("workspace environment not found");
+  return environment;
 }

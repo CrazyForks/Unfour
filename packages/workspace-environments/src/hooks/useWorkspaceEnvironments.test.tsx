@@ -48,8 +48,6 @@ function environmentVariable(
     updatedAt: "2026-01-01T00:00:00Z",
     deletedAt: null,
     revision: 1,
-    syncStatus: "local",
-    remoteId: null,
     ...overrides,
   };
 }
@@ -66,8 +64,6 @@ function environment(overrides: Partial<WorkspaceEnvironment>): WorkspaceEnviron
     updatedAt: "2026-01-01T00:00:00Z",
     deletedAt: null,
     revision: 1,
-    syncStatus: "local",
-    remoteId: null,
     ...overrides,
   };
 }

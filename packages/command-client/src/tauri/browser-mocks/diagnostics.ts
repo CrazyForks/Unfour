@@ -7,7 +7,6 @@ export function handleDiagnosticsMock<T>(command: string): MockResult<T> {
       storageReady: true,
       commandBusReady: true,
       aiReservedCapabilities: ["api.send_request", "ssh.connect.reserved"],
-      syncStrategy: "local-first-reserved",
     } as T;
   }
 

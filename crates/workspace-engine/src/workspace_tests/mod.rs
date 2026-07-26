@@ -1,6 +1,232 @@
 use super::*;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
-use unfour_core::models::WorkspaceVariableInput;
+use unfour_core::domain::CommandContext;
+use unfour_core::models::{WorkspaceEnvironment, WorkspaceVariable, WorkspaceVariableInput};
+
+struct TestWorkspaceService {
+    inner: WorkspaceService,
+    db: LocalDb,
+}
+
+impl TestWorkspaceService {
+    async fn state(&self) -> AppResult<WorkspaceState> {
+        self.inner.state().await
+    }
+
+    async fn state_read_only(&self) -> AppResult<WorkspaceState> {
+        self.inner.state_read_only().await
+    }
+
+    async fn list_variables(&self, workspace_id: String) -> AppResult<Vec<WorkspaceVariable>> {
+        self.inner.list_variables(workspace_id).await
+    }
+
+    async fn list_environments(
+        &self,
+        workspace_id: String,
+    ) -> AppResult<Vec<WorkspaceEnvironment>> {
+        self.inner.list_environments(workspace_id).await
+    }
+
+    async fn resolve_variables(
+        &self,
+        workspace_id: &str,
+        environment_id: Option<&str>,
+        input: &str,
+    ) -> AppResult<String> {
+        self.inner
+            .resolve_variables(workspace_id, environment_id, input)
+            .await
+    }
+
+    async fn active_environment_id(&self, workspace_id: &str) -> AppResult<Option<String>> {
+        self.inner.active_environment_id(workspace_id).await
+    }
+
+    async fn layout(&self, workspace_id: String) -> AppResult<WorkspaceLayout> {
+        self.inner.layout(workspace_id).await
+    }
+
+    async fn update_layout(
+        &self,
+        workspace_id: String,
+        layout: WorkspaceLayout,
+    ) -> AppResult<WorkspaceLayout> {
+        self.inner.update_layout(workspace_id, layout).await
+    }
+
+    async fn create(&self, name: String) -> AppResult<Workspace> {
+        self.create_with_options(name, None, None).await
+    }
+
+    async fn create_with_options(
+        &self,
+        name: String,
+        environment_type: Option<String>,
+        mcp_policy: Option<String>,
+    ) -> AppResult<Workspace> {
+        let mut tx = self.db.pool().begin().await?;
+        let result = self
+            .inner
+            .create_with_options_on(
+                &mut tx,
+                &CommandContext::local("test.workspace.create"),
+                name,
+                environment_type,
+                mcp_policy,
+            )
+            .await?;
+        tx.commit().await?;
+        Ok(result.value)
+    }
+
+    async fn rename(&self, workspace_id: String, name: String) -> AppResult<Workspace> {
+        let mut tx = self.db.pool().begin().await?;
+        let result = self
+            .inner
+            .rename_on(
+                &mut tx,
+                &CommandContext::local("test.workspace.rename"),
+                workspace_id,
+                name,
+            )
+            .await?;
+        tx.commit().await?;
+        Ok(result.value)
+    }
+
+    async fn set_active(&self, workspace_id: String) -> AppResult<WorkspaceState> {
+        let mut tx = self.db.pool().begin().await?;
+        let result = self
+            .inner
+            .set_active_on(
+                &mut tx,
+                &CommandContext::local("test.workspace.activate"),
+                workspace_id,
+            )
+            .await?;
+        tx.commit().await?;
+        Ok(result.value)
+    }
+
+    async fn delete(&self, workspace_id: String) -> AppResult<WorkspaceState> {
+        let mut tx = self.db.pool().begin().await?;
+        let result = self
+            .inner
+            .delete_on(
+                &mut tx,
+                &CommandContext::local("test.workspace.delete"),
+                workspace_id,
+            )
+            .await?;
+        tx.commit().await?;
+        Ok(result.value)
+    }
+
+    async fn replace_variables(
+        &self,
+        workspace_id: String,
+        variables: Vec<WorkspaceVariableInput>,
+    ) -> AppResult<Vec<WorkspaceVariable>> {
+        let mut tx = self.db.pool().begin().await?;
+        let result = self
+            .inner
+            .replace_variables_on(
+                &mut tx,
+                &CommandContext::local("test.workspace.variables.replace"),
+                workspace_id,
+                variables,
+            )
+            .await?;
+        tx.commit().await?;
+        Ok(result.value)
+    }
+
+    async fn create_environment(
+        &self,
+        workspace_id: String,
+        name: String,
+    ) -> AppResult<WorkspaceEnvironment> {
+        let mut tx = self.db.pool().begin().await?;
+        let result = self
+            .inner
+            .create_environment_on(
+                &mut tx,
+                &CommandContext::local("test.workspace.environment.create"),
+                workspace_id,
+                name,
+            )
+            .await?;
+        tx.commit().await?;
+        Ok(result.value)
+    }
+
+    async fn update_environment(
+        &self,
+        workspace_id: String,
+        environment_id: String,
+        name: String,
+        variables: Vec<WorkspaceVariableInput>,
+    ) -> AppResult<WorkspaceEnvironment> {
+        let mut tx = self.db.pool().begin().await?;
+        let result = self
+            .inner
+            .update_environment_on(
+                &mut tx,
+                &CommandContext::local("test.workspace.environment.update"),
+                workspace_id,
+                environment_id,
+                name,
+                variables,
+            )
+            .await?;
+        tx.commit().await?;
+        Ok(result.value)
+    }
+
+    async fn delete_environment(
+        &self,
+        workspace_id: String,
+        environment_id: String,
+    ) -> AppResult<Vec<WorkspaceEnvironment>> {
+        let mut tx = self.db.pool().begin().await?;
+        let result = self
+            .inner
+            .delete_environment_on(
+                &mut tx,
+                &CommandContext::local("test.workspace.environment.delete"),
+                workspace_id,
+                environment_id,
+            )
+            .await?;
+        tx.commit().await?;
+        Ok(result.value)
+    }
+
+    async fn set_active_environment(
+        &self,
+        workspace_id: String,
+        environment_id: Option<String>,
+    ) -> AppResult<Vec<WorkspaceEnvironment>> {
+        let mut tx = self.db.pool().begin().await?;
+        let result = self
+            .inner
+            .set_active_environment_on(
+                &mut tx,
+                &CommandContext::local("test.workspace.environment.activate"),
+                workspace_id,
+                environment_id,
+            )
+            .await?;
+        tx.commit().await?;
+        Ok(result.value)
+    }
+
+    async fn read_setting(&self, key: &str) -> AppResult<Option<String>> {
+        let mut connection = self.db.pool().acquire().await?;
+        read_setting_on(&mut connection, key).await
+    }
+}
 
 fn variable(key: &str, value: &str) -> WorkspaceVariableInput {
     WorkspaceVariableInput {
@@ -14,7 +240,7 @@ fn variable(key: &str, value: &str) -> WorkspaceVariableInput {
     }
 }
 
-async fn service() -> WorkspaceService {
+async fn service() -> TestWorkspaceService {
     let options = SqliteConnectOptions::new()
         .filename(":memory:")
         .create_if_missing(true)
@@ -26,12 +252,17 @@ async fn service() -> WorkspaceService {
         .expect("connect in-memory sqlite");
     let db = LocalDb::from_pool(pool);
     db.migrate().await.expect("run migrations");
-    let service = WorkspaceService::new(db);
+    let service = WorkspaceService::new(db.clone());
+    let mut tx = db.pool().begin().await.expect("begin seed transaction");
     service
-        .ensure_default_workspace()
+        .ensure_default_workspace_on(
+            &mut tx,
+            &CommandContext::migration("test.workspace.ensure_default"),
+        )
         .await
         .expect("ensure default workspace");
-    service
+    tx.commit().await.expect("commit seed transaction");
+    TestWorkspaceService { inner: service, db }
 }
 
 #[tokio::test]
@@ -120,7 +351,7 @@ async fn create_switch_rename_and_delete_preserve_active_workspace() {
         .await
         .expect("rename workspace");
     assert_eq!(renamed.name, "Client Ops EU");
-    assert_eq!(renamed.sync_status, "pending");
+    assert!(renamed.revision > created.revision);
 
     let switched = service
         .set_active(default_id.clone())
@@ -202,6 +433,27 @@ async fn state_read_only_does_not_write_fallback_active_workspace() {
 }
 
 #[tokio::test]
+async fn state_repairs_fallback_active_workspace_setting() {
+    let service = service().await;
+    sqlx::query(
+        "UPDATE app_settings SET value = 'deleted-workspace' WHERE key = 'active_workspace_id'",
+    )
+    .execute(service.db.pool())
+    .await
+    .expect("dirty active workspace setting");
+
+    let state = service.state().await.expect("state should repair setting");
+
+    assert_eq!(
+        service
+            .read_setting("active_workspace_id")
+            .await
+            .expect("read repaired setting"),
+        Some(state.active_workspace_id)
+    );
+}
+
+#[tokio::test]
 async fn workspace_variables_support_create_update_and_delete() {
     let service = service().await;
     let workspace_id = service.state().await.unwrap().active_workspace_id;
@@ -236,6 +488,33 @@ async fn workspace_variables_support_create_update_and_delete() {
         .await
         .expect("list variables")
         .is_empty());
+}
+
+#[tokio::test]
+async fn exact_replace_can_swap_existing_variable_keys() {
+    let service = service().await;
+    let workspace_id = service.state().await.unwrap().active_workspace_id;
+    let created = service
+        .replace_variables(
+            workspace_id.clone(),
+            vec![variable("FIRST", "one"), variable("SECOND", "two")],
+        )
+        .await
+        .expect("create variables");
+    let mut first = variable("SECOND", "one");
+    first.id = Some(created[0].id.clone());
+    let mut second = variable("FIRST", "two");
+    second.id = Some(created[1].id.clone());
+
+    let swapped = service
+        .replace_variables(workspace_id, vec![first, second])
+        .await
+        .expect("swap variable keys");
+
+    assert_eq!(swapped[0].id, created[0].id);
+    assert_eq!(swapped[0].key, "SECOND");
+    assert_eq!(swapped[1].id, created[1].id);
+    assert_eq!(swapped[1].key, "FIRST");
 }
 
 #[tokio::test]

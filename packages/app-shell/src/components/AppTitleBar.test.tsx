@@ -37,8 +37,6 @@ function workspace(): Workspace {
     updatedAt: "2026-01-01T00:00:00.000Z",
     deletedAt: null,
     revision: 1,
-    syncStatus: "local",
-    remoteId: null,
   };
 }
 
@@ -78,8 +76,6 @@ function environment(id: string, name: string, isActive = false): WorkspaceEnvir
     updatedAt: "2026-01-01T00:00:00.000Z",
     deletedAt: null,
     revision: 1,
-    syncStatus: "local",
-    remoteId: null,
   };
 }
 

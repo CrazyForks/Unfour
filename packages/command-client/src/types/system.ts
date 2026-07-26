@@ -3,7 +3,6 @@ export type SystemHealth = {
   storageReady: boolean;
   commandBusReady: boolean;
   aiReservedCapabilities: string[];
-  syncStrategy: string;
 };
 
 export type DiagnosticBundleResult = {

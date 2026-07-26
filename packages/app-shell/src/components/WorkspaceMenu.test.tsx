@@ -2,8 +2,9 @@
 import type { ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { Workspace } from "@unfour/command-client";
+import type { DesktopAppExtensionContext } from "../extensions";
 import { WorkspaceMenu } from "./WorkspaceMenu";
 
 afterEach(cleanup);
@@ -24,8 +25,13 @@ function workspace(
     updatedAt: "2026-01-01T00:00:00.000Z",
     deletedAt: null,
     revision: 1,
-    syncStatus: "local",
-    remoteId: null,
+  };
+}
+
+function extensionContext(activeWorkspace: Workspace): DesktopAppExtensionContext {
+  return {
+    activeTab: { id: "api-main", kind: "api", title: "API Client" },
+    activeWorkspace,
   };
 }
 
@@ -45,6 +51,7 @@ describe("WorkspaceMenu", () => {
     const { rerender } = render(
       <WorkspaceMenu
         activeWorkspace={first}
+        extensionContext={extensionContext(first)}
         onActivateWorkspace={vi.fn()}
         workspaces={[first, second]}
       />,
@@ -58,6 +65,7 @@ describe("WorkspaceMenu", () => {
     rerender(
       <WorkspaceMenu
         activeWorkspace={second}
+        extensionContext={extensionContext(second)}
         onActivateWorkspace={vi.fn()}
         workspaces={[first, second]}
       />,
@@ -76,6 +84,7 @@ describe("WorkspaceMenu", () => {
     render(
       <WorkspaceMenu
         activeWorkspace={prod}
+        extensionContext={extensionContext(prod)}
         onActivateWorkspace={vi.fn()}
         workspaces={[prod, test]}
       />,
@@ -99,6 +108,7 @@ describe("WorkspaceMenu", () => {
     render(
       <WorkspaceMenu
         activeWorkspace={active}
+        extensionContext={extensionContext(active)}
         onActivateWorkspace={vi.fn()}
         workspaces={[active]}
       />,
@@ -118,5 +128,75 @@ describe("WorkspaceMenu", () => {
     expect(
       screen.getByText("Environment controls the default MCP permission level."),
     ).toBeTruthy();
+  });
+
+  it("renders extension decorations and runs asynchronous workspace actions", async () => {
+    const active = workspace("Default Workspace");
+    const run = vi.fn().mockResolvedValue(undefined);
+    render(
+      <WorkspaceMenu
+        activeWorkspace={active}
+        decoration={({ placement }) => <span>{`extension-${placement}`}</span>}
+        extensionContext={extensionContext(active)}
+        onActivateWorkspace={vi.fn()}
+        workspaceActions={[
+          {
+            id: "test.publish",
+            label: "Publish workspace",
+            run,
+          },
+        ]}
+        workspaces={[active]}
+      />,
+      { wrapper: createWrapper() },
+    );
+
+    expect(screen.getByText("extension-trigger")).toBeTruthy();
+    fireEvent.pointerDown(screen.getByRole("button", { name: /default workspace/i }), {
+      button: 0,
+      ctrlKey: false,
+    });
+    expect(await screen.findByText("extension-listItem")).toBeTruthy();
+    fireEvent.click(screen.getByText("Publish workspace"));
+    expect(run).toHaveBeenCalledWith(
+      expect.objectContaining({ workspace: active, activeWorkspace: active }),
+    );
+  });
+
+  it("does not show a static disabled reason when an action is disabled only by pending work", async () => {
+    const active = workspace("Default Workspace");
+    let finish!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    render(
+      <WorkspaceMenu
+        activeWorkspace={active}
+        extensionContext={extensionContext(active)}
+        onActivateWorkspace={vi.fn()}
+        workspaceActions={[
+          { id: "test.pending", label: "Start publish", run: () => pending },
+          {
+            id: "test.available",
+            label: "Available action",
+            disabled: false,
+            disabledReason: "Only available for another workspace",
+            run: vi.fn(),
+          },
+        ]}
+        workspaces={[active]}
+      />,
+      { wrapper: createWrapper() },
+    );
+
+    const trigger = screen.getByRole("button", { name: /default workspace/i });
+    fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false });
+    fireEvent.click(await screen.findByText("Start publish"));
+    fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false });
+
+    expect(await screen.findByText("Available action")).toBeTruthy();
+    expect(screen.queryByText("Only available for another workspace")).toBeNull();
+    finish();
+    await waitFor(() => expect(screen.getByText("Available action").closest("[role=menuitem]")).not.toHaveAttribute("data-disabled"));
   });
 });

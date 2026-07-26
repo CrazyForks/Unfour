@@ -13,6 +13,8 @@ import { WorkspaceMenu } from "./WorkspaceMenu";
 import type {
   DesktopAppExtensionContext,
   DesktopAppSettingsSection,
+  DesktopAppWorkspaceAction,
+  DesktopAppWorkspaceDecoration,
 } from "../extensions";
 
 export function AppTitleBar({
@@ -25,6 +27,8 @@ export function AppTitleBar({
   onManageVariables = () => {},
   onSelectEnvironment = () => {},
   settingsSections,
+  workspaceActions,
+  workspaceDecoration,
   workspaces,
 }: {
   activeWorkspace?: Workspace;
@@ -36,6 +40,8 @@ export function AppTitleBar({
   onManageVariables?: () => void;
   onSelectEnvironment?: (environmentId: string | null) => void;
   settingsSections?: readonly DesktopAppSettingsSection[];
+  workspaceActions?: readonly DesktopAppWorkspaceAction[];
+  workspaceDecoration?: DesktopAppWorkspaceDecoration;
   workspaces: Workspace[];
 }) {
   const { t } = useI18n();
@@ -48,7 +54,10 @@ export function AppTitleBar({
           <div className="flex min-w-0 items-center gap-1">
             <WorkspaceMenu
               activeWorkspace={activeWorkspace}
+              decoration={workspaceDecoration}
+              extensionContext={extensionContext}
               onActivateWorkspace={onActivateWorkspace}
+              workspaceActions={workspaceActions}
               workspaces={workspaces}
             />
             <ActiveEnvironmentSelect
