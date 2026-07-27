@@ -84,12 +84,14 @@ All structured results use a common envelope:
 ## Data Source
 
 The standalone MCP process opens the same `unfour-paths` SQLite database used
-by the desktop app: `~/.unfour/unfour.sqlite` on all platforms. This path
-intentionally does not use Tauri's `app_data_dir()`, because the Tauri
-identifier `dev.unfour` would resolve to a different directory. The MCP process
-does not run schema migrations or create fallback workspaces. Start the desktop
-app once before starting the MCP server if the local database does not exist
-yet.
+by the desktop app. The stable default is `~/.unfour/unfour.sqlite` on all
+platforms; `UNFOUR_STORAGE_PROFILE` / `UNFOUR_DATA_DIR` select the same
+alternate roots as the desktop app (see
+`docs/architecture/data-storage.md`). This path intentionally does not use
+Tauri's `app_data_dir()`, because the Tauri identifier `dev.unfour` would
+resolve to a different directory. The MCP process does not run schema
+migrations or create fallback workspaces. Start the desktop app once before
+starting the MCP server if the local database does not exist yet.
 
 Credential values are resolved from the OS keychain under the same service name
 as the desktop app. The MCP process reads credentials only when a tool needs to

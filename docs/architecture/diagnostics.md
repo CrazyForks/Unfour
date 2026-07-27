@@ -22,24 +22,27 @@ buffers, or MCP arguments.
 
 ## Runtime Files
 
-Runtime paths are resolved by `crates/unfour-paths` under the stable Unfour
-data root `~/.unfour`. The desktop app and standalone MCP server use the same
-path resolver so logs, diagnostics, backups, config, cache, and SQLite stay in
-one predictable location.
+Runtime paths are resolved by `crates/unfour-paths`. The default stable product
+root is `~/.unfour`; `dev` / `test` profiles and `UNFOUR_DATA_DIR` can select a
+different root (see `docs/architecture/data-storage.md`). The desktop app and
+standalone MCP server use the same path resolver so logs, diagnostics,
+backups, config, cache, and SQLite stay in one predictable location under that
+root.
 
-- SQLite: `~/.unfour/unfour.sqlite`
-- logs: `~/.unfour/logs`
-- diagnostics bundles: `~/.unfour/diagnostics`
-- backups: `~/.unfour/backups`
-- config: `~/.unfour/config`
-- cache: `~/.unfour/cache`
+Under the active product root `<root>` (stable default `~/.unfour`):
+
+- SQLite: `<root>/unfour.sqlite`
+- logs: `<root>/logs`
+- diagnostics bundles: `<root>/diagnostics`
+- backups: `<root>/backups`
+- config / cache: follow `<root>`
 
 File logs use daily rolling files named `unfour.log*`. The default retention is
 7 days. Retention pruning runs during diagnostics initialization and only
 removes old files whose names start with `unfour.log`.
 
 The diagnostic bundle command creates a new directory under
-`~/.unfour/diagnostics`, writes a `manifest.json`, and copies the most recent
+`<root>/diagnostics`, writes a `manifest.json`, and copies the most recent
 local log files. It must not copy the SQLite database, keychain material,
 workspace exports, terminal buffers, or raw feature payloads.
 

@@ -26,26 +26,63 @@ use.
 ## Runtime Path Strategy
 
 SQLite runtime paths are resolved by `crates/unfour-paths`, not by Tauri path
-APIs. All Unfour data lives under `~/.unfour` on every platform so the desktop
-app and standalone MCP process share the same local SQLite file at a stable,
-predictable location, while the Tauri identifier `dev.unfour` remains only the
-bundle/app identifier.
-
-The current stable SQLite path is `~/.unfour/unfour.sqlite` on all platforms.
+APIs. The desktop app and standalone MCP process share the same resolver so they
+open one predictable local SQLite file. The Tauri identifier `dev.unfour`
+remains only the bundle/app identifier.
 
 Do not replace this with Tauri `app_data_dir()`: Tauri derives that path from
 `identifier = "dev.unfour"`, which would split data into a different
 `dev.unfour` directory. `dev.unfour` is not treated as a legacy data directory
 by the runtime path resolver.
 
-Config and cache directories are also resolved by `unfour-paths` and all live
-under `~/.unfour`:
+### Storage profiles
 
-- config: `~/.unfour/config`;
-- cache: `~/.unfour/cache`;
-- backups: `~/.unfour/backups`;
-- logs: `~/.unfour/logs`;
-- diagnostics: `~/.unfour/diagnostics`.
+`unfour-paths` selects a product data root by storage profile. Profiles use
+**sibling** directories under the user home — never nested children such as
+`~/.unfour/dev`:
+
+| Profile | Product data root | SQLite |
+| --- | --- | --- |
+| `stable` (default) | `~/.unfour` | `~/.unfour/unfour.sqlite` |
+| `test` | `~/.unfour-test` | `~/.unfour-test/unfour.sqlite` |
+| `dev` | `~/.unfour-dev` | `~/.unfour-dev/unfour.sqlite` |
+
+Stable keeps the historical layout with zero migration. The database file name
+remains `unfour.sqlite` for every profile. Logs, backups, diagnostics, config,
+and cache all follow the selected product root.
+
+Under product root `<root>`:
+
+- SQLite: `<root>/unfour.sqlite`
+- backups: `<root>/backups`
+- logs: `<root>/logs`
+- diagnostics: `<root>/diagnostics`
+- config / cache: follow `<root>` (same product-data tree as today's stable
+  layout)
+
+### Resolution priority
+
+`initialize_unfour_storage()`, `resolve_unfour_paths()`,
+`default_database_path()`, and storage diagnostics all use the same resolver:
+
+1. `UNFOUR_DATA_DIR` — absolute path that replaces the entire product tree
+   (CI / sandboxes). Relative values are rejected.
+2. `UNFOUR_STORAGE_PROFILE` — runtime `dev` | `test` | `stable`.
+3. Compile-time `UNFOUR_RELEASE_CHANNEL` when baked into `unfour-paths`
+   (`stable` → stable, `test` → test, `dev` → dev).
+4. Default `stable` → `~/.unfour`.
+
+Callers (desktop, MCP, command-bus) keep using the existing public path APIs;
+they do not need separate profile arguments.
+
+### Explicit non-goals
+
+Storage profiles isolate the local product data tree only. They do **not**
+change:
+
+- OS keychain / `SECRET_STORE_NAMESPACE` (service name stays `unfour`);
+- Pro account session isolation;
+- Community vs Pro separate SQLite databases.
 
 Runtime diagnostics are owned by `crates/unfour-diag`, not by
 `tauri-plugin-log`. File logs use daily `unfour.log*` files under the logs
