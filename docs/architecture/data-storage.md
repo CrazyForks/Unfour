@@ -233,12 +233,37 @@ not a property of a syncable environment record. Its
 same workspace. Deleting the active environment falls back to the first
 available environment by sort order, or to no environment when none remain.
 
+## Workspace Business Data And Local Usage State
+
+The syncable Workspace business fields are `id`, `name`, `environment_type`,
+`mcp_policy`, `created_at`, `updated_at`, deletion state, and the business
+`revision`. Workspace domain snapshots and external apply payloads contain
+only these fields.
+
+The following values are device-local usage state and are never part of the
+Workspace sync protocol:
+
+- `active_workspace_id` in `app_settings`;
+- `active_environment_id` in `workspace_local_state`;
+- `last_opened_at` on the local Workspace row;
+- `is_default` on the local Workspace row.
+
+Activating a Workspace updates `active_workspace_id` and `last_opened_at`
+locally. It does not change `updated_at` or `revision`, produce a
+`DomainMutation`, or invoke transactional mutation hooks. Setting the
+default Workspace likewise changes only the local preference. External
+Workspace apply preserves these local fields and does not select a different
+active Workspace when applying an upsert. Deleting the active Workspace may
+still choose a local fallback so the runtime never points at a deleted row.
+
 ## Default Workspace
 
 `workspace-engine` seeds the first default workspace during command-bus startup
 when none exists. Workspaces created by users are inserted with
 `is_default = 0`; the schema validates `is_default` as a boolean and does not
-attempt to manage multiple default rows.
+attempt to manage multiple default rows. `is_default` is a device-local
+preference for the initial Pro sync phase, so external Workspace upserts do not
+read or write it.
 
 ## Workspace Environments
 

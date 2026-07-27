@@ -17,6 +17,8 @@ use unfour_local_storage::LocalDb;
 
 #[path = "workspace_domain/external_apply.rs"]
 mod external_apply;
+#[path = "workspace_domain/workspace_usage.rs"]
+mod workspace_usage;
 
 #[derive(Clone)]
 struct SqlHook {
@@ -248,75 +250,6 @@ async fn entity_create_activities_include_generated_targets() {
 }
 
 #[tokio::test]
-async fn workspace_fields_default_mutations_and_snapshot_are_precise() {
-    let capture = Arc::new(SqlHook {
-        name: "capture",
-        fail_on: None,
-        local_only: false,
-    });
-    let (bus, db) = bus_with_hooks(vec![capture]).await;
-    let original_default = bus.list_workspaces().await.unwrap().active_workspace_id;
-    let created = bus.create_workspace("Mutable".to_string()).await.unwrap();
-    let revision = created.revision;
-    let unchanged = bus
-        .rename_workspace(created.id.clone(), created.name.clone())
-        .await
-        .unwrap();
-    assert_eq!(unchanged.revision, revision);
-    let no_op_mutations: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM hook_effects WHERE command_name = 'workspace.rename'",
-    )
-    .fetch_one(db.pool())
-    .await
-    .unwrap();
-    assert_eq!(no_op_mutations, 0);
-    bus.rename_workspace(created.id.clone(), "Renamed".to_string())
-        .await
-        .unwrap();
-    bus.update_workspace_environment(created.id.clone(), "prod".to_string())
-        .await
-        .unwrap();
-    bus.update_workspace_mcp_policy(created.id.clone(), "read_only".to_string())
-        .await
-        .unwrap();
-    bus.set_default_workspace(created.id.clone()).await.unwrap();
-    bus.set_active_workspace(created.id.clone()).await.unwrap();
-
-    let default_mutations: Vec<(String,)> = sqlx::query_as(
-        "SELECT entity_id FROM hook_effects WHERE command_name = 'workspace.default.set' ORDER BY entity_id",
-    )
-    .fetch_all(db.pool())
-    .await
-    .unwrap();
-    assert_eq!(default_mutations.len(), 2);
-    assert!(default_mutations
-        .iter()
-        .any(|row| row.0 == original_default));
-    assert!(default_mutations.iter().any(|row| row.0 == created.id));
-
-    let snapshot = bus
-        .read_domain_snapshot(&DomainEntityKey::new(
-            DomainEntityType::Workspace,
-            &created.id,
-            &created.id,
-        ))
-        .await
-        .unwrap();
-    let DomainSnapshot::Workspace(snapshot) = snapshot else {
-        panic!("expected workspace snapshot");
-    };
-    assert_eq!(snapshot.id, created.id);
-    assert_eq!(snapshot.name, "Renamed");
-    assert!(snapshot.is_default);
-    assert_eq!(snapshot.environment_type, "prod");
-    assert_eq!(snapshot.mcp_policy, "read_only");
-    assert!(snapshot.last_opened_at.is_some());
-    assert!(!snapshot.created_at.is_empty());
-    assert!(!snapshot.updated_at.is_empty());
-    assert!(snapshot.revision > revision);
-}
-
-#[tokio::test]
 async fn variable_replace_reports_only_real_diff_and_secret_snapshot_is_redacted() {
     let capture = Arc::new(SqlHook {
         name: "capture",
@@ -508,12 +441,46 @@ async fn external_apply_updates_revision_preserves_local_secret_and_creates_no_e
     assert!(!stored.2);
 
     let active_before = bus.list_workspaces().await.unwrap().active_workspace_id;
+    bus.set_active_workspace(active_before.clone())
+        .await
+        .unwrap();
+    let local_before: (bool, Option<String>) =
+        sqlx::query_as("SELECT is_default, last_opened_at FROM workspaces WHERE id = ?1")
+            .bind(&active_before)
+            .fetch_one(db.pool())
+            .await
+            .unwrap();
+    let existing = bus
+        .list_workspaces()
+        .await
+        .unwrap()
+        .workspaces
+        .into_iter()
+        .find(|workspace| workspace.id == active_before)
+        .unwrap();
+    bus.apply_external_workspaces(vec![ExternalWorkspaceApply::Upsert(
+        ExternalWorkspaceUpsert {
+            id: active_before.clone(),
+            name: "Remote Rename".to_string(),
+            environment_type: existing.environment_type,
+            mcp_policy: existing.mcp_policy,
+            created_at: existing.created_at,
+            updated_at: "2026-07-23T09:16:38Z".to_string(),
+        },
+    )])
+    .await
+    .unwrap();
+    let local_after: (bool, Option<String>) =
+        sqlx::query_as("SELECT is_default, last_opened_at FROM workspaces WHERE id = ?1")
+            .bind(&active_before)
+            .fetch_one(db.pool())
+            .await
+            .unwrap();
+    assert_eq!(local_after, local_before);
     bus.apply_external_workspaces(vec![ExternalWorkspaceApply::Upsert(
         ExternalWorkspaceUpsert {
             id: "external-workspace".to_string(),
             name: "External".to_string(),
-            is_default: false,
-            last_opened_at: None,
             environment_type: "test".to_string(),
             mcp_policy: "guarded".to_string(),
             created_at: "2026-07-23T09:15:38Z".to_string(),
@@ -606,8 +573,6 @@ async fn external_workspace_changes_preserve_local_workspace_invariants() {
         ExternalWorkspaceUpsert {
             id: "external-default".to_string(),
             name: "External Default".to_string(),
-            is_default: true,
-            last_opened_at: None,
             environment_type: "dev".to_string(),
             mcp_policy: "auto".to_string(),
             created_at: now.clone(),
@@ -615,13 +580,13 @@ async fn external_workspace_changes_preserve_local_workspace_invariants() {
         },
     )])
     .await
-    .expect("apply new default workspace");
+    .expect("apply new workspace without changing the local default");
     let defaults: Vec<(String,)> =
         sqlx::query_as("SELECT id FROM workspaces WHERE is_default = 1 AND deleted_at IS NULL")
             .fetch_all(db.pool())
             .await
             .unwrap();
-    assert_eq!(defaults, vec![("external-default".to_string(),)]);
+    assert_eq!(defaults, vec![(fallback.0,)]);
 }
 
 #[tokio::test]
@@ -972,15 +937,32 @@ async fn legacy_environment_api_uses_the_same_coordinator() {
     });
     let (bus, db) = bus_with_hooks(vec![capture]).await;
     let workspace_id = bus.list_workspaces().await.unwrap().active_workspace_id;
-    bus.api_environment_create(workspace_id, "Legacy".to_string())
+    let environment = bus
+        .api_environment_create(workspace_id.clone(), "Legacy".to_string())
         .await
         .unwrap();
-    let commands: Vec<(String,)> = sqlx::query_as("SELECT DISTINCT command_name FROM hook_effects")
-        .fetch_all(db.pool())
+    bus.api_environment_update(
+        workspace_id.clone(),
+        environment.id.clone(),
+        "Legacy Updated".to_string(),
+        Vec::new(),
+    )
+    .await
+    .unwrap();
+    bus.api_environment_delete(workspace_id, environment.id)
         .await
         .unwrap();
+    let commands: Vec<(String,)> =
+        sqlx::query_as("SELECT DISTINCT command_name FROM hook_effects ORDER BY command_name")
+            .fetch_all(db.pool())
+            .await
+            .unwrap();
     assert_eq!(
         commands,
-        vec![("workspace.environment.create".to_string(),)]
+        vec![
+            ("workspace.environment.create".to_string(),),
+            ("workspace.environment.delete".to_string(),),
+            ("workspace.environment.update".to_string(),),
+        ]
     );
 }

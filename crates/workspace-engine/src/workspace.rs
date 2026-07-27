@@ -206,7 +206,7 @@ impl WorkspaceService {
     pub async fn set_default_on(
         &self,
         connection: &mut SqliteConnection,
-        context: &CommandContext,
+        _context: &CommandContext,
         workspace_id: String,
     ) -> AppResult<DomainCommandResult<WorkspaceState>> {
         get_workspace_on(connection, &workspace_id, false).await?;
@@ -215,35 +215,25 @@ impl WorkspaceService {
         )
         .fetch_all(&mut *connection)
         .await?;
-        let now = Utc::now().to_rfc3339();
-        let mut mutations = Vec::new();
         for (id, is_default) in current {
             let next = id == workspace_id;
             if is_default == next {
                 continue;
             }
-            let revision: i64 = sqlx::query_scalar(
+            sqlx::query(
                 r#"
                 UPDATE workspaces
-                SET is_default = ?1, updated_at = ?2, revision = revision + 1
-                WHERE id = ?3 AND deleted_at IS NULL
-                RETURNING revision
+                SET is_default = ?1
+                WHERE id = ?2 AND deleted_at IS NULL
                 "#,
             )
             .bind(next)
-            .bind(&now)
             .bind(&id)
-            .fetch_one(&mut *connection)
+            .execute(&mut *connection)
             .await?;
-            mutations.push(workspace_mutation(
-                context,
-                MutationOperation::Upsert,
-                &id,
-                revision,
-            ));
         }
         let state = state_on(connection).await?;
-        Ok(DomainCommandResult::new(state, mutations))
+        Ok(DomainCommandResult::unchanged(state))
     }
 
     pub async fn delete_on(
@@ -305,37 +295,26 @@ impl WorkspaceService {
     pub async fn set_active_on(
         &self,
         connection: &mut SqliteConnection,
-        context: &CommandContext,
+        _context: &CommandContext,
         workspace_id: String,
     ) -> AppResult<DomainCommandResult<WorkspaceState>> {
         let current = get_workspace_on(connection, &workspace_id, false).await?;
         let now = Utc::now().to_rfc3339();
-        let mut mutations = Vec::new();
         if current.last_opened_at.as_deref() != Some(now.as_str()) {
-            let revision: i64 = sqlx::query_scalar(
+            sqlx::query(
                 r#"
                 UPDATE workspaces
-                SET last_opened_at = ?1, updated_at = ?1, revision = revision + 1
+                SET last_opened_at = ?1
                 WHERE id = ?2 AND deleted_at IS NULL
-                RETURNING revision
                 "#,
             )
             .bind(&now)
             .bind(&workspace_id)
-            .fetch_one(&mut *connection)
+            .execute(&mut *connection)
             .await?;
-            mutations.push(workspace_mutation(
-                context,
-                MutationOperation::Upsert,
-                &workspace_id,
-                revision,
-            ));
         }
         write_setting_on(connection, "active_workspace_id", &workspace_id).await?;
-        Ok(DomainCommandResult::new(
-            state_on(connection).await?,
-            mutations,
-        ))
+        Ok(DomainCommandResult::unchanged(state_on(connection).await?))
     }
 
     pub async fn layout(&self, workspace_id: String) -> AppResult<WorkspaceLayout> {

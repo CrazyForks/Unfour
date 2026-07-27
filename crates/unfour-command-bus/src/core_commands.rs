@@ -77,19 +77,35 @@ impl CommandBus {
     /// not to runtime capability. Current callers only exercise reads and
     /// do not create/rotate/delete credentials by convention, not by type.
     pub async fn from_existing_db_without_seeding(db: LocalDb) -> AppResult<Self> {
-        Self::from_db_without_workspace_seed(db, SecretStore::new(DEFAULT_SECRET_SERVICE)).await
+        Self::from_existing_db_without_seeding_with_extensions(db, CommandBusExtensions::default())
+            .await
+    }
+
+    /// Construct a write-capable `CommandBus` over an existing DB without
+    /// seeding the default workspace, while installing transactional hooks.
+    pub async fn from_existing_db_without_seeding_with_extensions(
+        db: LocalDb,
+        extensions: CommandBusExtensions,
+    ) -> AppResult<Self> {
+        Self::from_db_without_workspace_seed(
+            db,
+            SecretStore::new(DEFAULT_SECRET_SERVICE),
+            extensions,
+        )
+        .await
     }
 
     pub(super) async fn from_db_without_workspace_seed(
         db: LocalDb,
         secret_store: SecretStore,
+        extensions: CommandBusExtensions,
     ) -> AppResult<Self> {
         let activity_log = ActivityLogService::new(db.clone());
         let workspace = WorkspaceService::new(db.clone());
 
         Ok(Self {
             db: db.clone(),
-            extensions: CommandBusExtensions::default(),
+            extensions,
             api_client: ApiClientService::new(db.clone()),
             activity_log,
             database: DatabaseService::new(db.clone()).with_secret_store(secret_store.clone()),

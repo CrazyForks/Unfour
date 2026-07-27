@@ -79,28 +79,6 @@ async fn apply_workspace(
     match change {
         ExternalWorkspaceApply::Upsert(record) => {
             let id = record.id.clone();
-            if record.is_default {
-                let cleared_defaults: Vec<(String, i64)> = sqlx::query_as(
-                    r#"
-                    UPDATE workspaces
-                    SET is_default = 0, updated_at = ?1, revision = revision + 1
-                    WHERE id <> ?2 AND is_default = 1 AND deleted_at IS NULL
-                    RETURNING id, revision
-                    "#,
-                )
-                .bind(&record.updated_at)
-                .bind(&id)
-                .fetch_all(&mut *connection)
-                .await?;
-                for (cleared_id, revision) in cleared_defaults {
-                    mutations.push(workspace_mutation(
-                        context,
-                        MutationOperation::Upsert,
-                        &cleared_id,
-                        revision,
-                    ));
-                }
-            }
             if let Some(revision) = upsert_workspace(connection, record).await? {
                 mutations.push(workspace_mutation(
                     context,
@@ -240,8 +218,6 @@ async fn upsert_workspace(
     if let Some(current) = current {
         if current.deleted_at.is_none()
             && current.name == name
-            && current.is_default == record.is_default
-            && current.last_opened_at == record.last_opened_at
             && current.environment_type == environment_type
             && current.mcp_policy == mcp_policy
             && current.created_at == record.created_at
@@ -252,15 +228,13 @@ async fn upsert_workspace(
         let revision = sqlx::query_scalar(
             r#"
             UPDATE workspaces
-            SET name = ?1, is_default = ?2, last_opened_at = ?3,
-                environment_type = ?4, mcp_policy = ?5, created_at = ?6,
-                updated_at = ?7, deleted_at = NULL, revision = revision + 1
-            WHERE id = ?8 RETURNING revision
+            SET name = ?1, environment_type = ?2, mcp_policy = ?3,
+                created_at = ?4, updated_at = ?5, deleted_at = NULL,
+                revision = revision + 1
+            WHERE id = ?6 RETURNING revision
             "#,
         )
         .bind(name)
-        .bind(record.is_default)
-        .bind(record.last_opened_at)
         .bind(environment_type)
         .bind(mcp_policy)
         .bind(record.created_at)
@@ -276,13 +250,11 @@ async fn upsert_workspace(
         INSERT INTO workspaces (
           id, name, is_default, last_opened_at, environment_type, mcp_policy,
           created_at, updated_at, revision
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 1)
+        ) VALUES (?1, ?2, 0, NULL, ?3, ?4, ?5, ?6, 1)
         "#,
     )
     .bind(&record.id)
     .bind(name)
-    .bind(record.is_default)
-    .bind(record.last_opened_at)
     .bind(environment_type)
     .bind(mcp_policy)
     .bind(&record.created_at)

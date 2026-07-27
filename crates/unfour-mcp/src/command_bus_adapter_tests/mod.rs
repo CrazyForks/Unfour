@@ -1,10 +1,103 @@
-use unfour_command_bus::{ConnectionType, ReadCommand, ReadCommandResult};
+use std::future::Future;
+use std::path::{Path, PathBuf};
+use std::pin::Pin;
+use std::sync::Arc;
+
+use sqlx::SqliteConnection;
+use unfour_command_bus::{
+    CommandBusExtensions, ConnectionType, ReadCommand, ReadCommandResult, TransactionalCommandHook,
+};
+use unfour_core::domain::{CommandContext, DomainMutation};
 
 use super::{CommandBusAdapter, CommandBusAdapterError, LocalCommandBusAdapter};
 use unfour_command_bus::CommandBus;
 use unfour_core::models::{KeyValue, SshConnectionInput};
 use unfour_core::AppError;
 use unfour_local_storage::LocalDb;
+
+struct EnvironmentSqlHook {
+    fail_on: Option<&'static str>,
+}
+
+impl TransactionalCommandHook for EnvironmentSqlHook {
+    fn on_mutations<'a>(
+        &'a self,
+        connection: &'a mut SqliteConnection,
+        context: &'a CommandContext,
+        mutations: &'a [DomainMutation],
+    ) -> Pin<Box<dyn Future<Output = Result<(), AppError>> + Send + 'a>> {
+        Box::pin(async move {
+            for mutation in mutations {
+                sqlx::query("INSERT INTO hook_effects (command_name, entity_id) VALUES (?1, ?2)")
+                    .bind(&context.command_name)
+                    .bind(&mutation.entity.entity_id)
+                    .execute(&mut *connection)
+                    .await?;
+            }
+            if self.fail_on == Some(context.command_name.as_str()) {
+                return Err(AppError::Config("test hook rejected mutation".to_string()));
+            }
+            Ok(())
+        })
+    }
+}
+
+fn test_storage_dir(label: &str) -> PathBuf {
+    std::env::temp_dir().join(format!(
+        "unfour-mcp-{label}-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ))
+}
+
+fn initialize_storage_dir(storage_dir: &Path) -> String {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("build setup runtime");
+    runtime.block_on(async {
+        let db = LocalDb::connect_path(
+            storage_dir.join(unfour_command_bus::DEFAULT_DATABASE_FILE),
+        )
+        .await
+        .expect("create test database");
+        db.migrate().await.expect("run migrations");
+        let bus = CommandBus::from_db(db.clone()).await.expect("seed workspace");
+        sqlx::query(
+            "CREATE TABLE hook_effects (id INTEGER PRIMARY KEY, command_name TEXT NOT NULL, entity_id TEXT NOT NULL)",
+        )
+        .execute(db.pool())
+        .await
+        .expect("create hook effects table");
+        bus.list_workspaces().await.unwrap().active_workspace_id
+    })
+}
+
+fn read_counts(storage_dir: &Path) -> (i64, i64) {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("build query runtime");
+    runtime.block_on(async {
+        let db = LocalDb::connect_path(storage_dir.join(unfour_command_bus::DEFAULT_DATABASE_FILE))
+            .await
+            .expect("open test database");
+        let environments = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM workspace_environments WHERE deleted_at IS NULL",
+        )
+        .fetch_one(db.pool())
+        .await
+        .unwrap();
+        let hook_effects = sqlx::query_scalar("SELECT COUNT(*) FROM hook_effects")
+            .fetch_one(db.pool())
+            .await
+            .unwrap();
+        (environments, hook_effects)
+    })
+}
 
 #[test]
 fn ephemeral_adapter_executes_real_command_bus_reads() {
@@ -90,6 +183,89 @@ fn ephemeral_adapter_executes_environment_crud() {
         .delete_api_environment(&workspace.workspace_id, &created.id)
         .expect("delete environment");
     assert!(remaining.is_empty());
+}
+
+#[test]
+fn adapter_extensions_observe_environment_create_update_and_delete() {
+    let storage_dir = test_storage_dir("hook-crud");
+    let workspace_id = initialize_storage_dir(&storage_dir);
+    let adapter = LocalCommandBusAdapter::from_storage_dir_with_extensions(
+        &storage_dir,
+        CommandBusExtensions::new(vec![Arc::new(EnvironmentSqlHook { fail_on: None })]),
+    )
+    .expect("create hooked adapter");
+
+    let created = adapter
+        .create_api_environment(&workspace_id, "Hooked")
+        .expect("create environment");
+    adapter
+        .update_api_environment(&workspace_id, &created.id, "Updated", Vec::new())
+        .expect("update environment");
+    adapter
+        .delete_api_environment(&workspace_id, &created.id)
+        .expect("delete environment");
+    adapter.shutdown();
+    drop(adapter);
+
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let commands: Vec<(String,)> = runtime.block_on(async {
+        let db = LocalDb::connect_path(storage_dir.join(unfour_command_bus::DEFAULT_DATABASE_FILE))
+            .await
+            .unwrap();
+        sqlx::query_as("SELECT DISTINCT command_name FROM hook_effects ORDER BY command_name")
+            .fetch_all(db.pool())
+            .await
+            .unwrap()
+    });
+    assert_eq!(
+        commands,
+        vec![
+            ("workspace.environment.create".to_string(),),
+            ("workspace.environment.delete".to_string(),),
+            ("workspace.environment.update".to_string(),),
+        ]
+    );
+    drop(runtime);
+    std::fs::remove_dir_all(storage_dir).unwrap();
+}
+
+#[test]
+fn adapter_hook_failure_rolls_back_environment_and_hook_sql() {
+    let storage_dir = test_storage_dir("hook-rollback");
+    let workspace_id = initialize_storage_dir(&storage_dir);
+    let adapter = LocalCommandBusAdapter::from_storage_dir_with_extensions(
+        &storage_dir,
+        CommandBusExtensions::new(vec![Arc::new(EnvironmentSqlHook {
+            fail_on: Some("workspace.environment.create"),
+        })]),
+    )
+    .expect("create rejecting adapter");
+
+    adapter
+        .create_api_environment(&workspace_id, "Must Roll Back")
+        .expect_err("hook should reject create");
+    adapter.shutdown();
+    drop(adapter);
+    assert_eq!(read_counts(&storage_dir), (0, 0));
+    std::fs::remove_dir_all(storage_dir).unwrap();
+}
+
+#[test]
+fn community_storage_adapter_keeps_empty_extensions_behavior() {
+    let storage_dir = test_storage_dir("community-default");
+    let workspace_id = initialize_storage_dir(&storage_dir);
+    let adapter =
+        LocalCommandBusAdapter::from_storage_dir(&storage_dir).expect("create community adapter");
+    adapter
+        .create_api_environment(&workspace_id, "Community")
+        .expect("create without hooks");
+    adapter.shutdown();
+    drop(adapter);
+    assert_eq!(read_counts(&storage_dir), (1, 0));
+    std::fs::remove_dir_all(storage_dir).unwrap();
 }
 
 #[test]

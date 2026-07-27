@@ -35,8 +35,6 @@ pub(crate) async fn read_snapshot_on(
             Ok(DomainSnapshot::Workspace(WorkspaceSnapshot {
                 id: workspace.id,
                 name: workspace.name,
-                is_default: workspace.is_default,
-                last_opened_at: workspace.last_opened_at,
                 environment_type: workspace.environment_type,
                 mcp_policy: workspace.mcp_policy,
                 created_at: workspace.created_at,

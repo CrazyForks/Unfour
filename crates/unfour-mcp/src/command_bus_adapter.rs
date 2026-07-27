@@ -6,7 +6,7 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use tokio::runtime::{Builder, Runtime};
-use unfour_command_bus::{CommandBus, ReadCommand, ReadCommandResult};
+use unfour_command_bus::{CommandBus, CommandBusExtensions, ReadCommand, ReadCommandResult};
 use unfour_core::models::{
     ApiCollection, ApiEnvironment, ApiRequestInput, ApiResponse, ApiSavedRequest,
     CredentialCreateInput, CredentialMetadata, DatabaseConnection, DatabaseConnectionInput,
@@ -44,6 +44,12 @@ impl LocalCommandBusAdapter {
         Self::from_command_bus_future(CommandBus::from_existing_default_storage())
     }
 
+    pub fn default_storage_with_extensions(extensions: CommandBusExtensions) -> AdapterResult {
+        Self::from_command_bus_future(CommandBus::from_existing_default_storage_with_extensions(
+            extensions,
+        ))
+    }
+
     pub fn default_database_path() -> Result<std::path::PathBuf, CommandBusAdapterError> {
         unfour_command_bus::default_database_path()
             .map_err(|_| CommandBusAdapterError::initialization_failed())
@@ -51,6 +57,20 @@ impl LocalCommandBusAdapter {
 
     pub fn from_storage_dir_read_only(storage_dir: impl AsRef<Path>) -> AdapterResult {
         Self::from_command_bus_future(CommandBus::from_existing_storage_dir_read_only(storage_dir))
+    }
+
+    pub fn from_storage_dir(storage_dir: impl AsRef<Path>) -> AdapterResult {
+        Self::from_command_bus_future(CommandBus::from_existing_storage_dir(storage_dir))
+    }
+
+    pub fn from_storage_dir_with_extensions(
+        storage_dir: impl AsRef<Path>,
+        extensions: CommandBusExtensions,
+    ) -> AdapterResult {
+        Self::from_command_bus_future(CommandBus::from_existing_storage_dir_with_extensions(
+            storage_dir,
+            extensions,
+        ))
     }
 
     pub fn ephemeral() -> AdapterResult {

@@ -156,8 +156,6 @@ impl fmt::Debug for SnapshotVariableValue {
 pub struct WorkspaceSnapshot {
     pub id: String,
     pub name: String,
-    pub is_default: bool,
-    pub last_opened_at: Option<String>,
     pub environment_type: String,
     pub mcp_policy: String,
     pub created_at: String,
@@ -258,8 +256,6 @@ pub struct ExternalDelete {
 pub struct ExternalWorkspaceUpsert {
     pub id: String,
     pub name: String,
-    pub is_default: bool,
-    pub last_opened_at: Option<String>,
     pub environment_type: String,
     pub mcp_policy: String,
     pub created_at: String,

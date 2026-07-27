@@ -20,6 +20,15 @@ The MCP layer is an adapter. It must not bypass command-bus safety,
 workspace scoping, redaction, credential reference rules, MCP policy checks,
 or high-risk confirmation checks.
 
+The Community server constructs the writable adapter with empty Command Bus
+extensions. Edition composition may instead use
+`LocalCommandBusAdapter::default_storage_with_extensions` to install
+`TransactionalCommandHook` implementations. MCP Environment create, update,
+and delete operations, including the legacy API Environment compatibility
+methods, then reach the same Workspace Domain Command coordinator and run each
+hook inside the Command Bus-owned SQLite transaction. The adapter does not
+define or install Pro hooks itself.
+
 ## Protocol Shape
 
 The server implements newline-delimited JSON-RPC over standard input and
