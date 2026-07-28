@@ -62,6 +62,9 @@ export function savedRequestToInput(
     query: parseKeyValues(saved.queryJson),
     body: saved.body ?? undefined,
     bodyKind: saved.bodyKind,
+    preRequestScript: saved.preRequestScript,
+    postResponseScript: saved.postResponseScript,
+    scriptSchemaVersion: saved.scriptSchemaVersion,
     timeoutMs: 60_000,
   };
 }
@@ -78,6 +81,9 @@ export function historyDetailToInput(history: ApiHistoryDetail): ApiRequestInput
     query: parseKeyValues(history.requestQueryJson),
     body: history.requestBody ?? undefined,
     bodyKind: "json",
+    preRequestScript: null,
+    postResponseScript: null,
+    scriptSchemaVersion: 1,
     timeoutMs: 60_000,
   };
 }

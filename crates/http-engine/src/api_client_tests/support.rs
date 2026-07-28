@@ -72,6 +72,10 @@ pub(super) async fn save_in_collection(
             body: None,
             body_kind: "json".to_string(),
             timeout_ms: None,
+            pre_request_script: None,
+            post_response_script: None,
+            script_schema_version: 1,
+            temporary_variables: vec![],
         })
         .await
         .expect("save request")

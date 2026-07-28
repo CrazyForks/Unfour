@@ -394,6 +394,10 @@ export function responseStateLabel(
       return t("api.response.status.timeout");
     case "failed":
       return t("api.response.status.failed");
+    case "pre-script-error":
+      return t("api.scripts.preErrorTitle");
+    case "pre-script-timeout":
+      return t("api.scripts.preTimeoutTitle");
     default:
       return state;
   }

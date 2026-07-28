@@ -23,7 +23,14 @@ export function requestTabVisualState(tab: ApiRequestTab): ApiTabVisualState {
   if (tab.sending) {
     return "sending";
   }
-  if (tab.sendError || (tab.response && tab.response.status >= 400)) {
+  if (
+    tab.sendError ||
+    tab.execution?.preRequest.status === "failed" ||
+    tab.execution?.preRequest.status === "timeout" ||
+    tab.execution?.postResponse.status === "failed" ||
+    tab.execution?.postResponse.status === "timeout" ||
+    (tab.response && tab.response.status >= 400)
+  ) {
     return "failed";
   }
   if (tab.response) {
@@ -53,6 +60,12 @@ export function deriveTabResponseState(
     }
     return "failed";
   }
+  if (tab.execution?.preRequest.status === "timeout") {
+    return "pre-script-timeout";
+  }
+  if (tab.execution?.preRequest.status === "failed") {
+    return "pre-script-error";
+  }
   if (!tab.response) {
     return "idle";
   }
@@ -73,6 +86,8 @@ export function normalizeRequestDraft(draft: RequestDraft): string {
     method: draft.method.toUpperCase(),
     name: draft.name.trim(),
     parentFolderId: draft.parentFolderId,
+    postResponseScript: draft.postResponseScript,
+    preRequestScript: draft.preRequestScript,
     query: normalizeKeyValues(draft.query),
     rawBodyType: draft.rawBodyType,
     url: draft.url.trim(),

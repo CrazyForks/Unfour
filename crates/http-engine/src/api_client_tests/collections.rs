@@ -84,6 +84,10 @@ async fn folders_and_parent_folder_requests_drive_collection_tree() {
             body: None,
             body_kind: "json".to_string(),
             timeout_ms: None,
+            pre_request_script: None,
+            post_response_script: None,
+            script_schema_version: 1,
+            temporary_variables: vec![],
         })
         .await
         .expect("save root request");
@@ -130,6 +134,10 @@ async fn folders_and_parent_folder_requests_drive_collection_tree() {
             body: None,
             body_kind: "json".to_string(),
             timeout_ms: None,
+            pre_request_script: None,
+            post_response_script: None,
+            script_schema_version: 1,
+            temporary_variables: vec![],
         })
         .await
         .expect("save child request");
@@ -211,6 +219,10 @@ async fn folder_delete_recursively_soft_deletes_descendants_and_requests() {
             body: None,
             body_kind: "json".to_string(),
             timeout_ms: None,
+            pre_request_script: None,
+            post_response_script: None,
+            script_schema_version: 1,
+            temporary_variables: vec![],
         })
         .await
         .expect("save nested request");
@@ -285,6 +297,10 @@ async fn collection_delete_soft_deletes_folders_and_requests() {
             body: None,
             body_kind: "json".to_string(),
             timeout_ms: None,
+            pre_request_script: None,
+            post_response_script: None,
+            script_schema_version: 1,
+            temporary_variables: vec![],
         })
         .await
         .expect("save request");
@@ -466,6 +482,10 @@ async fn collection_is_scoped_to_workspace() {
             body: None,
             body_kind: "json".to_string(),
             timeout_ms: None,
+            pre_request_script: None,
+            post_response_script: None,
+            script_schema_version: 1,
+            temporary_variables: vec![],
         })
         .await;
     assert!(matches!(save_wrong_workspace, Err(AppError::NotFound(_))));
@@ -518,6 +538,14 @@ async fn unfour_openapi_export_imports_as_a_new_workspace_scoped_collection() {
             body: Some(r#"{"amount":1999}"#.to_string()),
             body_kind: "json".to_string(),
             timeout_ms: None,
+            pre_request_script: Some(
+                "pm.request.headers.upsert({ key: 'X-Script', value: 'pre' });".to_string(),
+            ),
+            post_response_script: Some(
+                "pm.test('status', () => pm.expect(pm.response.code).to.equal(200));".to_string(),
+            ),
+            script_schema_version: 1,
+            temporary_variables: vec![],
         })
         .await
         .expect("save source request");
@@ -582,6 +610,15 @@ async fn unfour_openapi_export_imports_as_a_new_workspace_scoped_collection() {
             .expect("parse imported auth"),
         serde_json::json!({ "type": "bearer", "token": "" })
     );
+    assert_eq!(
+        requests[0].pre_request_script.as_deref(),
+        Some("pm.request.headers.upsert({ key: 'X-Script', value: 'pre' });")
+    );
+    assert_eq!(
+        requests[0].post_response_script.as_deref(),
+        Some("pm.test('status', () => pm.expect(pm.response.code).to.equal(200));")
+    );
+    assert_eq!(requests[0].script_schema_version, 1);
 }
 
 #[tokio::test]

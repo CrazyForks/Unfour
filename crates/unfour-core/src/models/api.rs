@@ -65,6 +65,14 @@ pub struct ApiRequestInput {
     pub body: Option<String>,
     pub body_kind: String,
     pub timeout_ms: Option<u64>,
+    #[serde(default)]
+    pub pre_request_script: Option<String>,
+    #[serde(default)]
+    pub post_response_script: Option<String>,
+    #[serde(default = "default_script_schema_version")]
+    pub script_schema_version: i64,
+    #[serde(default)]
+    pub temporary_variables: Vec<KeyValue>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -127,12 +135,104 @@ pub struct ApiSavedRequest {
     pub query_json: String,
     pub body: Option<String>,
     pub body_kind: String,
+    #[serde(default)]
+    pub pre_request_script: Option<String>,
+    #[serde(default)]
+    pub post_response_script: Option<String>,
+    #[serde(default = "default_script_schema_version")]
+    pub script_schema_version: i64,
     pub created_at: String,
     pub updated_at: String,
     pub deleted_at: Option<String>,
     pub revision: i64,
     pub sync_status: String,
     pub remote_id: Option<String>,
+}
+
+fn default_script_schema_version() -> i64 {
+    1
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ScriptExecutionStatus {
+    Skipped,
+    Success,
+    Failed,
+    Timeout,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ScriptConsoleLevel {
+    Log,
+    Warn,
+    Error,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ScriptConsoleEntry {
+    pub level: ScriptConsoleLevel,
+    pub message: String,
+    pub sequence: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ScriptTestResult {
+    pub name: String,
+    pub passed: bool,
+    pub error_message: Option<String>,
+    pub duration_ms: u128,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ScriptErrorKind {
+    Runtime,
+    Timeout,
+    Validation,
+    Limit,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ScriptError {
+    pub kind: ScriptErrorKind,
+    pub code: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ScriptExecutionResult {
+    pub status: ScriptExecutionStatus,
+    pub duration_ms: u128,
+    pub console: Vec<ScriptConsoleEntry>,
+    pub tests: Vec<ScriptTestResult>,
+    pub error: Option<ScriptError>,
+}
+
+impl ScriptExecutionResult {
+    pub fn skipped() -> Self {
+        Self {
+            status: ScriptExecutionStatus::Skipped,
+            duration_ms: 0,
+            console: Vec::new(),
+            tests: Vec::new(),
+            error: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RequestExecutionResult {
+    pub response: Option<ApiResponse>,
+    pub http_error: Option<String>,
+    pub pre_request: ScriptExecutionResult,
+    pub post_response: ScriptExecutionResult,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

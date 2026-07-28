@@ -5,7 +5,7 @@ use unfour_core::{
     models::{
         ApiCollection, ApiCollectionExportFormat, ApiCollectionExportResult, ApiCollectionFolder,
         ApiCollectionImportResult, ApiEnvironment, ApiHistoryDetail, ApiHistoryItem,
-        ApiRequestInput, ApiResponse, ApiSavedRequest, KeyValue,
+        ApiRequestInput, ApiResponse, ApiSavedRequest, KeyValue, RequestExecutionResult,
     },
     AppError, AppResult,
 };
@@ -290,6 +290,18 @@ pub async fn api_send_request(
     trace_command(
         "api_send_request",
         state.command_bus.send_api_request(input),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn api_send_request_v2(
+    input: ApiRequestInput,
+    state: State<'_, AppState>,
+) -> AppResult<RequestExecutionResult> {
+    trace_command(
+        "api_send_request_v2",
+        state.command_bus.send_api_request_with_scripts(input),
     )
     .await
 }

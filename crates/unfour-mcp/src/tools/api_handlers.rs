@@ -169,6 +169,10 @@ pub(super) fn api_send_request(
             body_kind: parse_optional_string(&arguments, "bodyKind")?
                 .unwrap_or_else(|| "json".to_string()),
             timeout_ms,
+            pre_request_script: None,
+            post_response_script: None,
+            script_schema_version: 1,
+            temporary_variables: vec![],
         };
         command_bus.send_api_request(input)
     };
@@ -255,6 +259,10 @@ pub(super) fn api_create_request(
         body_kind: parse_optional_string(&arguments, "bodyKind")?
             .unwrap_or_else(|| "json".to_string()),
         timeout_ms: None,
+        pre_request_script: None,
+        post_response_script: None,
+        script_schema_version: 1,
+        temporary_variables: vec![],
     };
 
     let saved = command_bus
@@ -318,6 +326,10 @@ pub(super) fn api_update_request(
         body_kind: parse_optional_string(&arguments, "bodyKind")?
             .unwrap_or(existing.body_kind.clone()),
         timeout_ms: None,
+        pre_request_script: existing.pre_request_script.clone(),
+        post_response_script: existing.post_response_script.clone(),
+        script_schema_version: existing.script_schema_version,
+        temporary_variables: vec![],
     };
 
     let saved = command_bus

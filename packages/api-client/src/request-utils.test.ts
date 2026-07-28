@@ -16,7 +16,6 @@ import type {
   ApiCollection,
   ApiCollectionFolder,
   ApiSavedRequest,
-  KeyValue,
 } from "@unfour/command-client";
 
 describe("parseKeyValues", () => {
@@ -101,6 +100,8 @@ describe("body field helpers", () => {
       bodyMode: "form" as const,
       collectionId: null,
       envVariables: [],
+      preRequestScript: "",
+      postResponseScript: "",
       parentFolderId: null,
       formBody: [
         { key: "a", value: "1", enabled: true },
@@ -139,6 +140,9 @@ describe("savedRequestToInput", () => {
       queryJson: "[]",
       body: null,
       bodyKind: "json",
+      preRequestScript: "console.log('before')",
+      postResponseScript: "pm.test('ok', () => {})",
+      scriptSchemaVersion: 1,
       createdAt: "2026-01-01T00:00:00Z",
       updatedAt: "2026-01-01T00:00:00Z",
       deletedAt: null,
@@ -155,6 +159,8 @@ describe("savedRequestToInput", () => {
     expect(result.headers).toHaveLength(1);
     expect(result.query).toEqual([]);
     expect(result.timeoutMs).toBe(60_000);
+    expect(result.preRequestScript).toBe("console.log('before')");
+    expect(result.postResponseScript).toBe("pm.test('ok', () => {})");
   });
 });
 
@@ -325,6 +331,9 @@ function makeSavedRequest(
     queryJson: "[]",
     body: null,
     bodyKind: "json",
+    preRequestScript: null,
+    postResponseScript: null,
+    scriptSchemaVersion: 1,
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",
     deletedAt: null,

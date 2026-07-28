@@ -1,4 +1,9 @@
-import type { ApiHistoryItem, ApiRequestInput, ApiResponse } from "@unfour/command-client";
+import type {
+  ApiHistoryItem,
+  ApiRequestInput,
+  ApiResponse,
+  RequestExecutionResult,
+} from "@unfour/command-client";
 
 import type {
   ApiSplitDirection,
@@ -11,6 +16,7 @@ import type {
 export type ApiRequestTab = {
   baseline: string | null;
   draft: RequestDraft;
+  execution: RequestExecutionResult | null;
   id: string;
   requestTab: RequestParamsTab;
   lastRequest: ApiRequestInput | null;
@@ -55,4 +61,6 @@ export type ApiTabResponseState =
   | "http-error"
   | "network"
   | "timeout"
+  | "pre-script-error"
+  | "pre-script-timeout"
   | "failed";

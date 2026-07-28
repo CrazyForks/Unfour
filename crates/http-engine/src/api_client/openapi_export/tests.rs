@@ -40,6 +40,9 @@ fn request(id: &str, method: &str, url: &str) -> ApiSavedRequest {
         query_json: "[]".to_string(),
         body: None,
         body_kind: "none".to_string(),
+        pre_request_script: None,
+        post_response_script: None,
+        script_schema_version: 1,
         created_at: "2026-07-17T00:00:00Z".to_string(),
         updated_at: "2026-07-17T00:00:00Z".to_string(),
         deleted_at: None,
@@ -119,6 +122,25 @@ fn get_request_maps_to_path_method_summary_and_server() {
         value["paths"]["/v1/users"]["get"]["x-unfour-request-id"],
         "request-1"
     );
+}
+
+#[test]
+fn request_scripts_are_preserved_as_unfour_extensions() {
+    let mut scripted = request("request-scripted", "POST", "https://api.example.com/run");
+    scripted.pre_request_script = Some("console.log('pre')".to_string());
+    scripted.post_response_script = Some("pm.test('ok', () => {})".to_string());
+
+    let value = document_json(&source(vec![scripted]));
+    let operation = &value["paths"]["/run"]["post"];
+    assert_eq!(
+        operation["x-unfour-pre-request-script"],
+        "console.log('pre')"
+    );
+    assert_eq!(
+        operation["x-unfour-post-response-script"],
+        "pm.test('ok', () => {})"
+    );
+    assert_eq!(operation["x-unfour-script-schema-version"], 1);
 }
 
 #[test]

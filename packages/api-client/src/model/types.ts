@@ -18,9 +18,9 @@ export type ApiRequestState =
   | "network"
   | "timeout";
 
-export type RequestParamsTab = "query" | "auth" | "headers" | "body";
+export type RequestParamsTab = "query" | "auth" | "headers" | "body" | "scripts";
 export type ResponsePanelTab = "response" | "history";
-export type ResponseTab = "body" | "headers" | "cookies" | "timing" | "request";
+export type ResponseTab = "body" | "headers" | "cookies" | "timing" | "request" | "tests" | "console";
 export type ApiSplitDirection = "vertical" | "horizontal";
 export type ApiTabSource = "new" | "saved" | "history";
 export type ApiTabSaveState = "unsaved" | "saved" | "dirty" | "saving";
@@ -49,6 +49,8 @@ export type RequestDraft = {
   method: string;
   name: string;
   parentFolderId: string | null;
+  postResponseScript: string;
+  preRequestScript: string;
   query: KeyValue[];
   rawBodyType: RequestRawBodyType;
   url: string;

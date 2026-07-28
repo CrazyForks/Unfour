@@ -1,10 +1,11 @@
 import type { RequestParamsTab } from "./types";
 
-export const requestConfigTabs: Array<{ id: RequestParamsTab; label: string }> = [
-  { id: "query", label: "Params" },
-  { id: "auth", label: "Auth" },
-  { id: "headers", label: "Headers" },
-  { id: "body", label: "Body" },
+export const requestConfigTabs: Array<{ id: RequestParamsTab; labelKey: string }> = [
+  { id: "query", labelKey: "api.request.tabs.params" },
+  { id: "auth", labelKey: "api.request.tabs.auth" },
+  { id: "headers", labelKey: "api.request.tabs.headers" },
+  { id: "body", labelKey: "api.request.tabs.body" },
+  { id: "scripts", labelKey: "api.request.tabs.scripts" },
 ];
 
 export function methodBadgeLabel(method: string) {

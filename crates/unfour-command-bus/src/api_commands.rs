@@ -542,6 +542,10 @@ impl CommandBus {
             body: saved.body.clone(),
             body_kind: saved.body_kind.clone(),
             timeout_ms,
+            pre_request_script: saved.pre_request_script.clone(),
+            post_response_script: saved.post_response_script.clone(),
+            script_schema_version: saved.script_schema_version,
+            temporary_variables: vec![],
         };
 
         let input = self.resolve_api_request_input(input).await?;

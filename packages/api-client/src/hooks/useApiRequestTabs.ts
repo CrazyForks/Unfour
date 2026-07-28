@@ -7,7 +7,6 @@ import {
   listWorkspaceEnvironments,
   listApiHistory,
   listSavedApiRequests,
-  resolveWorkspaceVariables,
   saveApiRequest,
   sendApiRequest,
   updateApiRequest,
@@ -62,8 +61,8 @@ export function useApiRequestTabs(workspaceId: string) {
   const sendMutation = useMutation({
     mutationFn: ({ input }: { input: ApiRequestInput; tabId: string }) =>
       sendApiRequest(input),
-    onSuccess: (response, variables) => {
-      useApiRequestTabStore.getState().completeTabSend(workspaceId, variables.tabId, response);
+    onSuccess: (execution, variables) => {
+      useApiRequestTabStore.getState().completeTabSend(workspaceId, variables.tabId, execution);
       queryClient.invalidateQueries({ queryKey: ["api-history", workspaceId] });
     },
     onError: (error, variables) =>
@@ -149,23 +148,11 @@ export function useApiRequestTabs(workspaceId: string) {
         useApiRequestTabStore.getState().failTabSend(workspaceId, tab.id, validationError);
         return;
       }
-      void resolveAuthForSend(
-        tab.draft.auth,
-        workspaceId,
-        activeEnvironment?.id ?? null,
-      )
-        .then((auth) => {
-          const input = tabToInput(tab, workspaceId, { auth, purpose: "send" });
-          useApiRequestTabStore.getState().startTabSend(workspaceId, tab.id, input);
-          sendRequest({ input, tabId: tab.id });
-        })
-        .catch((error) =>
-          useApiRequestTabStore
-            .getState()
-            .failTabSend(workspaceId, tab.id, formatError(error)),
-        );
+      const input = tabToInput(tab, workspaceId, { purpose: "send" });
+      useApiRequestTabStore.getState().startTabSend(workspaceId, tab.id, input);
+      sendRequest({ input, tabId: tab.id });
     },
-    [activeEnvironment?.id, sendRequest, workspaceId],
+    [sendRequest, workspaceId],
   );
 
   const saveTab = useCallback(
@@ -262,6 +249,10 @@ export function tabToInput(
         ? undefined
         : body.body,
     bodyKind: body.bodyKind,
+    preRequestScript: tab.draft.preRequestScript || null,
+    postResponseScript: tab.draft.postResponseScript || null,
+    scriptSchemaVersion: 1,
+    temporaryVariables: purpose === "send" ? tab.draft.envVariables : [],
     timeoutMs: 60_000,
   };
 }
@@ -355,32 +346,6 @@ function applyGeneratedQuery(
     }
   }
   return query;
-}
-
-async function resolveAuthForSend(
-  auth: ApiAuthConfig,
-  workspaceId: string,
-  activeEnvironmentId: string | null,
-): Promise<ApiAuthConfig> {
-  const resolve = (input: string) =>
-    input.includes("{{")
-      ? resolveWorkspaceVariables(workspaceId, activeEnvironmentId, input)
-      : Promise.resolve(input);
-  if (auth.type === "bearer") {
-    return { ...auth, token: await resolve(auth.token) };
-  }
-  if (auth.type === "basic") {
-    const [username, password] = await Promise.all([
-      resolve(auth.username),
-      resolve(auth.password),
-    ]);
-    return { ...auth, password, username };
-  }
-  if (auth.type === "api-key") {
-    const [key, value] = await Promise.all([resolve(auth.key), resolve(auth.value)]);
-    return { ...auth, key, value };
-  }
-  return auth;
 }
 
 function encodeBasicCredential(username: string, password: string): string {

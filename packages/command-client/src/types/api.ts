@@ -61,6 +61,10 @@ export type ApiRequestInput = {
   body?: string;
   bodyKind: string;
   timeoutMs?: number;
+  preRequestScript?: string | null;
+  postResponseScript?: string | null;
+  scriptSchemaVersion?: number;
+  temporaryVariables?: KeyValue[];
 };
 
 export type ApiResponse = {
@@ -123,10 +127,51 @@ export type ApiSavedRequest = {
   queryJson: string;
   body: string | null;
   bodyKind: string;
+  preRequestScript: string | null;
+  postResponseScript: string | null;
+  scriptSchemaVersion: number;
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
   revision: number;
   syncStatus: string;
   remoteId: string | null;
+};
+
+export type ScriptExecutionStatus = "skipped" | "success" | "failed" | "timeout";
+export type ScriptConsoleLevel = "log" | "warn" | "error";
+export type ScriptErrorKind = "runtime" | "timeout" | "validation" | "limit";
+
+export type ScriptConsoleEntry = {
+  level: ScriptConsoleLevel;
+  message: string;
+  sequence: number;
+};
+
+export type ScriptTestResult = {
+  name: string;
+  passed: boolean;
+  errorMessage: string | null;
+  durationMs: number;
+};
+
+export type ScriptError = {
+  kind: ScriptErrorKind;
+  code: string;
+  message: string;
+};
+
+export type ScriptExecutionResult = {
+  status: ScriptExecutionStatus;
+  durationMs: number;
+  console: ScriptConsoleEntry[];
+  tests: ScriptTestResult[];
+  error: ScriptError | null;
+};
+
+export type RequestExecutionResult = {
+  response: ApiResponse | null;
+  httpError: string | null;
+  preRequest: ScriptExecutionResult;
+  postResponse: ScriptExecutionResult;
 };

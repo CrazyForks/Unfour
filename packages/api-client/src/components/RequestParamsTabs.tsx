@@ -5,6 +5,7 @@ import { Wand2 } from "lucide-react";
 import { Button, Input, cn, useI18n, useTheme } from "@unfour/ui";
 import type { KeyValue } from "@unfour/command-client";
 import { KeyValueEditor } from "./KeyValueEditor";
+import { RequestScriptEditors } from "./RequestScriptEditors";
 import { requestConfigTabs } from "../model/request-tabs";
 import type {
   ApiAuthConfig,
@@ -25,11 +26,15 @@ export function RequestParamsTabs({
   onBodyModeChange,
   onFormBodyChange,
   onHeadersChange,
+  onPostResponseScriptChange,
+  onPreRequestScriptChange,
   onQueryChange,
   onRawBodyTypeChange,
   onTabChange,
   query,
   rawBodyType,
+  postResponseScript,
+  preRequestScript,
   tab,
 }: {
   auth: ApiAuthConfig;
@@ -42,11 +47,15 @@ export function RequestParamsTabs({
   onBodyModeChange: (value: RequestBodyMode) => void;
   onFormBodyChange: (items: KeyValue[]) => void;
   onHeadersChange: (items: KeyValue[]) => void;
+  onPostResponseScriptChange: (value: string) => void;
+  onPreRequestScriptChange: (value: string) => void;
   onQueryChange: (items: KeyValue[]) => void;
   onRawBodyTypeChange: (value: RequestRawBodyType) => void;
   onTabChange: (tab: RequestParamsTab) => void;
   query: KeyValue[];
   rawBodyType: RequestRawBodyType;
+  postResponseScript: string;
+  preRequestScript: string;
   tab: RequestParamsTab;
 }) {
   const { t } = useI18n();
@@ -56,7 +65,8 @@ export function RequestParamsTabs({
       <CompactTabs
         active={tab}
         items={requestConfigTabs.map((item) => ({
-          ...item,
+          id: item.id,
+          label: t(item.labelKey),
           meta:
             item.id === "query"
               ? enabledCount(query)
@@ -74,7 +84,10 @@ export function RequestParamsTabs({
                         : body.trim()
                           ? 1
                           : 0
-                    : 0,
+                    : item.id === "scripts"
+                      ? Number(Boolean(preRequestScript.trim())) +
+                        Number(Boolean(postResponseScript.trim()))
+                      : 0,
         }))}
         onChange={onTabChange}
       />
@@ -115,6 +128,14 @@ export function RequestParamsTabs({
           <PaneScroll>
             <AuthPanel auth={auth} onAuthChange={onAuthChange} />
           </PaneScroll>
+        )}
+        {tab === "scripts" && (
+          <RequestScriptEditors
+            onPostResponseChange={onPostResponseScriptChange}
+            onPreRequestChange={onPreRequestScriptChange}
+            postResponseScript={postResponseScript}
+            preRequestScript={preRequestScript}
+          />
         )}
       </div>
     </>

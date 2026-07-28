@@ -18,11 +18,15 @@ export function ApiRequestEditor({
   onBodyModeChange,
   onFormBodyChange,
   onHeadersChange,
+  onPostResponseScriptChange,
+  onPreRequestScriptChange,
   onQueryChange,
   onRawBodyTypeChange,
   onTabChange,
   query,
   rawBodyType,
+  postResponseScript,
+  preRequestScript,
   tab,
 }: {
   auth: ApiAuthConfig;
@@ -35,11 +39,15 @@ export function ApiRequestEditor({
   onBodyModeChange: (value: RequestBodyMode) => void;
   onFormBodyChange: (items: KeyValue[]) => void;
   onHeadersChange: (items: KeyValue[]) => void;
+  onPostResponseScriptChange: (value: string) => void;
+  onPreRequestScriptChange: (value: string) => void;
   onQueryChange: (items: KeyValue[]) => void;
   onRawBodyTypeChange: (value: RequestRawBodyType) => void;
   onTabChange: (tab: RequestParamsTab) => void;
   query: KeyValue[];
   rawBodyType: RequestRawBodyType;
+  postResponseScript: string;
+  preRequestScript: string;
   tab: RequestParamsTab;
 }) {
   return (
@@ -55,11 +63,15 @@ export function ApiRequestEditor({
         onBodyModeChange={onBodyModeChange}
         onFormBodyChange={onFormBodyChange}
         onHeadersChange={onHeadersChange}
+        onPostResponseScriptChange={onPostResponseScriptChange}
+        onPreRequestScriptChange={onPreRequestScriptChange}
         onQueryChange={onQueryChange}
         onRawBodyTypeChange={onRawBodyTypeChange}
         onTabChange={onTabChange}
         query={query}
         rawBodyType={rawBodyType}
+        postResponseScript={postResponseScript}
+        preRequestScript={preRequestScript}
         tab={tab}
       />
     </section>

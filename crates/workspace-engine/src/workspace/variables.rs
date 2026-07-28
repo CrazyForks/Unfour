@@ -2,7 +2,8 @@ use std::collections::{HashMap, HashSet};
 
 use sqlx::SqliteConnection;
 use unfour_core::models::{
-    WorkspaceEnvironment, WorkspaceEnvironmentVariable, WorkspaceVariable, WorkspaceVariableInput,
+    KeyValue, WorkspaceEnvironment, WorkspaceEnvironmentVariable, WorkspaceVariable,
+    WorkspaceVariableInput,
 };
 use unfour_core::{AppError, AppResult};
 
@@ -52,6 +53,19 @@ impl WorkspaceService {
         active_environment_id: Option<&str>,
         input: &str,
     ) -> AppResult<String> {
+        self.resolve_variables_with_overrides(workspace_id, active_environment_id, input, &[])
+            .await
+    }
+
+    /// Resolve `{{VARIABLE}}` tokens with request-local values taking
+    /// precedence over environment and workspace values.
+    pub async fn resolve_variables_with_overrides(
+        &self,
+        workspace_id: &str,
+        active_environment_id: Option<&str>,
+        input: &str,
+        overrides: &[KeyValue],
+    ) -> AppResult<String> {
         let mut connection = self.db.pool().acquire().await?;
         get_workspace_on(&mut connection, workspace_id, false).await?;
         let mut values = HashMap::new();
@@ -73,6 +87,10 @@ impl WorkspaceService {
             {
                 values.insert(variable.key, variable.value);
             }
+        }
+
+        for variable in overrides.iter().filter(|variable| variable.enabled) {
+            values.insert(variable.key.clone(), variable.value.clone());
         }
 
         resolve_template(input, &values)

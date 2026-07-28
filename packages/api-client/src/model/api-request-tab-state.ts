@@ -2,8 +2,8 @@ import { create } from "zustand";
 import type {
   ApiHistoryDetail,
   ApiRequestInput,
-  ApiResponse,
   ApiSavedRequest,
+  RequestExecutionResult,
 } from "@unfour/command-client";
 import {
   closeApiTab,
@@ -47,7 +47,7 @@ type ApiTabStore = {
   closeTab: (workspaceId: string, tabId: string) => void;
   closeTabs: (workspaceId: string, tabIds: string[]) => void;
   completeTabSave: (workspaceId: string, tabId: string, saved: ApiSavedRequest) => void;
-  completeTabSend: (workspaceId: string, tabId: string, response: ApiResponse) => void;
+  completeTabSend: (workspaceId: string, tabId: string, execution: RequestExecutionResult) => void;
   failTabSave: (workspaceId: string, tabId: string, error: string) => void;
   failTabSend: (workspaceId: string, tabId: string, error: string) => void;
   newRequest: (workspaceId: string) => void;

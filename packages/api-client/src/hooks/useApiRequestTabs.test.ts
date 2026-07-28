@@ -172,4 +172,23 @@ describe("tabToInput", () => {
     expect(authHeaders).toHaveLength(1);
     expect(authHeaders[0].value).toBe("Bearer manual");
   });
+
+  it("includes request scripts and temporary variables in save and send inputs", () => {
+    const tab = tabWithDraft({
+      preRequestScript: "pm.request.headers.upsert({ key: 'X-Test', value: '1' })",
+      postResponseScript: "pm.test('ok', () => pm.expect(true).to.be.ok())",
+      envVariables: [{ enabled: true, key: "temporary", value: "value" }],
+    });
+
+    const saveInput = tabToInput(tab, WORKSPACE, { purpose: "save" });
+    const sendInput = tabToInput(tab, WORKSPACE, { purpose: "send" });
+
+    expect(saveInput).toMatchObject({
+      preRequestScript: tab.draft.preRequestScript,
+      postResponseScript: tab.draft.postResponseScript,
+      scriptSchemaVersion: 1,
+      temporaryVariables: [],
+    });
+    expect(sendInput.temporaryVariables).toEqual(tab.draft.envVariables);
+  });
 });

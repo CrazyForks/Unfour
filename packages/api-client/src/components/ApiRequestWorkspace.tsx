@@ -58,11 +58,19 @@ export function ApiRequestWorkspace({
           onBodyModeChange={(bodyMode) => onUpdateDraft(activeTab.id, { bodyMode })}
           onFormBodyChange={(formBody) => onUpdateDraft(activeTab.id, { formBody })}
           onHeadersChange={(headers) => onUpdateDraft(activeTab.id, { headers })}
+          onPostResponseScriptChange={(postResponseScript) =>
+            onUpdateDraft(activeTab.id, { postResponseScript })
+          }
+          onPreRequestScriptChange={(preRequestScript) =>
+            onUpdateDraft(activeTab.id, { preRequestScript })
+          }
           onQueryChange={(query) => onUpdateDraft(activeTab.id, { query })}
           onRawBodyTypeChange={(rawBodyType) => onUpdateDraft(activeTab.id, { rawBodyType })}
           onTabChange={(tab) => onRequestTabChange(activeTab.id, tab)}
           query={activeTab.draft.query}
           rawBodyType={activeTab.draft.rawBodyType}
+          postResponseScript={activeTab.draft.postResponseScript}
+          preRequestScript={activeTab.draft.preRequestScript}
           tab={activeTab.requestTab}
         />
         <ApiResponseViewer

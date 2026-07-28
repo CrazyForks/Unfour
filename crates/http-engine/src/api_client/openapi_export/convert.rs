@@ -88,6 +88,22 @@ pub(super) fn build_document(source: &OpenApiExportSource) -> AppResult<OpenApiD
             "x-unfour-original-url".to_string(),
             serde_json::json!(request.request.url),
         );
+        if let Some(script) = &request.request.pre_request_script {
+            extensions.insert(
+                "x-unfour-pre-request-script".to_string(),
+                serde_json::json!(script),
+            );
+        }
+        if let Some(script) = &request.request.post_response_script {
+            extensions.insert(
+                "x-unfour-post-response-script".to_string(),
+                serde_json::json!(script),
+            );
+        }
+        extensions.insert(
+            "x-unfour-script-schema-version".to_string(),
+            serde_json::json!(request.request.script_schema_version),
+        );
         if request.original_path != request.openapi_path {
             extensions.insert(
                 "x-unfour-original-path".to_string(),

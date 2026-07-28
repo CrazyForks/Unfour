@@ -5,6 +5,7 @@ import type {
   ApiRequestInput,
   ApiResponse,
   ApiSavedRequest,
+  RequestExecutionResult,
 } from "@unfour/command-client";
 import {
   closeApiTab,
@@ -38,12 +39,14 @@ describe("API request tab state", () => {
       "auth",
       "headers",
       "body",
+      "scripts",
     ]);
-    expect(requestConfigTabs.map((tab) => tab.label)).toEqual([
-      "Params",
-      "Auth",
-      "Headers",
-      "Body",
+    expect(requestConfigTabs.map((tab) => tab.labelKey)).toEqual([
+      "api.request.tabs.params",
+      "api.request.tabs.auth",
+      "api.request.tabs.headers",
+      "api.request.tabs.body",
+      "api.request.tabs.scripts",
     ]);
   });
 
@@ -117,7 +120,7 @@ describe("API request tab state", () => {
       url: "https://changed.test",
     });
     const sending = startTabSend(dirty, "saved:req-1");
-    const completed = completeTabSend(sending, "saved:req-1", response());
+    const completed = completeTabSend(sending, "saved:req-1", execution());
 
     expect(sending.tabs[0].sending).toBe(true);
     expect(getTabSaveState(completed.tabs[0])).toBe("dirty");
@@ -130,7 +133,7 @@ describe("API request tab state", () => {
     const completed = completeTabSend(
       startTabSend(second, "new:1"),
       "new:1",
-      response(),
+      execution(),
     );
 
     expect(completed.activeTabId).toBe("new:2");
@@ -142,7 +145,7 @@ describe("API request tab state", () => {
     const opened = createNewRequestTab(emptyApiTabsState("ws-1"), "new:1");
     const input = requestInput();
     const sending = startTabSend(opened, "new:1", input);
-    const completed = completeTabSend(sending, "new:1", response());
+    const completed = completeTabSend(sending, "new:1", execution());
 
     expect(sending.tabs[0].lastRequest).toEqual(input);
     expect(completed.tabs[0].lastRequest).toEqual(input);
@@ -221,7 +224,11 @@ describe("API request tab state", () => {
   it("derives response states including empty success and timeout", () => {
     const opened = createNewRequestTab(emptyApiTabsState("ws-1"), "new:1");
     const sending = startTabSend(opened, "new:1");
-    const empty = completeTabSend(sending, "new:1", { ...response(), body: "" });
+    const empty = completeTabSend(
+      sending,
+      "new:1",
+      execution({ ...response(), body: "" }),
+    );
     const timeout = failTabSend(sending, "new:1", "Request timed out");
 
     expect(deriveTabResponseState(opened.tabs[0])).toBe("idle");
@@ -268,6 +275,9 @@ function savedRequest(id: string): ApiSavedRequest {
     queryJson: "[]",
     body: null,
     bodyKind: "json",
+    preRequestScript: "console.log('before')",
+    postResponseScript: "pm.test('ok', () => {})",
+    scriptSchemaVersion: 1,
     createdAt: "2026-06-15T00:00:00Z",
     updatedAt: "2026-06-15T00:00:00Z",
     deletedAt: null,
@@ -315,6 +325,27 @@ function response(): ApiResponse {
     headers: [],
     body: "{}",
     durationMs: 12,
+  };
+}
+
+function execution(responseValue: ApiResponse = response()): RequestExecutionResult {
+  return {
+    response: responseValue,
+    httpError: null,
+    preRequest: {
+      status: "success",
+      durationMs: 1,
+      console: [],
+      tests: [],
+      error: null,
+    },
+    postResponse: {
+      status: "success",
+      durationMs: 2,
+      console: [],
+      tests: [],
+      error: null,
+    },
   };
 }
 

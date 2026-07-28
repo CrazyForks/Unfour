@@ -1,8 +1,8 @@
 use super::*;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use unfour_core::models::{
-    ApiCollectionExportFormat, ApiRequestInput, DatabaseConnectionInput, SshConnectionInput,
-    WorkspaceVariableInput,
+    ApiCollectionExportFormat, ApiRequestInput, DatabaseConnectionInput, ScriptExecutionStatus,
+    SshConnectionInput, WorkspaceVariableInput,
 };
 use unfour_local_storage::LocalDb;
 
@@ -19,6 +19,236 @@ async fn test_bus() -> CommandBus {
     let db = LocalDb::from_pool(pool);
     db.migrate().await.expect("run migrations");
     CommandBus::from_db(db).await.expect("build command bus")
+}
+
+fn api_script_test_input(workspace_id: String, url: String) -> ApiRequestInput {
+    ApiRequestInput {
+        workspace_id,
+        name: None,
+        parent_folder_id: None,
+        collection_id: None,
+        auth_json: None,
+        method: "GET".to_string(),
+        url,
+        headers: vec![],
+        query: vec![],
+        body: None,
+        body_kind: "none".to_string(),
+        timeout_ms: Some(2_000),
+        pre_request_script: None,
+        post_response_script: None,
+        script_schema_version: 1,
+        temporary_variables: vec![],
+    }
+}
+
+fn spawn_api_test_server() -> (String, std::sync::mpsc::Receiver<String>) {
+    use std::io::{Read, Write};
+
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind test server");
+    let address = listener.local_addr().expect("read test server address");
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("accept API request");
+        stream
+            .set_read_timeout(Some(std::time::Duration::from_secs(2)))
+            .expect("set read timeout");
+        let mut request = Vec::new();
+        let mut chunk = [0_u8; 1024];
+        loop {
+            let read = stream.read(&mut chunk).expect("read API request");
+            if read == 0 {
+                break;
+            }
+            request.extend_from_slice(&chunk[..read]);
+            if request.windows(4).any(|window| window == b"\r\n\r\n") {
+                break;
+            }
+        }
+        sender
+            .send(String::from_utf8_lossy(&request).into_owned())
+            .expect("capture API request");
+        let body = r#"{"ok":true}"#;
+        write!(
+            stream,
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            body.len(),
+            body
+        )
+        .expect("write API response");
+    });
+    (format!("http://{address}/echo"), receiver)
+}
+
+#[tokio::test]
+async fn api_pre_request_script_mutates_the_outbound_request() {
+    let bus = test_bus().await;
+    let workspace_id = bus.list_workspaces().await.unwrap().active_workspace_id;
+    let (url, request) = spawn_api_test_server();
+    let mut input = api_script_test_input(workspace_id, url);
+    input.pre_request_script = Some(
+        r#"
+pm.request.headers.upsert({ key: "X-From-Script", value: "yes" });
+pm.variables.set("source", "pre");
+pm.request.url = pm.request.url + "?source={{source}}";
+"#
+        .to_string(),
+    );
+
+    let result = bus
+        .send_api_request_with_scripts(input)
+        .await
+        .expect("execute scripted request");
+    let outbound = request
+        .recv_timeout(std::time::Duration::from_secs(2))
+        .expect("capture outbound request");
+
+    assert_eq!(result.pre_request.status, ScriptExecutionStatus::Success);
+    assert_eq!(result.post_response.status, ScriptExecutionStatus::Skipped);
+    assert_eq!(result.response.expect("HTTP response").status, 200);
+    assert!(outbound.starts_with("GET /echo?source=pre HTTP/1.1"));
+    assert!(outbound.to_ascii_lowercase().contains("x-from-script: yes"));
+}
+
+#[tokio::test]
+async fn api_pre_request_failure_prevents_network_io() {
+    let bus = test_bus().await;
+    let workspace_id = bus.list_workspaces().await.unwrap().active_workspace_id;
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind no-send server");
+    listener
+        .set_nonblocking(true)
+        .expect("make no-send server nonblocking");
+    let mut input = api_script_test_input(
+        workspace_id,
+        format!("http://{}/must-not-send", listener.local_addr().unwrap()),
+    );
+    input.pre_request_script = Some("throw new Error('stop before send')".to_string());
+
+    let result = bus
+        .send_api_request_with_scripts(input)
+        .await
+        .expect("return typed script failure");
+
+    assert_eq!(result.pre_request.status, ScriptExecutionStatus::Failed);
+    assert!(result.response.is_none());
+    assert!(result.http_error.is_none());
+    assert_eq!(result.post_response.status, ScriptExecutionStatus::Skipped);
+    assert!(matches!(
+        listener.accept(),
+        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock
+    ));
+}
+
+#[tokio::test]
+async fn api_post_response_failure_keeps_the_http_response() {
+    let bus = test_bus().await;
+    let workspace_id = bus.list_workspaces().await.unwrap().active_workspace_id;
+    let (url, request) = spawn_api_test_server();
+    let mut input = api_script_test_input(workspace_id, url);
+    input.post_response_script = Some("throw new Error('post failed')".to_string());
+
+    let result = bus
+        .send_api_request_with_scripts(input)
+        .await
+        .expect("return response and post-script failure");
+    request
+        .recv_timeout(std::time::Duration::from_secs(2))
+        .expect("request reached server");
+
+    assert_eq!(result.response.expect("HTTP response").status, 200);
+    assert_eq!(result.post_response.status, ScriptExecutionStatus::Failed);
+    assert!(result
+        .post_response
+        .error
+        .expect("post-script error")
+        .message
+        .contains("post failed"));
+}
+
+#[tokio::test]
+async fn api_environment_script_writes_commit_only_after_success() {
+    let bus = test_bus().await;
+    let workspace_id = bus.list_workspaces().await.unwrap().active_workspace_id;
+    let environment = bus
+        .workspace_environment_create(workspace_id.clone(), "Scripts".to_string())
+        .await
+        .expect("create script environment");
+    bus.workspace_environment_update(
+        workspace_id.clone(),
+        environment.id.clone(),
+        environment.name,
+        vec![WorkspaceVariableInput {
+            id: None,
+            key: "token".to_string(),
+            value: "old".to_string(),
+            is_secret: true,
+            is_enabled: true,
+            description: None,
+            sort_order: 0,
+        }],
+    )
+    .await
+    .expect("seed script variable");
+    bus.workspace_environment_set_active(workspace_id.clone(), Some(environment.id.clone()))
+        .await
+        .expect("activate script environment");
+
+    let (url, request) = spawn_api_test_server();
+    let mut success = api_script_test_input(workspace_id.clone(), url);
+    success.pre_request_script = Some(r#"pm.environment.set("token", "committed")"#.to_string());
+    bus.send_api_request_with_scripts(success)
+        .await
+        .expect("execute successful environment write");
+    request
+        .recv_timeout(std::time::Duration::from_secs(2))
+        .expect("successful request reached server");
+
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind rollback server");
+    listener.set_nonblocking(true).unwrap();
+    let mut failure = api_script_test_input(
+        workspace_id.clone(),
+        format!("http://{}/must-not-send", listener.local_addr().unwrap()),
+    );
+    failure.pre_request_script = Some(
+        r#"pm.environment.set("token", "rolled-back"); throw new Error("rollback")"#.to_string(),
+    );
+    let result = bus
+        .send_api_request_with_scripts(failure)
+        .await
+        .expect("return failed script result");
+
+    let active = bus
+        .workspace_environments_list(workspace_id)
+        .await
+        .expect("reload environments")
+        .into_iter()
+        .find(|item| item.id == environment.id)
+        .expect("script environment");
+    assert_eq!(result.pre_request.status, ScriptExecutionStatus::Failed);
+    assert_eq!(active.variables[0].value, "committed");
+    assert!(matches!(
+        listener.accept(),
+        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock
+    ));
+}
+
+#[tokio::test]
+async fn api_request_without_scripts_uses_the_versioned_path_unchanged() {
+    let bus = test_bus().await;
+    let workspace_id = bus.list_workspaces().await.unwrap().active_workspace_id;
+    let (url, request) = spawn_api_test_server();
+
+    let result = bus
+        .send_api_request_with_scripts(api_script_test_input(workspace_id, url))
+        .await
+        .expect("execute request without scripts");
+    request
+        .recv_timeout(std::time::Duration::from_secs(2))
+        .expect("request reached server");
+
+    assert_eq!(result.response.expect("HTTP response").status, 200);
+    assert_eq!(result.pre_request.status, ScriptExecutionStatus::Skipped);
+    assert_eq!(result.post_response.status, ScriptExecutionStatus::Skipped);
 }
 
 #[tokio::test]
@@ -83,12 +313,25 @@ async fn save_and_list_api_requests() {
         body: None,
         body_kind: "none".to_string(),
         timeout_ms: None,
+        pre_request_script: Some("console.log('saved pre')".to_string()),
+        post_response_script: Some("pm.test('saved post', () => {})".to_string()),
+        script_schema_version: 1,
+        temporary_variables: vec![],
     };
 
     let saved = bus.save_api_request(input).await.expect("save api request");
     assert_eq!(saved.name, "Test GET request");
     assert_eq!(saved.method, "GET");
     assert_eq!(saved.workspace_id, workspace_id);
+    assert_eq!(
+        saved.pre_request_script.as_deref(),
+        Some("console.log('saved pre')")
+    );
+    assert_eq!(
+        saved.post_response_script.as_deref(),
+        Some("pm.test('saved post', () => {})")
+    );
+    assert_eq!(saved.script_schema_version, 1);
 
     // List should now have one request
     let listed = bus
@@ -98,6 +341,8 @@ async fn save_and_list_api_requests() {
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0].id, saved.id);
     assert_eq!(listed[0].name, "Test GET request");
+    assert_eq!(listed[0].pre_request_script, saved.pre_request_script);
+    assert_eq!(listed[0].post_response_script, saved.post_response_script);
 
     // Save a second request
     let input2 = ApiRequestInput {
@@ -113,6 +358,10 @@ async fn save_and_list_api_requests() {
         body: Some(r#"{"key":"value"}"#.to_string()),
         body_kind: "json".to_string(),
         timeout_ms: None,
+        pre_request_script: None,
+        post_response_script: None,
+        script_schema_version: 1,
+        temporary_variables: vec![],
     };
 
     let saved2 = bus
@@ -150,6 +399,10 @@ async fn collection_openapi_export_uses_command_bus_and_persisted_requests() {
         body: None,
         body_kind: "none".to_string(),
         timeout_ms: None,
+        pre_request_script: None,
+        post_response_script: None,
+        script_schema_version: 1,
+        temporary_variables: vec![],
     })
     .await
     .expect("save request");
@@ -208,6 +461,10 @@ async fn execute_saved_api_request_rejects_mismatched_workspace() {
             body: None,
             body_kind: "none".to_string(),
             timeout_ms: None,
+            pre_request_script: None,
+            post_response_script: None,
+            script_schema_version: 1,
+            temporary_variables: vec![],
         })
         .await
         .expect("save request");
@@ -357,6 +614,10 @@ async fn api_read_commands_use_real_collection_ids() {
             body: None,
             body_kind: "json".to_string(),
             timeout_ms: None,
+            pre_request_script: None,
+            post_response_script: None,
+            script_schema_version: 1,
+            temporary_variables: vec![],
         })
         .await
         .expect("save request");
@@ -455,6 +716,10 @@ async fn api_request_resolution_uses_current_workspace_environment_then_workspac
         body: Some("{\"host\":\"{{HOST}}\"}".to_string()),
         body_kind: "json".to_string(),
         timeout_ms: None,
+        pre_request_script: None,
+        post_response_script: None,
+        script_schema_version: 1,
+        temporary_variables: vec![],
     };
     let resolved = bus
         .resolve_api_request_input(input.clone())
@@ -475,4 +740,51 @@ async fn api_request_resolution_uses_current_workspace_environment_then_workspac
         .await
         .expect("resolve with workspace variables only");
     assert_eq!(fallback.url, "https://workspace.example/users");
+}
+
+#[tokio::test]
+async fn api_request_resolution_prefers_temporary_variables() {
+    let bus = test_bus().await;
+    let workspace_id = bus.list_workspaces().await.unwrap().active_workspace_id;
+    bus.workspace_variables_replace(
+        workspace_id.clone(),
+        vec![WorkspaceVariableInput {
+            id: None,
+            key: "HOST".to_string(),
+            value: "workspace.example".to_string(),
+            is_secret: false,
+            is_enabled: true,
+            description: None,
+            sort_order: 0,
+        }],
+    )
+    .await
+    .expect("save workspace variable");
+
+    let mut input = api_script_test_input(workspace_id, "https://{{HOST}}/{{PATH}}".to_string());
+    input.headers = vec![KeyValue {
+        key: "X-{{PATH}}".to_string(),
+        value: "{{HOST}}".to_string(),
+        enabled: true,
+    }];
+    input.temporary_variables = vec![
+        KeyValue {
+            key: "HOST".to_string(),
+            value: "temporary.example".to_string(),
+            enabled: true,
+        },
+        KeyValue {
+            key: "PATH".to_string(),
+            value: "users".to_string(),
+            enabled: true,
+        },
+    ];
+
+    let resolved = bus
+        .resolve_api_request_input(input)
+        .await
+        .expect("resolve request with temporary variables");
+    assert_eq!(resolved.url, "https://temporary.example/users");
+    assert_eq!(resolved.headers[0].key, "X-users");
+    assert_eq!(resolved.headers[0].value, "temporary.example");
 }

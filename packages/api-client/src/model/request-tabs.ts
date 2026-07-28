@@ -4,6 +4,7 @@ import type {
   ApiRequestInput,
   ApiResponse,
   ApiSavedRequest,
+  RequestExecutionResult,
 } from "@unfour/command-client";
 import {
   bodyFieldsFromInput,
@@ -46,6 +47,7 @@ export function createNewRequestTab(
   const tab: ApiRequestTab = {
     baseline: null,
     draft: emptyDraft(),
+    execution: null,
     id,
     requestTab: "query",
     lastRequest: null,
@@ -84,6 +86,7 @@ export function openSavedRequest(
       {
         baseline: normalizeRequestDraft(draft),
         draft,
+        execution: null,
         id,
         requestTab: "query",
         lastRequest: null,
@@ -119,6 +122,7 @@ export function openHistoryRequest(
       {
         baseline: null,
         draft: inputToDraft(request),
+        execution: null,
         id,
         requestTab: "query",
         lastRequest: request,
@@ -181,6 +185,7 @@ export function startTabSend(
   return updateTab(state, tabId, (tab) => ({
     ...tab,
     lastRequest: request ?? tab.lastRequest,
+    execution: null,
     response: null,
     sendError: null,
     sending: true,
@@ -190,12 +195,13 @@ export function startTabSend(
 export function completeTabSend(
   state: ApiTabsState,
   tabId: string,
-  response: ApiResponse,
+  execution: RequestExecutionResult,
 ): ApiTabsState {
   return updateTab(state, tabId, (tab) => ({
     ...tab,
-    response,
-    sendError: null,
+    execution,
+    response: execution.response,
+    sendError: execution.httpError,
     sending: false,
   }));
 }
@@ -376,6 +382,8 @@ function emptyDraft(): RequestDraft {
     parentFolderId: null,
     query: [],
     rawBodyType: "json",
+    preRequestScript: "",
+    postResponseScript: "",
     url: "",
   };
 }
@@ -392,6 +400,8 @@ function inputToDraft(input: ReturnType<typeof savedRequestToInput>): RequestDra
     method: input.method,
     name: input.name ?? `${input.method} ${input.url}`,
     parentFolderId: input.parentFolderId ?? null,
+    preRequestScript: input.preRequestScript ?? "",
+    postResponseScript: input.postResponseScript ?? "",
     query,
     url: syncUrlQuery(input.url, query),
   };

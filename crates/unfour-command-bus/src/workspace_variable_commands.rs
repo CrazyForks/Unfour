@@ -503,19 +503,21 @@ impl CommandBus {
             .await?;
         input.url = self
             .workspace
-            .resolve_variables(
+            .resolve_variables_with_overrides(
                 &input.workspace_id,
                 active_environment_id.as_deref(),
                 &input.url,
+                &input.temporary_variables,
             )
             .await?;
         input.auth_json = match input.auth_json {
             Some(auth_json) => Some(
                 self.workspace
-                    .resolve_variables(
+                    .resolve_variables_with_overrides(
                         &input.workspace_id,
                         active_environment_id.as_deref(),
                         &auth_json,
+                        &input.temporary_variables,
                     )
                     .await?,
             ),
@@ -524,7 +526,12 @@ impl CommandBus {
         input.body = match input.body {
             Some(body) => Some(
                 self.workspace
-                    .resolve_variables(&input.workspace_id, active_environment_id.as_deref(), &body)
+                    .resolve_variables_with_overrides(
+                        &input.workspace_id,
+                        active_environment_id.as_deref(),
+                        &body,
+                        &input.temporary_variables,
+                    )
                     .await?,
             ),
             None => None,
@@ -534,6 +541,7 @@ impl CommandBus {
                 &input.workspace_id,
                 active_environment_id.as_deref(),
                 input.headers,
+                &input.temporary_variables,
             )
             .await?;
         input.query = self
@@ -541,6 +549,7 @@ impl CommandBus {
                 &input.workspace_id,
                 active_environment_id.as_deref(),
                 input.query,
+                &input.temporary_variables,
             )
             .await?;
         Ok(input)
@@ -551,17 +560,28 @@ impl CommandBus {
         workspace_id: &str,
         active_environment_id: Option<&str>,
         values: Vec<KeyValue>,
+        temporary_variables: &[KeyValue],
     ) -> AppResult<Vec<KeyValue>> {
         let mut resolved = Vec::with_capacity(values.len());
         for value in values {
             resolved.push(KeyValue {
                 key: self
                     .workspace
-                    .resolve_variables(workspace_id, active_environment_id, &value.key)
+                    .resolve_variables_with_overrides(
+                        workspace_id,
+                        active_environment_id,
+                        &value.key,
+                        temporary_variables,
+                    )
                     .await?,
                 value: self
                     .workspace
-                    .resolve_variables(workspace_id, active_environment_id, &value.value)
+                    .resolve_variables_with_overrides(
+                        workspace_id,
+                        active_environment_id,
+                        &value.value,
+                        temporary_variables,
+                    )
                     .await?,
                 enabled: value.enabled,
             });

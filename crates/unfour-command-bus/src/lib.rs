@@ -35,6 +35,7 @@ use unfour_ssh_engine::SshService;
 use unfour_workspace_engine::WorkspaceService;
 
 mod api_commands;
+mod api_script_commands;
 mod command_models;
 mod core_commands;
 mod credential_commands;

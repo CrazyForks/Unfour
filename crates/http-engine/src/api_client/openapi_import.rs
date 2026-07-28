@@ -39,6 +39,9 @@ struct ParsedRequest {
     body: Option<String>,
     body_kind: String,
     auth_json: String,
+    pre_request_script: Option<String>,
+    post_response_script: Option<String>,
+    script_schema_version: i64,
     sort_order: i64,
 }
 
@@ -152,11 +155,12 @@ impl ApiClientService {
                 INSERT INTO api_requests (
                   id, workspace_id, name, collection_id, parent_folder_id,
                   sort_order, auth_json, method, url, headers_json, query_json,
-                  body, body_kind, created_at, updated_at, revision, sync_status
+                  body, body_kind, pre_request_script, post_response_script,
+                  script_schema_version, created_at, updated_at, revision, sync_status
                 )
                 VALUES (
                   ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13,
-                  ?14, ?14, 1, 'local'
+                  ?14, ?15, ?16, ?17, ?17, 1, 'local'
                 )
                 "#,
             )
@@ -173,6 +177,9 @@ impl ApiClientService {
             .bind(serde_json::to_string(&request.query)?)
             .bind(&request.body)
             .bind(&request.body_kind)
+            .bind(&request.pre_request_script)
+            .bind(&request.post_response_script)
+            .bind(request.script_schema_version)
             .bind(&now)
             .execute(&mut *tx)
             .await?;
@@ -468,6 +475,14 @@ fn push_operation(
         }
     }
     let auth_json = parse_auth_json(root, operation)?;
+    let pre_request_script = parse_optional_script(operation, "x-unfour-pre-request-script")?;
+    let post_response_script = parse_optional_script(operation, "x-unfour-post-response-script")?;
+    let script_schema_version = parse_script_schema_version(operation)?;
+    crate::script_runtime::validate_script_config(
+        pre_request_script.as_deref(),
+        post_response_script.as_deref(),
+        script_schema_version,
+    )?;
     requests.push(ParsedRequest {
         parent_source_id,
         name,
@@ -478,9 +493,31 @@ fn push_operation(
         body,
         body_kind,
         auth_json,
+        pre_request_script,
+        post_response_script,
+        script_schema_version,
         sort_order: requests.len() as i64,
     });
     Ok(())
+}
+
+fn parse_optional_script(operation: &Map<String, Value>, key: &str) -> AppResult<Option<String>> {
+    match operation.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(script)) => Ok(Some(script.clone())),
+        Some(_) => Err(import_validation(format!(
+            "collection import {key} must be a string"
+        ))),
+    }
+}
+
+fn parse_script_schema_version(operation: &Map<String, Value>) -> AppResult<i64> {
+    match operation.get("x-unfour-script-schema-version") {
+        None | Some(Value::Null) => Ok(crate::script_runtime::SCRIPT_SCHEMA_VERSION),
+        Some(value) => value.as_i64().ok_or_else(|| {
+            import_validation("collection import x-unfour-script-schema-version must be an integer")
+        }),
+    }
 }
 
 fn resolve_operation_url(

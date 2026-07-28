@@ -3,6 +3,11 @@ use super::*;
 impl ApiClientService {
     pub async fn save_request(&self, input: ApiRequestInput) -> AppResult<ApiSavedRequest> {
         validate_workspace_id(&input.workspace_id)?;
+        crate::script_runtime::validate_script_config(
+            input.pre_request_script.as_deref(),
+            input.post_response_script.as_deref(),
+            input.script_schema_version,
+        )?;
         let now = Utc::now().to_rfc3339();
         let id = unfour_core::id::new_id();
         let mut tx = self.db.pool().begin().await?;
@@ -14,9 +19,13 @@ impl ApiClientService {
             INSERT INTO api_requests (
               id, workspace_id, name, collection_id, parent_folder_id, sort_order,
               auth_json, method, url, headers_json, query_json, body, body_kind,
+              pre_request_script, post_response_script, script_schema_version,
               created_at, updated_at, revision, sync_status
             )
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?14, 1, 'local')
+            VALUES (
+              ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13,
+              ?14, ?15, ?16, ?17, ?17, 1, 'local'
+            )
             "#,
         )
         .bind(&id)
@@ -32,6 +41,9 @@ impl ApiClientService {
         .bind(serde_json::to_string(&input.query)?)
         .bind(input.body.clone())
         .bind(input.body_kind)
+        .bind(input.pre_request_script)
+        .bind(input.post_response_script)
+        .bind(input.script_schema_version)
         .bind(now)
         .execute(&mut *tx)
         .await?;
@@ -48,6 +60,11 @@ impl ApiClientService {
     ) -> AppResult<ApiSavedRequest> {
         validate_workspace_id(&workspace_id)?;
         validate_workspace_id(&input.workspace_id)?;
+        crate::script_runtime::validate_script_config(
+            input.pre_request_script.as_deref(),
+            input.post_response_script.as_deref(),
+            input.script_schema_version,
+        )?;
         if workspace_id != input.workspace_id {
             return Err(AppError::Validation(
                 "api request workspace mismatch".to_string(),
@@ -69,9 +86,10 @@ impl ApiClientService {
             UPDATE api_requests
             SET name = ?1, collection_id = ?2, parent_folder_id = ?3, auth_json = ?4,
                 method = ?5, url = ?6, headers_json = ?7, query_json = ?8,
-                body = ?9, body_kind = ?10, updated_at = ?11,
+                body = ?9, body_kind = ?10, pre_request_script = ?11,
+                post_response_script = ?12, script_schema_version = ?13, updated_at = ?14,
                 revision = revision + 1, sync_status = 'pending'
-            WHERE workspace_id = ?12 AND id = ?13 AND deleted_at IS NULL
+            WHERE workspace_id = ?15 AND id = ?16 AND deleted_at IS NULL
             "#,
         )
         .bind(name)
@@ -84,6 +102,9 @@ impl ApiClientService {
         .bind(serde_json::to_string(&input.query)?)
         .bind(input.body.clone())
         .bind(input.body_kind)
+        .bind(input.pre_request_script)
+        .bind(input.post_response_script)
+        .bind(input.script_schema_version)
         .bind(now)
         .bind(&workspace_id)
         .bind(&request_id)
@@ -110,6 +131,7 @@ impl ApiClientService {
             SELECT
               id, workspace_id, name, collection_id, parent_folder_id, sort_order,
               auth_json, method, url, headers_json, query_json, body, body_kind,
+              pre_request_script, post_response_script, script_schema_version,
               created_at, updated_at, deleted_at, revision, sync_status, remote_id
             FROM api_requests
             WHERE workspace_id = ?1 AND deleted_at IS NULL
@@ -147,9 +169,13 @@ impl ApiClientService {
             INSERT INTO api_requests (
               id, workspace_id, name, collection_id, parent_folder_id, sort_order,
               auth_json, method, url, headers_json, query_json, body, body_kind,
+              pre_request_script, post_response_script, script_schema_version,
               created_at, updated_at, revision, sync_status
             )
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?14, 1, 'local')
+            VALUES (
+              ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13,
+              ?14, ?15, ?16, ?17, ?17, 1, 'local'
+            )
             "#,
         )
         .bind(&id)
@@ -165,6 +191,9 @@ impl ApiClientService {
         .bind(source.query_json)
         .bind(source.body)
         .bind(source.body_kind)
+        .bind(source.pre_request_script)
+        .bind(source.post_response_script)
+        .bind(source.script_schema_version)
         .bind(now)
         .execute(self.db.pool())
         .await?;
@@ -394,6 +423,7 @@ impl ApiClientService {
             SELECT
               id, workspace_id, name, collection_id, parent_folder_id, sort_order,
               auth_json, method, url, headers_json, query_json, body, body_kind,
+              pre_request_script, post_response_script, script_schema_version,
               created_at, updated_at, deleted_at, revision, sync_status, remote_id
             FROM api_requests
             WHERE id = ?1 AND deleted_at IS NULL
@@ -416,6 +446,7 @@ impl ApiClientService {
             SELECT
               id, workspace_id, name, collection_id, parent_folder_id, sort_order,
               auth_json, method, url, headers_json, query_json, body, body_kind,
+              pre_request_script, post_response_script, script_schema_version,
               created_at, updated_at, deleted_at, revision, sync_status, remote_id
             FROM api_requests
             WHERE workspace_id = ?1 AND id = ?2 AND deleted_at IS NULL
@@ -440,6 +471,7 @@ impl ApiClientService {
             SELECT
               id, workspace_id, name, collection_id, parent_folder_id, sort_order,
               auth_json, method, url, headers_json, query_json, body, body_kind,
+              pre_request_script, post_response_script, script_schema_version,
               created_at, updated_at, deleted_at, revision, sync_status, remote_id
             FROM api_requests
             WHERE workspace_id = ?1 AND id = ?2 AND deleted_at IS NULL

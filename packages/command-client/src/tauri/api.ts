@@ -9,9 +9,9 @@ import type {
   ApiHistoryDetail,
   ApiHistoryItem,
   ApiRequestInput,
-  ApiResponse,
   ApiSavedRequest,
   KeyValue,
+  RequestExecutionResult,
 } from "../types";
 
 export function listApiEnvironments(workspaceId: string) {
@@ -194,7 +194,7 @@ export function reorderApiRequests(
 }
 
 export function sendApiRequest(input: ApiRequestInput) {
-  return call<ApiResponse>("api_send_request", { input });
+  return call<RequestExecutionResult>("api_send_request_v2", { input });
 }
 
 export function saveApiRequest(input: ApiRequestInput) {

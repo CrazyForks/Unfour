@@ -20,6 +20,10 @@ async fn save_request_preserves_non_json_body_unchanged() {
             body: Some(plain_text.to_string()),
             body_kind: "text".to_string(),
             timeout_ms: None,
+            pre_request_script: None,
+            post_response_script: None,
+            script_schema_version: 1,
+            temporary_variables: vec![],
         })
         .await
         .expect("save request");
@@ -77,6 +81,10 @@ async fn save_request_defaults_name_and_lists_by_workspace() {
             body: Some("{}".to_string()),
             body_kind: "json".to_string(),
             timeout_ms: None,
+            pre_request_script: None,
+            post_response_script: None,
+            script_schema_version: 1,
+            temporary_variables: vec![],
         })
         .await
         .expect("save request");
@@ -94,6 +102,10 @@ async fn save_request_defaults_name_and_lists_by_workspace() {
             body: None,
             body_kind: "json".to_string(),
             timeout_ms: None,
+            pre_request_script: None,
+            post_response_script: None,
+            script_schema_version: 1,
+            temporary_variables: vec![],
         })
         .await
         .expect("save other request");
@@ -134,6 +146,10 @@ async fn duplicate_request_copies_template_inside_workspace() {
             body: Some("{}".to_string()),
             body_kind: "json".to_string(),
             timeout_ms: None,
+            pre_request_script: None,
+            post_response_script: None,
+            script_schema_version: 1,
+            temporary_variables: vec![],
         })
         .await
         .expect("save request");
@@ -170,6 +186,10 @@ async fn delete_request_soft_deletes_and_returns_remaining_workspace_items() {
             body: None,
             body_kind: "json".to_string(),
             timeout_ms: None,
+            pre_request_script: None,
+            post_response_script: None,
+            script_schema_version: 1,
+            temporary_variables: vec![],
         })
         .await
         .expect("save first request");
@@ -187,6 +207,10 @@ async fn delete_request_soft_deletes_and_returns_remaining_workspace_items() {
             body: None,
             body_kind: "json".to_string(),
             timeout_ms: None,
+            pre_request_script: None,
+            post_response_script: None,
+            script_schema_version: 1,
+            temporary_variables: vec![],
         })
         .await
         .expect("save second request");
@@ -301,6 +325,10 @@ async fn update_request_reuses_existing_record_and_validates_collection() {
                 body: Some("{}".to_string()),
                 body_kind: "json".to_string(),
                 timeout_ms: None,
+                pre_request_script: None,
+                post_response_script: None,
+                script_schema_version: 1,
+                temporary_variables: vec![],
             },
         )
         .await
@@ -335,6 +363,10 @@ async fn update_request_reuses_existing_record_and_validates_collection() {
                 body: None,
                 body_kind: "json".to_string(),
                 timeout_ms: None,
+                pre_request_script: None,
+                post_response_script: None,
+                script_schema_version: 1,
+                temporary_variables: vec![],
             },
         )
         .await;

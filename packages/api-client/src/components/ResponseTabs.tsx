@@ -1,5 +1,5 @@
 import { AlertCircle, Copy, Send, WifiOff } from "lucide-react";
-import { Button, useI18n } from "@unfour/ui";
+import { Badge, Button, useI18n } from "@unfour/ui";
 import { formatByteSize } from "../request-utils";
 import {
   deriveTabResponseState,
@@ -7,6 +7,7 @@ import {
 } from "../model/request-tabs";
 import type { ResponseTab } from "../model/types";
 import { CompactTabs } from "./RequestParamsTabs";
+import { ScriptConsoleView, ScriptTestsView } from "./ScriptResults";
 import {
   KeyValueReadout,
   RequestSnapshot,
@@ -34,8 +35,17 @@ export function ResponseTabs({
   const responseSize = tab.response
     ? formatByteSize(new TextEncoder().encode(tab.response.body).length)
     : null;
-  const showResponseTabs = tab.sending || Boolean(tab.response) || Boolean(tab.lastRequest);
+  const execution = tab.execution;
+  const showResponseTabs =
+    tab.sending || Boolean(tab.response) || Boolean(tab.lastRequest) || Boolean(execution);
   const canRetry = Boolean(tab.draft.url.trim()) && !tab.sending;
+  const scriptTestCount = execution
+    ? execution.preRequest.tests.length + execution.postResponse.tests.length
+    : 0;
+  const consoleCount = execution
+    ? execution.preRequest.console.length + execution.postResponse.console.length
+    : 0;
+  const isScriptTab = tab.responseTab === "tests" || tab.responseTab === "console";
 
   return (
     <section className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--u-color-surface)]">
@@ -44,6 +54,16 @@ export function ResponseTabs({
           {t("api.response.title")}
         </span>
         <ResponseStatus response={tab.response} state={responseState} />
+        {execution &&
+          (execution.postResponse.status === "failed" ||
+            execution.postResponse.status === "timeout") && (
+            <Badge tone="red">
+              {t("api.scripts.postResponse")} ·{" "}
+              {execution.postResponse.status === "timeout"
+                ? t("api.scripts.timeout")
+                : t("api.scripts.error")}
+            </Badge>
+          )}
         {tab.response && (
           <div className="ml-auto flex items-center gap-3 font-mono text-[12px] text-[var(--u-color-text-muted)]">
             <span className="font-semibold text-[var(--u-color-text)]">
@@ -82,13 +102,15 @@ export function ResponseTabs({
             },
             { id: "timing", label: t("api.response.tabs.timing") },
             { id: "request", label: t("api.response.tabs.request") },
+            { id: "tests", label: t("api.response.tabs.tests"), meta: scriptTestCount },
+            { id: "console", label: t("api.response.tabs.console"), meta: consoleCount },
           ]}
           onChange={onResponseTabChange}
         />
       )}
       <div className="min-h-0 flex-1 overflow-hidden">
         {responseState === "sending" && <SendingState />}
-        {responseState === "idle" && tab.responseTab !== "request" && (
+        {responseState === "idle" && tab.responseTab !== "request" && !isScriptTab && (
           <ResponsePaneState
             description={t("api.response.emptyDescription")}
             icon={<Send size={24} />}
@@ -118,7 +140,7 @@ export function ResponseTabs({
         {(responseState === "network" ||
           responseState === "timeout" ||
           responseState === "failed") &&
-          tab.responseTab !== "request" && (
+          tab.responseTab !== "request" && !isScriptTab && (
           <ResponsePaneState
             description={
               tab.sendError ||
@@ -147,6 +169,32 @@ export function ResponseTabs({
             </Button>
           </ResponsePaneState>
         )}
+        {(responseState === "pre-script-error" || responseState === "pre-script-timeout") &&
+          !isScriptTab &&
+          tab.responseTab !== "request" && (
+            <ResponsePaneState
+              description={
+                execution?.preRequest.error?.message ?? t("api.scripts.unknownError")
+              }
+              icon={<AlertCircle size={24} />}
+              title={
+                responseState === "pre-script-timeout"
+                  ? t("api.scripts.preTimeoutTitle")
+                  : t("api.scripts.preErrorTitle")
+              }
+              tone="error"
+            >
+              <Button
+                disabled={!canRetry}
+                onClick={onRetry}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                {t("api.response.retry")}
+              </Button>
+            </ResponsePaneState>
+          )}
         {responseState !== "sending" && tab.responseTab === "request" && (
           <RequestSnapshot request={tab.lastRequest} />
         )}
@@ -172,6 +220,12 @@ export function ResponseTabs({
         )}
         {!tab.sendError && tab.responseTab === "timing" && (
           <ResponseTiming response={tab.response} />
+        )}
+        {execution && tab.responseTab === "tests" && (
+          <ScriptTestsView post={execution.postResponse} pre={execution.preRequest} />
+        )}
+        {execution && tab.responseTab === "console" && (
+          <ScriptConsoleView post={execution.postResponse} pre={execution.preRequest} />
         )}
       </div>
     </section>

@@ -257,8 +257,36 @@
       "method": "HTTP 方法",
       "name": "请求名称",
       "namePlaceholder": "请求名称",
+      "tabs": {
+        "auth": "认证",
+        "body": "正文",
+        "headers": "请求头",
+        "params": "参数",
+        "scripts": "脚本"
+      },
       "url": "请求 URL",
       "urlPlaceholder": "https://api.example.com/resource"
+    },
+    "scripts": {
+      "console": "控制台",
+      "error": "错误",
+      "executionTime": "请求前 {pre}ms · 响应后 {post}ms",
+      "noConsole": "没有脚本控制台输出",
+      "noTests": "没有记录测试结果",
+      "postExample": "示例：pm.test(\"状态码为 200\", () => pm.expect(pm.response.code).to.equal(200));",
+      "postHint": "检查响应并记录测试结果",
+      "postResponse": "响应后",
+      "postShort": "响应后",
+      "preErrorTitle": "请求前脚本执行失败",
+      "preExample": "示例：pm.request.headers.upsert({ key: \"Authorization\", value: \"Bearer token\" });",
+      "preHint": "修改仅影响本次发送",
+      "preRequest": "请求前",
+      "preShort": "请求前",
+      "preTimeoutTitle": "请求前脚本执行超时",
+      "testsFailed": "失败 {count}",
+      "testsPassed": "通过 {count}",
+      "timeout": "超时",
+      "unknownError": "脚本无法执行。"
     },
     "response": {
       "copyBody": "复制响应正文",
@@ -305,7 +333,9 @@
         "cookies": "Cookie",
         "headers": "响应头",
         "request": "请求",
-        "timing": "耗时"
+        "timing": "耗时",
+        "tests": "测试",
+        "console": "控制台"
       },
       "timeoutDescription": "服务器响应前，请求已超时。",
       "timeoutTitle": "请求超时",

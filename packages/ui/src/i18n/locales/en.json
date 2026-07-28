@@ -257,8 +257,36 @@
       "method": "HTTP method",
       "name": "Request name",
       "namePlaceholder": "Request name",
+      "tabs": {
+        "auth": "Auth",
+        "body": "Body",
+        "headers": "Headers",
+        "params": "Params",
+        "scripts": "Scripts"
+      },
       "url": "Request URL",
       "urlPlaceholder": "https://api.example.com/resource"
+    },
+    "scripts": {
+      "console": "Console",
+      "error": "error",
+      "executionTime": "Pre {pre}ms · Post {post}ms",
+      "noConsole": "No script console output",
+      "noTests": "No tests were recorded",
+      "postExample": "Example: pm.test(\"status is 200\", () => pm.expect(pm.response.code).to.equal(200));",
+      "postHint": "Inspect the response and record tests",
+      "postResponse": "Post-response",
+      "postShort": "post",
+      "preErrorTitle": "Pre-request script failed",
+      "preExample": "Example: pm.request.headers.upsert({ key: \"Authorization\", value: \"Bearer token\" });",
+      "preHint": "Modify this send only",
+      "preRequest": "Pre-request",
+      "preShort": "pre",
+      "preTimeoutTitle": "Pre-request script timed out",
+      "testsFailed": "{count} failed",
+      "testsPassed": "{count} passed",
+      "timeout": "timeout",
+      "unknownError": "The script could not be executed."
     },
     "response": {
       "copyBody": "Copy response body",
@@ -305,7 +333,9 @@
         "cookies": "Cookies",
         "headers": "Headers",
         "request": "Request",
-        "timing": "Timing"
+        "timing": "Timing",
+        "tests": "Tests",
+        "console": "Console"
       },
       "timeoutDescription": "The request timed out before the server responded.",
       "timeoutTitle": "Request timed out",

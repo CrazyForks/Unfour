@@ -14,6 +14,8 @@ import type {
   ApiRequestInput,
   ApiResponse,
   ApiSavedRequest,
+  RequestExecutionResult,
+  ScriptExecutionResult,
 } from "../../types";
 
 export async function handleApiRequestMock<T>(
@@ -59,6 +61,9 @@ export async function handleApiRequestMock<T>(
       queryJson: JSON.stringify(input.query),
       body: redactJsonBody(input.body),
       bodyKind: input.bodyKind,
+      preRequestScript: input.preRequestScript ?? null,
+      postResponseScript: input.postResponseScript ?? null,
+      scriptSchemaVersion: input.scriptSchemaVersion ?? 1,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       deletedAt: null,
@@ -100,6 +105,9 @@ export async function handleApiRequestMock<T>(
       queryJson: JSON.stringify(input.query),
       body: redactJsonBody(input.body),
       bodyKind: input.bodyKind,
+      preRequestScript: input.preRequestScript ?? null,
+      postResponseScript: input.postResponseScript ?? null,
+      scriptSchemaVersion: input.scriptSchemaVersion ?? 1,
       updatedAt: new Date().toISOString(),
       revision: current.revision + 1,
       syncStatus: "pending",
@@ -147,8 +155,21 @@ export async function handleApiRequestMock<T>(
     return mockStore.savedRequests.filter((item) => item.workspaceId === workspaceId) as T;
   }
 
-  if (command === "api_send_request") {
+  if (command === "api_send_request_v2" || command === "api_send_request") {
     const input = args?.input as ApiRequestInput;
+    const versioned = command === "api_send_request_v2";
+    const preRequest = input.preRequestScript?.trim()
+      ? unsupportedBrowserScript()
+      : skippedScript();
+    if (versioned && preRequest.status === "failed") {
+      const execution: RequestExecutionResult = {
+        response: null,
+        httpError: null,
+        preRequest,
+        postResponse: skippedScript(),
+      };
+      return execution as T;
+    }
     const started = performance.now();
     const resolved = resolveInput(input, mockActiveEnvVariables(input.workspaceId));
     const url = new URL(resolved.url);
@@ -222,8 +243,41 @@ export async function handleApiRequestMock<T>(
       },
       ...mockStore.historyDetails,
     ];
-    return result as T;
+    if (!versioned) return result as T;
+    const execution: RequestExecutionResult = {
+      response: result,
+      httpError: null,
+      preRequest,
+      postResponse: input.postResponseScript?.trim()
+        ? unsupportedBrowserScript()
+        : skippedScript(),
+    };
+    return execution as T;
   }
 
   return UNHANDLED;
+}
+
+function skippedScript(): ScriptExecutionResult {
+  return {
+    status: "skipped",
+    durationMs: 0,
+    console: [],
+    tests: [],
+    error: null,
+  };
+}
+
+function unsupportedBrowserScript(): ScriptExecutionResult {
+  return {
+    status: "failed",
+    durationMs: 0,
+    console: [],
+    tests: [],
+    error: {
+      kind: "validation",
+      code: "SCRIPT_DESKTOP_REQUIRED",
+      message: "Request scripts require the desktop runtime.",
+    },
+  };
 }
