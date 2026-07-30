@@ -460,6 +460,8 @@
       "environmentDuplicateFailed": "Failed to duplicate environment"
     },
     "ssh": {
+      "clipboardReadFailed": "Failed to read from the clipboard",
+      "clipboardWriteFailed": "Failed to write to the clipboard",
       "inputFailed": "Failed to send terminal input",
       "resizeFailed": "Failed to resize terminal",
       "taskCancelFailed": "Failed to cancel SSH task",
@@ -764,10 +766,14 @@
       "newSession": "New Session",
       "newSessionAria": "New terminal session",
       "openSession": "Open Session",
+      "copySelection": "Copy",
+      "pasteClipboard": "Paste",
+      "pasteSelection": "Paste Selected Text",
       "preferences": "Terminal Preferences",
       "reconnect": "Reconnect SSH session",
       "resizePty": "Resize PTY",
       "searchOutput": "Search terminal output",
+      "selectAll": "Select All",
       "singlePane": "Single Pane",
       "splitDown": "Split Down",
       "splitPane": "Split Pane",

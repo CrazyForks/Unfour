@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SshSessionEvent, SshSessionSummary } from "@unfour/command-client";
 import { sanitizeTerminalWriteChunk } from "../model/terminal-write-sanitizer";
@@ -7,9 +7,15 @@ import { TerminalPane } from "./TerminalPane";
 
 const terminalState = vi.hoisted(() => ({
   cols: 120,
+  customKeyHandlerRegistrations: 0,
   rows: 32,
   dataHandlers: [] as Array<(data: string) => void>,
+  inputElement: null as HTMLTextAreaElement | null,
+  openElement: null as HTMLElement | null,
+  pasteCalls: [] as string[],
   resizeHandlers: [] as Array<(size: { cols: number; rows: number }) => void>,
+  selectAllCalls: 0,
+  selection: "",
   writes: [] as string[],
 }));
 
@@ -26,11 +32,13 @@ vi.mock("@xterm/xterm", () => ({
       get rows() {
         return terminalState.rows;
       },
-      attachCustomKeyEventHandler: vi.fn(),
+      attachCustomKeyEventHandler: vi.fn(() => {
+        terminalState.customKeyHandlerRegistrations += 1;
+      }),
       dispose: vi.fn(),
       focus: vi.fn(),
-      getSelection: vi.fn(() => ""),
-      hasSelection: vi.fn(() => false),
+      getSelection: vi.fn(() => terminalState.selection),
+      hasSelection: vi.fn(() => Boolean(terminalState.selection)),
       loadAddon: vi.fn(),
       onData: vi.fn((handler: (data: string) => void) => {
         terminalState.dataHandlers.push(handler);
@@ -41,9 +49,19 @@ vi.mock("@xterm/xterm", () => ({
         return { dispose: vi.fn() };
       }),
       open: vi.fn((element: HTMLElement) => {
+        const input = document.createElement("textarea");
+        element.appendChild(input);
+        terminalState.inputElement = input;
         terminalState.openElement = element;
       }),
+      paste: vi.fn((data: string) => {
+        terminalState.pasteCalls.push(data);
+        terminalState.dataHandlers.forEach((handler) => handler(data));
+      }),
       reset: vi.fn(),
+      selectAll: vi.fn(() => {
+        terminalState.selectAllCalls += 1;
+      }),
       write: vi.fn((data: string) => terminalState.writes.push(data)),
     };
   }),
@@ -87,6 +105,8 @@ import { resizeSshSession, sendSshInput } from "@unfour/command-client";
 
 const resizeMock = vi.mocked(resizeSshSession);
 const sendInputMock = vi.mocked(sendSshInput);
+const clipboardReadMock = vi.fn();
+const clipboardWriteMock = vi.fn();
 
 const session: SshSessionSummary = {
   authKind: "password",
@@ -104,16 +124,33 @@ const session: SshSessionSummary = {
   rows: 32,
 };
 
-describe("TerminalPane", () => {
-  beforeEach(() => {
-    terminalState.cols = 120;
-    terminalState.rows = 32;
-    terminalState.dataHandlers = [];
-    terminalState.resizeHandlers = [];
-    terminalState.writes = [];
-    resizeMock.mockClear();
-    sendInputMock.mockReset();
+function resetTerminalMocks() {
+  terminalState.cols = 120;
+  terminalState.customKeyHandlerRegistrations = 0;
+  terminalState.rows = 32;
+  terminalState.dataHandlers = [];
+  terminalState.inputElement = null;
+  terminalState.openElement = null;
+  terminalState.pasteCalls = [];
+  terminalState.resizeHandlers = [];
+  terminalState.selectAllCalls = 0;
+  terminalState.selection = "";
+  terminalState.writes = [];
+  clipboardReadMock.mockReset();
+  clipboardWriteMock.mockReset();
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: {
+      readText: clipboardReadMock,
+      writeText: clipboardWriteMock,
+    },
   });
+  resizeMock.mockClear();
+  sendInputMock.mockReset();
+}
+
+describe("TerminalPane", () => {
+  beforeEach(resetTerminalMocks);
 
   it("syncs the fitted terminal size to the SSH session even without an xterm resize event", async () => {
     render(
@@ -203,6 +240,159 @@ describe("TerminalPane", () => {
       data: "hello",
     });
   });
+});
+
+describe("TerminalPane clipboard interactions", () => {
+  beforeEach(resetTerminalMocks);
+
+  it("copies the terminal selection from the custom context menu", async () => {
+    terminalState.selection = "selected terminal output";
+    clipboardWriteMock.mockResolvedValue(undefined);
+
+    render(
+      <TerminalPane
+        active
+        events={[]}
+        inputDisabled={false}
+        readOnly={false}
+        session={session}
+      />,
+    );
+
+    fireEvent.contextMenu(terminalState.inputElement as HTMLTextAreaElement, {
+      clientX: 24,
+      clientY: 24,
+    });
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: /ssh\.actions\.copySelection/ }),
+    );
+
+    await waitFor(() =>
+      expect(clipboardWriteMock).toHaveBeenCalledWith("selected terminal output"),
+    );
+    expect(clipboardWriteMock).toHaveBeenCalledTimes(1);
+    expect(sendInputMock).not.toHaveBeenCalled();
+  });
+
+  it("replaces the native menu and pastes the terminal selection exactly once", async () => {
+    terminalState.selection = "selected terminal output";
+    sendInputMock.mockResolvedValue({
+      sessionId: "session-1",
+      kind: "output",
+      data: "",
+      createdAt: "2026-06-23T00:00:03.000Z",
+    });
+
+    render(
+      <TerminalPane
+        active
+        events={[]}
+        inputDisabled={false}
+        readOnly={false}
+        session={session}
+      />,
+    );
+
+    fireEvent.contextMenu(terminalState.inputElement as HTMLTextAreaElement, {
+      clientX: 24,
+      clientY: 24,
+    });
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: "ssh.actions.pasteSelection" }),
+    );
+
+    await waitFor(() =>
+      expect(sendInputMock).toHaveBeenCalledWith({
+        workspaceId: "ws-1",
+        sessionId: "session-1",
+        data: "selected terminal output",
+      }),
+    );
+    expect(terminalState.pasteCalls).toEqual(["selected terminal output"]);
+    expect(sendInputMock).toHaveBeenCalledTimes(1);
+  });
+  it("disables selection paste without a selection and supports clipboard paste and select all", async () => {
+    clipboardReadMock.mockResolvedValue("pasted command\r");
+    sendInputMock.mockResolvedValue({
+      sessionId: "session-1",
+      kind: "output",
+      data: "",
+      createdAt: "2026-06-23T00:00:03.000Z",
+    });
+
+    render(
+      <TerminalPane
+        active
+        events={[]}
+        inputDisabled={false}
+        readOnly={false}
+        session={session}
+      />,
+    );
+
+    fireEvent.contextMenu(terminalState.inputElement as HTMLTextAreaElement, {
+      clientX: 24,
+      clientY: 24,
+    });
+    expect(
+      screen.getByRole("menuitem", { name: "ssh.actions.pasteSelection" }),
+    ).toHaveAttribute("data-disabled");
+
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: /ssh\.actions\.pasteClipboard/ }),
+    );
+    await waitFor(() =>
+      expect(sendInputMock).toHaveBeenCalledWith({
+        workspaceId: "ws-1",
+        sessionId: "session-1",
+        data: "pasted command\r",
+      }),
+    );
+    expect(terminalState.pasteCalls).toEqual(["pasted command\r"]);
+    expect(sendInputMock).toHaveBeenCalledTimes(1);
+
+    fireEvent.contextMenu(terminalState.inputElement as HTMLTextAreaElement, {
+      clientX: 24,
+      clientY: 24,
+    });
+    fireEvent.click(screen.getByRole("menuitem", { name: "ssh.actions.selectAll" }));
+    expect(terminalState.selectAllCalls).toBe(1);
+  });
+  it("leaves Ctrl+V to xterm's single native paste path", async () => {
+    sendInputMock.mockResolvedValue({
+      sessionId: "session-1",
+      kind: "output",
+      data: "",
+      createdAt: "2026-06-23T00:00:04.000Z",
+    });
+
+    render(
+      <TerminalPane
+        active
+        events={[]}
+        inputDisabled={false}
+        readOnly={false}
+        session={session}
+      />,
+    );
+
+    expect(terminalState.customKeyHandlerRegistrations).toBe(0);
+    terminalState.dataHandlers[0]?.("native paste once");
+
+    await waitFor(() =>
+      expect(sendInputMock).toHaveBeenCalledWith({
+        workspaceId: "ws-1",
+        sessionId: "session-1",
+        data: "native paste once",
+      }),
+    );
+    expect(sendInputMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("TerminalPane output rendering", () => {
+  beforeEach(resetTerminalMocks);
+
   it("writes appended output when a coalesced event grows", async () => {
     const firstEvent: SshSessionEvent = {
       sessionId: "session-1",

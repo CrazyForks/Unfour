@@ -459,6 +459,8 @@
       "environmentDuplicateFailed": "复制环境变量失败"
     },
     "ssh": {
+      "clipboardReadFailed": "读取剪贴板失败",
+      "clipboardWriteFailed": "写入剪贴板失败",
       "inputFailed": "发送终端输入失败",
       "resizeFailed": "调整终端大小失败",
       "taskCancelFailed": "取消 SSH Task 失败",
@@ -763,10 +765,14 @@
       "newSession": "新建会话",
       "newSessionAria": "新建终端会话",
       "openSession": "打开会话",
+      "copySelection": "复制",
+      "pasteClipboard": "粘贴",
+      "pasteSelection": "粘贴选中内容",
       "preferences": "终端偏好设置",
       "reconnect": "重连 SSH 会话",
       "resizePty": "调整 PTY 尺寸",
       "searchOutput": "搜索终端输出",
+      "selectAll": "全选",
       "singlePane": "单窗格",
       "splitDown": "向下拆分",
       "splitPane": "拆分窗格",

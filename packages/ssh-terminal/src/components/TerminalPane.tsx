@@ -12,6 +12,7 @@ import {
 import { cn, useFeedbackErrorHandler } from "@unfour/ui";
 import { useTerminalStore } from "../model/terminal-state";
 import { sanitizeTerminalWriteChunk } from "../model/terminal-write-sanitizer";
+import { TerminalContextMenu } from "./TerminalContextMenu";
 
 export function TerminalPane({
   active,
@@ -176,34 +177,6 @@ export function TerminalPane({
     const dataDisposable = terminal.onData((data: string) => {
       onSendInputRef.current?.(data);
     });
-    terminal.attachCustomKeyEventHandler((event) => {
-      const key = event.key.toLowerCase();
-      const modified = event.ctrlKey || event.metaKey;
-      if (!modified) {
-        return true;
-      }
-
-      if (key === "c" && terminal.hasSelection()) {
-        void navigator.clipboard?.writeText(terminal.getSelection());
-        return false;
-      }
-
-      if (
-        key === "v" &&
-        !readOnlyRef.current &&
-        !inputDisabledRef.current &&
-        sessionIdRef.current
-      ) {
-        void navigator.clipboard?.readText().then((text) => {
-          if (text) {
-            onSendInputRef.current?.(text);
-          }
-        });
-        return false;
-      }
-
-      return true;
-    });
 
     // ---------------------------------------------------------------
     // Detect resize changes from FitAddon
@@ -366,15 +339,20 @@ export function TerminalPane({
   }, [events, session]);
 
   return (
-    <div
-      className={cn(
-        "min-h-0 flex-1 overflow-hidden bg-[var(--u-color-terminal-bg)] p-2",
-        className,
-      )}
-      onClick={() => terminalRef.current?.focus()}
+    <TerminalContextMenu
+      canPaste={Boolean(session?.sessionId && !readOnly && !inputDisabled)}
+      terminalRef={terminalRef}
     >
-      <div className="h-full min-h-0 w-full overflow-hidden" ref={hostRef} />
-    </div>
+      <div
+        className={cn(
+          "min-h-0 flex-1 overflow-hidden bg-[var(--u-color-terminal-bg)] p-2",
+          className,
+        )}
+        onClick={() => terminalRef.current?.focus()}
+      >
+        <div className="h-full min-h-0 w-full overflow-hidden" ref={hostRef} />
+      </div>
+    </TerminalContextMenu>
   );
 }
 
