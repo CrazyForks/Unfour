@@ -18,7 +18,8 @@ The app is currently an MVP workbench:
 
 - The workspace shell is usable.
 - API debugging supports request editing, Send, response viewing, history,
-  saved requests, collections, environments, import, and export.
+  saved requests, collections, environments, import/export, and request
+  scripts with test and console results.
 - SQLite database workflows are usable.
 - PostgreSQL and MySQL/MariaDB database workflows are experimental and should be
   verified against your own database before relying on them.
@@ -36,8 +37,9 @@ The app is currently an MVP workbench:
 6. Enter the URL.
 7. Add query parameters and headers.
 8. Edit the request body for non-GET requests.
-9. Click `Send`.
-10. Review status, duration, response body, and history.
+9. Optionally add a pre-request or post-response script in `Scripts`.
+10. Click `Send`.
+11. Review status, duration, response body, script tests/console, and history.
 
 Saved requests are stored inside the active workspace.
 
@@ -45,7 +47,8 @@ Saved requests are stored inside the active workspace.
 
 The SSH Terminal is experimental. It supports saved SSH connections, credential
 references, terminal sessions, PTY input/output, resize, search, redacted log
-export, host-key trust, and reconnect behavior in the current implementation.
+export, clipboard context actions, host-key trust, reconnect, SFTP remote files,
+and serial command/upload/download tasks in the current implementation.
 
 Use non-critical hosts until the live SSH verification gate is completed. The
 full password/private-key, host-key, history restore, keepalive, and reconnect

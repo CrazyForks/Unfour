@@ -21,7 +21,11 @@
 - `src/request-utils.ts` - request conversion, import/export, auth metadata,
   query/header/body utilities.
 - `src/components/ApiRequestEditor.tsx` - request editor panels.
-- `src/components/ApiResponseViewer.tsx` - response/history display.
+- `src/components/RequestScriptEditors.tsx` - pre-request and post-response
+  script editors.
+- `src/components/ResponseTabs.tsx` - response, script test, and console tabs.
+- `src/components/ScriptResults.tsx` - script test, console, timing, and error
+  presentation.
 - `src/model/request-tabs.ts` - request tab model transitions.
 
 ## Current Capabilities
@@ -30,6 +34,8 @@
 - Send request as the primary action.
 - Save, duplicate, delete, import, and export saved requests.
 - View response body, headers, cookies, timing, and history.
+- Save and run pre-request and post-response scripts with bounded execution,
+  request mutation, workspace/environment variables, tests, and console output.
 - API Send consumes the shared Workspace variable resolution result.
 
 ## Known Gaps

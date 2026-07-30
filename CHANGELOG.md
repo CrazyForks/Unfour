@@ -6,6 +6,50 @@ This file is the user-facing change history for Unfour, following
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-30
+
+Release candidate adding API request scripting and the transactional Workspace
+domain foundation for future sync, together with desktop reliability and
+workflow improvements.
+
+### Added
+
+- **API request scripts** — Save and run JavaScript before a request and after
+  its response. Pre-request scripts can adjust the outgoing request and work
+  with workspace or environment variables; post-response scripts can inspect
+  responses, record tests, and write to a dedicated Console. Script status,
+  timing, test results, and errors are shown in the response panel, and script
+  definitions survive request persistence and OpenAPI import/export.
+- **Transactional Workspace domain foundation** — Add revisioned Workspace,
+  variable, and environment mutations; snapshots and tombstones; external
+  apply support; and transaction-scoped hooks for edition-level sync
+  composition. This is the local domain foundation and does not by itself
+  enable a hosted sync service.
+- **Isolated storage profiles** — Support stable, development, and test data
+  roots, plus an explicit absolute data-directory override, while preserving
+  the existing `~/.unfour` layout for stable installations without migration.
+- **SSH terminal clipboard menu** — Add right-click actions for Copy, Paste,
+  Paste Selected Text, and Select All, with platform-appropriate shortcuts.
+
+### Changed
+
+- **Workspace mutation consistency** — Route Workspace, variable, and
+  environment writes through one transactional command path shared by desktop
+  and MCP adapters. Active Workspace/environment selection, last-opened time,
+  and default Workspace remain device-local preferences rather than sync
+  mutations.
+- **Edition extension surfaces** — Add app-shell hooks for Workspace actions,
+  decorations, and variable decorations so edition-specific sync UI can
+  integrate without moving business logic into the shell.
+
+### Fixed
+
+- **Windows installer with running MCP clients** — Detect and stop the
+  `unfour-mcp` sidecar during NSIS install or uninstall, avoiding a stalled file
+  replacement when an MCP client still holds the executable.
+- **Database row actions** — Keep the row delete action visible when table
+  editing becomes available after the initial grid layout.
+
 ## [0.2.0] - 2026-07-22
 
 Minor release focused on SSH file transfer and task automation, shared workspace
@@ -177,6 +221,7 @@ First public release.
 - macOS and Linux artifacts remain experimental/unverified until real-device
   smoke checks are complete.
 
+[0.3.0-rc.1]: https://github.com/zyqzyq/Unfour/releases/tag/v0.3.0-rc.1
 [0.2.0]: https://github.com/zyqzyq/Unfour/releases/tag/v0.2.0
 [0.1.2]: https://github.com/zyqzyq/Unfour/releases/tag/v0.1.2
 [0.1.1]: https://github.com/zyqzyq/Unfour/releases/tag/v0.1.1

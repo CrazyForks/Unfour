@@ -1,14 +1,16 @@
 # Release Checklist
 
-This checklist is for the published `v0.1.0` release.
+This checklist is for the `v0.3.0-rc.1` release candidate.
 
 ## Release candidate setup
 
 - Confirm the release candidate commit and a clean working tree.
-- Confirm the version remains `0.1.0` in the root package, desktop package,
+- Confirm the version is `0.3.0-rc.1` in the root package, desktop package,
   Tauri configuration, and any packaged Rust crates.
-- Do not create, move, or rebuild the existing `v0.1.0` tag as part of release
-  follow-up work.
+- Confirm the release tag will be exactly `v0.3.0-rc.1` and points to the
+  verified candidate commit.
+- Confirm the release workflow resolves the Test channel with
+  `prerelease = true` for this RC.
 - Review `README.md`, `README.zh-CN.md`, `CHANGELOG.md`, `SECURITY.md`, and
   `LICENSE`.
 - Confirm release notes describe this as a release and do not claim
@@ -27,9 +29,9 @@ platform build job:
 - Playwright Chromium installation and `pnpm run test:e2e` when the GitHub
   Actions runner can execute the existing local smoke suite.
 
-The workflow then builds macOS and Linux with their existing targets and keeps
-the shared Windows `bundle.targets: "all"` configuration. The Windows release
-asset set must contain both the NSIS `.exe` and MSI `.msi` for the same version.
+The workflow then builds macOS and Linux with their existing targets and builds
+the Windows NSIS target. The Windows release asset set must contain one NSIS
+`.exe` installer for this version and must not include stale MSI output.
 
 ## Artifact review
 
@@ -38,10 +40,7 @@ asset set must contain both the NSIS `.exe` and MSI `.msi` for the same version.
   the installers.
 - Artifact names identify the app, version, platform, and architecture where
   Tauri provides those fields.
-- Windows release notes recommend NSIS for ordinary users and describe MSI as
-  the option for MSI preference or software deployment management.
-- Release notes tell users to choose one Windows format and warn against
-  installing both on the same device.
+- Windows release notes identify NSIS as the only Windows installer format.
 - Unsigned artifacts and possible SmartScreen/security warnings are stated in
   the Release body.
 - macOS/Linux artifacts remain experimental or unverified until real-device
@@ -50,20 +49,19 @@ asset set must contain both the NSIS `.exe` and MSI `.msi` for the same version.
 ## Manual gates
 
 - Windows NSIS install and app launch: record the actual result.
-- Windows MSI install and app launch: record the actual result.
-- On clean devices, verify that standalone NSIS and standalone MSI each create
-  one desktop shortcut; verify that duplicate icons occur only when both
-  installers are installed together.
+- Verify upgrade from `v0.2.0` and install/uninstall while `unfour-mcp.exe` is
+  held by an MCP client; the installer should prompt and complete rather than
+  stall.
 - Windows first viewport, quit/relaunch, uninstall, and upgrade behavior:
   record the actual result; do not infer it from bundle generation.
 - macOS and Linux launch/install smoke: `NOT VERIFIED` until run on real
   devices.
-- API Client, Workspace, and MCP smoke: record only what was actually tested.
+- API request scripts, Workspace transactional domain behavior, storage
+  profiles, Database row actions, SSH clipboard/SFTP/tasks, and MCP smoke:
+  record only what was actually tested.
 - Live SSH, PostgreSQL, MySQL/MariaDB, and system credential-store checks:
   require the corresponding real server, OS, or credential environment.
 - Signing/notarization status: record as unsigned/not verified until completed.
-- Do not expect cross-format detection, automatic uninstall, or NSIS/MSI
-  cross-upgrade in this release.
 
 ## Go / no-go
 

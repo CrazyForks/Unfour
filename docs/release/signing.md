@@ -11,9 +11,9 @@ must provide checksums for manual verification.
 
 ## Windows
 
-Expected production posture for the published Windows formats:
+Expected production posture for the published Windows format:
 
-- code-sign the NSIS `.exe` and MSI `.msi` artifacts with an Authenticode certificate;
+- code-sign the NSIS `.exe` artifact with an Authenticode certificate;
 - verify signatures after build;
 - record SmartScreen behavior during installer smoke.
 
@@ -60,19 +60,20 @@ platform secret store or CI secret manager.
 
 ## Release Gate
 
-For v0.1.0:
+For `v0.3.0-rc.1`:
 
 - record whether each platform artifact is signed;
 - record verification command output or mark the item `NOT VERIFIED`;
 - record OS trust prompts observed during installer smoke;
 - publish checksums for every artifact.
 
-## v0.1.0 Release Status
+## v0.3.0-rc.1 Release Status
 
 - Windows: NOT VERIFIED — unsigned; Authenticode signing is not configured. Artifacts
   must be labeled unsigned and shipped with SHA-256 checksums.
 - macOS: NOT VERIFIED — not built or notarized in this environment.
 - Linux: NOT VERIFIED — not built in this environment; publish SHA-256 checksums.
 
-Signing/notarization is incomplete for v0.1.0. Release notes must tell users to expect
-OS trust warnings and must publish checksums for manual verification.
+Signing/notarization is incomplete for `v0.3.0-rc.1`. Release notes must tell
+users to expect OS trust warnings and must publish checksums for manual
+verification.

@@ -22,7 +22,32 @@ Release focus:
 Remaining readiness work must be tracked through release verification, not
 through progress logs.
 
-## v0.2 and Beyond
+## v0.2 (SSH And Workspace Workflows)
+
+Delivered areas:
+
+- SFTP remote file browsing and transfer;
+- serial SSH task automation;
+- shared Workspace variables and environments;
+- Database multi-statement execution;
+- OpenAPI import/export and table-row editing improvements.
+
+## v0.3.0-rc.1
+
+Release-candidate focus:
+
+- saved pre-request and post-response API scripts with tests and console output;
+- transactional Workspace domain mutations, snapshots, tombstones, and
+  external-apply foundations for optional edition sync;
+- isolated stable/development/test storage profiles;
+- SSH terminal clipboard actions;
+- NSIS handling for a running MCP sidecar;
+- Database row-action visibility.
+
+These items are release claims only to the extent recorded in
+`docs/testing/release-verification.md`.
+
+## Beyond v0.3
 
 Likely follow-up areas:
 
@@ -31,7 +56,6 @@ Likely follow-up areas:
 - signed and notarized distribution;
 - screenshots and fuller user documentation;
 - query cancellation and richer database result interactions;
-- SSH file-transfer or multiplexing exploration;
 - optional AI/automation adapters over the command bus;
 - optional cloud sync and plugin extension points.
 

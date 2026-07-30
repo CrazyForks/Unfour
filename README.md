@@ -36,13 +36,15 @@ what Codex can access and execute; connecting Codex does not grant unrestricted
 access by default.
 
 > [!WARNING]
-> Unfour `v0.2.0`. Installers are unsigned and may trigger SmartScreen or other
-> operating-system security warnings; validate the release against your own
-> requirements.
+> The source tree is preparing Unfour `v0.3.0-rc.1`. This release candidate is
+> unsigned and still requires release verification; installers may trigger
+> SmartScreen or other operating-system security warnings.
 
 ## Download
 
-Download [`v0.2.0` from GitHub Releases](https://github.com/zyqzyq/Unfour/releases/tag/v0.2.0).
+Download published builds from [GitHub Releases](https://github.com/zyqzyq/Unfour/releases).
+The latest stable release is [`v0.2.0`](https://github.com/zyqzyq/Unfour/releases/tag/v0.2.0);
+`v0.3.0-rc.1` will appear there after the release candidate is published.
 
 - Windows: NSIS `.exe` installer.
 - macOS and Linux packages are experimental and unverified until real-device
@@ -66,11 +68,12 @@ capability crates and the command bus.
 
 - **API Client** - Compose and send HTTP requests, organize saved requests into
   collections and folders, resolve shared workspace variables, inspect response
-  body/headers/cookies/timing, and keep redacted history.
+  body/headers/cookies/timing, run saved pre-request and post-response scripts,
+  review script tests and console output, and keep redacted history.
 - **SSH Terminal** - Manage SSH connections and terminal sessions (split panes,
-  search, host-key trust, redacted logs), browse and transfer remote files over
-  SFTP, and automate multi-step SSH tasks (command, upload, download) from the
-  Connections / Files / Tasks sidebar.
+  search, clipboard context menu, host-key trust, redacted logs), browse and
+  transfer remote files over SFTP, and automate multi-step SSH tasks (command,
+  upload, download) from the Connections / Files / Tasks sidebar.
 - **Database** - Manage database connections, browse schemas, run SQL with
   confirmation-aware safety checks (including multi-statement Run Current /
   Run All), preview and edit table rows, and review query output.
@@ -152,7 +155,8 @@ map.
 
 ## Release Status
 
-The current published version is `v0.2.0`. Release readiness is documented in:
+The source tree is preparing `v0.3.0-rc.1`; the latest published stable version
+is `v0.2.0`. Release-candidate readiness is documented in:
 
 - `docs/testing/release-verification.md`
 - `docs/testing/manual-test-cases.md`

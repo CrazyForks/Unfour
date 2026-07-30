@@ -1,7 +1,7 @@
 # Distribution
 
 This document describes the public distribution format and release-asset
-verification for Unfour `v0.1.0`.
+verification for Unfour `v0.3.0-rc.1`.
 
 ## Release workflow
 
@@ -10,40 +10,33 @@ GitHub Actions runs the release workflow in three gates:
 1. `verify` installs the frozen dependency graph and runs lint, unit tests,
    repository checks, Rust tests, and Playwright Chromium smoke tests.
 2. The platform matrix builds the existing macOS and Linux targets. The
-   Windows matrix keeps the shared Tauri `bundle.targets: "all"` configuration
-   and stages both Windows installer formats.
+   Windows matrix builds and stages the NSIS installer only.
 3. `checksum-release` downloads all platform artifacts, generates one
    `SHA256SUMS.txt` from the actual files, and creates the release with the
    installers and checksum manifest.
 
 If `verify` fails, the build jobs do not run and no release assets are created.
 
-For local builds, use `pnpm run tauri build`. On Windows, the shared
-`bundle.targets: "all"` configuration produces both installer formats.
+For local builds, use `pnpm run tauri build`. On Windows, the configured release
+target produces an NSIS installer.
 
 ## Target artifacts
 
 | Platform | Official distribution status | Format |
 | --- | --- | --- |
-| Windows x64 | Official distribution; choose one format | NSIS `.exe` or MSI `.msi` |
+| Windows x64 | Release-candidate distribution | NSIS `.exe` |
 | macOS arm64/x64 | Experimental / unverified until real-device smoke checks | Existing Tauri `.dmg` and archive outputs |
 | Linux x64 | Experimental / unverified until real-device smoke checks | Existing Tauri `.AppImage`, `.deb`, and available package outputs |
 
-Windows NSIS and MSI install the same Unfour version. NSIS `.exe` is the
-recommended choice for ordinary users. MSI `.msi` is provided for users who
-prefer MSI or need software deployment management. Users should choose one.
+Windows ships a single NSIS `.exe` installer. Before collecting release assets,
+the workflow removes cached Windows bundle output and then selects `.exe`
+artifacts only, preventing stale MSI files from being published.
 
-Installing both formats on the same device is not recommended because it may
-lead to duplicate desktop shortcuts, duplicate uninstall entries, and
-confusing upgrade paths. Cross-format detection, automatic uninstall, and
-NSIS/MSI cross-upgrade are not implemented at this stage.
-
-The repository was checked for application code or installer hooks that create
-desktop shortcuts. No such project-owned shortcut creation code was found.
-The available user evidence shows two icons when NSIS and MSI are installed
-together; this is attributed to the two installer packages, not to an extra
-shortcut created by the application. Standalone NSIS and standalone MSI
-shortcut counts still require separate clean-device smoke checks.
+The NSIS installer checks for a running `unfour-mcp.exe` during install and
+uninstall. It prompts before stopping the sidecar and retries the process check
+so an MCP host that respawns the process does not leave file replacement
+stalled. This behavior still requires Windows installer smoke verification for
+the candidate.
 
 ## Checksums
 

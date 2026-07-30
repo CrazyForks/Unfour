@@ -14,6 +14,14 @@ These manual cases supplement automated tests for release candidates. Record
   explains the restriction.
 - Delete a non-default workspace and confirm local state updates.
 - Change layout state, restart, and confirm layout restores.
+- Upgrade an existing `v0.2.0` database and confirm Workspace, environment, and
+  variable records remain available.
+- Confirm create/update/delete operations increment revisions and a failed
+  transactional hook rolls back both business data and mutation output.
+- Apply external Workspace/environment changes and confirm active Workspace,
+  active environment, last-opened time, and default Workspace remain local.
+- Start desktop and MCP with the same storage profile and confirm they resolve
+  the same database; confirm `dev`/`test` profiles do not open stable data.
 
 ## API Client
 
@@ -29,6 +37,16 @@ These manual cases supplement automated tests for release candidates. Record
 - Create folders or collections where supported.
 - Import/export a collection and verify secrets are not exported in usable form.
 - Confirm history masks sensitive headers and body fields.
+- Save and reopen pre-request and post-response scripts.
+- Use a pre-request script to change the URL/header and temporary variables;
+  confirm only that send is affected where expected.
+- Read and update the active environment from a script, then confirm the
+  persisted environment and subsequent request resolution.
+- Record passing and failing post-response tests and inspect Tests/Console.
+- Trigger a pre-request error and timeout and confirm the HTTP request is not
+  sent; trigger a post-response error and confirm the response remains visible.
+- Export and re-import scripted requests through OpenAPI and confirm both
+  script definitions survive the round trip.
 
 ## SSH Terminal
 
@@ -41,6 +59,8 @@ Requires a reachable test SSH server. Do not run against production hosts.
 - Connect and run basic commands.
 - Verify PTY input/output and resize.
 - Use search in terminal output.
+- Use the context menu to copy, paste clipboard text, paste selected text, and
+  select all; confirm disconnected/read-only states disable unsafe paste.
 - Close and reopen a session and confirm history restore when expected.
 - Trigger first-use host-key trust and confirm the fingerprint is shown.
 - Simulate a host-key mismatch and confirm the connection is rejected.
@@ -48,6 +68,10 @@ Requires a reachable test SSH server. Do not run against production hosts.
 - Test keepalive/reconnect behavior with a controlled disconnect.
 - Copy and export logs and confirm secrets are redacted.
 - Close an active connected session and confirm the warning/confirmation flow.
+- Browse, upload, download, rename, and delete disposable remote files over
+  SFTP, including cancellation and overwrite handling.
+- Run a disposable serial task containing command, upload, and download steps;
+  inspect its transcript and persisted run summary.
 
 ## Database
 
@@ -61,6 +85,8 @@ Use disposable local or test databases only.
 - Run mutation SQL and confirm explicit confirmation is required.
 - Confirm mutation execution works only after confirmation.
 - Preview table data with pagination.
+- Enter table editing after the initial preview loads and confirm both edit and
+  delete row actions remain visible.
 - Copy results as TSV and export CSV.
 - Repeat applicable cases for PostgreSQL and MySQL/MariaDB when those drivers
   are part of the release claim.
@@ -90,6 +116,9 @@ For each target platform:
 - Switch between API Client, SSH Terminal, and Database modules.
 - Quit and relaunch.
 - Upgrade over a previous release candidate if available.
+- On Windows, keep `unfour-mcp.exe` open through an MCP client during install
+  and uninstall; confirm the NSIS prompt appears and the operation completes
+  after the sidecar is stopped.
 - Uninstall and confirm the app is removed cleanly.
 
 ## Signing And Trust Prompts

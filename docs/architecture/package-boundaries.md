@@ -104,9 +104,9 @@ layers choose whether local-only or Pro sync capabilities are wired in.
 
 | Package | Responsibility | Forbidden |
 | --- | --- | --- |
-| `packages/api-client` | API Client UI: request drafts, request tabs, Send behavior, response display, history, saved requests, and collections. Workspace environment data and resolution are consumed through shared workspace contracts. | Database logic, SSH logic, global shell behavior, workspace variable management, persistence, or resolution. |
+| `packages/api-client` | API Client UI: request drafts, request tabs, Send behavior, request-script editors/results, response display, history, saved requests, and collections. Workspace environment data and resolution are consumed through shared workspace contracts. | Database logic, SSH logic, global shell behavior, workspace variable management, persistence, or resolution. |
 | `packages/workspace-environments` | Workspace-level variables and environments management UI, editor state, navigation guards, and frontend CRUD hooks. | API request execution, feature navigation, variable resolution, or app-shell orchestration. |
-| `packages/ssh-terminal` | SSH Terminal UI: connections, sessions, terminal panes, split/search/log UI, host-key trust UI, terminal-local state. | API request logic, SQL/database logic, global shell behavior. |
+| `packages/ssh-terminal` | SSH Terminal UI: connections, sessions, terminal panes, split/search/clipboard/log UI, host-key trust UI, SFTP, task automation, and terminal-local state. | API request logic, SQL/database logic, global shell behavior. |
 | `packages/database` | Database UI: connection tree, schema tree, SQL editor, query results, table inspector, database-local state. | API request logic, SSH session logic, global shell behavior. |
 | `packages/command-client` | Typed Tauri command wrappers, shared frontend command types, and browser-dev mocks. | React components, feature business logic, feature state. |
 
@@ -118,11 +118,11 @@ and should reuse `packages/ui` primitives where possible.
 | Crate | Responsibility | Forbidden |
 | --- | --- | --- |
 | `crates/unfour-core` | Shared Rust models, error/result types, redaction helpers, reserved AI/sync contracts. | Tauri adapter logic, UI behavior. |
-| `crates/unfour-paths` | Stable runtime path resolution shared by desktop and MCP processes. | Feature execution, UI behavior. |
+| `crates/unfour-paths` | Storage-profile-aware runtime path resolution shared by desktop and MCP processes. | Feature execution, UI behavior. |
 | `crates/unfour-diag` | Structured diagnostics, file logging, log retention, correlation IDs, and diagnostic bundle export. | Feature business execution, raw secret persistence. |
 | `crates/local-storage` | SQLite migrations, local database access, and local activity logging. | Raw secret storage. |
 | `crates/secret-store` | Credential reference management backed by OS keychain or test memory store. | SQLite plaintext secret persistence. |
-| `crates/http-engine` | API request execution after workspace-variable resolution, saved requests, history, redaction persistence. | Workspace variable persistence/resolution, UI state, database query execution, SSH sessions. |
+| `crates/http-engine` | API request execution after workspace-variable resolution, bounded request-script runtime, saved requests, history, and redaction persistence. | Workspace variable persistence/resolution, UI state, database query execution, SSH sessions. |
 | `crates/database-engine` | Database connection CRUD, schema browsing, query execution, browse-table behavior, SQL safety classification. | API request execution, SSH sessions. |
 | `crates/ssh-engine` | SSH connection/session service, terminal events, host-key handling, reconnect, log export. | API request execution, SQL execution. |
 | `crates/workspace-engine` | Workspace CRUD, active workspace state, workspace variables/environments, shared variable resolution, and layout persistence. | Feature-specific execution. |

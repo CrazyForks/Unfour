@@ -51,9 +51,9 @@ Unfour/
 | `@unfour/command-client` | Typed Tauri `invoke` wrappers, shared frontend command types, and browser-development mock fallback. |
 | `@unfour/workspace-core` | Zustand workspace store and workspace type re-exports. |
 | `@unfour/workspace-local` | OSS local workspace lifecycle boundary; currently a compatibility/transitional package reserved for recent workspace, import/export, persistence lifecycle, and migration behavior. |
-| `@unfour/api-client` | API Client feature UI: requests, tabs, Send, responses, history, saved requests, collections, and the current workspace-variable management surface. Persistence and resolution remain workspace-owned. |
+| `@unfour/api-client` | API Client feature UI: requests, tabs, Send, request scripts, responses, history, saved requests, collections, and the current workspace-variable management surface. Persistence and resolution remain workspace-owned. |
 | `@unfour/database` | Database feature UI: connections, schema tree, SQL editor, query results, table preview, query history. |
-| `@unfour/ssh-terminal` | SSH Terminal feature UI: connections, sessions, xterm panes, split/search/logs, host-key trust. |
+| `@unfour/ssh-terminal` | SSH Terminal feature UI: connections, sessions, xterm panes, split/search/clipboard/logs, host-key trust, SFTP remote files, and task automation. |
 | `@unfour/desktop` | Thin desktop frontend entrypoint that mounts `@unfour/app-shell`. |
 
 ## Rust Crates
@@ -61,11 +61,11 @@ Unfour/
 | Crate | Role |
 | --- | --- |
 | `unfour-core` | Foundation crate for shared models, `AppError`, redaction, and reserved AI/sync contracts. |
-| `unfour-paths` | Stable runtime path resolution shared by the desktop app and standalone MCP server. |
+| `unfour-paths` | Storage-profile-aware runtime path resolution shared by the desktop app and standalone MCP server. |
 | `unfour-diag` | Structured logging, log retention, correlation IDs, and diagnostic bundle export. |
 | `unfour-local-storage` | SQLite setup, migrations, local persistence, and activity log. |
 | `unfour-secret-store` | Credential reference service backed by OS keychain in production and in-memory storage in tests. |
-| `unfour-http-engine` | API execution after shared workspace-variable resolution, saved requests, history, and persistence redaction. |
+| `unfour-http-engine` | API execution after shared workspace-variable resolution, bounded request-script execution, saved requests, history, and persistence redaction. |
 | `unfour-database-engine` | Database connection CRUD, schema browsing, SQL execution, table browsing, and SQL safety classification. |
 | `unfour-ssh-engine` | SSH connection/session lifecycle, PTY events, host-key trust, reconnect behavior, and redacted log export. |
 | `unfour-workspace-engine` | Workspace CRUD, active workspace state, workspace variables/environments, shared variable resolution, and layout persistence. |
@@ -158,7 +158,7 @@ MCP client
 The desktop binary wrapper lives under `apps/desktop/src-tauri`. Shared Tauri
 composition lives in `crates/unfour-app`: plugins, command-bus setup,
 `AppState`, command adapters, and edition-independent wiring. The product name
-is Unfour and the repository package version is `0.1.0`. Release readiness
+is Unfour and the repository package version is `0.3.0-rc.1`. Release readiness
 must be determined from the release verification documents, not from the
 version string alone.
 

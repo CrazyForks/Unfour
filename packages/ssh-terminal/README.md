@@ -24,6 +24,7 @@
 - `src/components/TerminalWorkspace.tsx` - terminal workspace composition.
 - `src/components/SftpWorkspace.tsx` - lazy Remote Files panel, edge handle, and resize boundary.
 - `src/components/TerminalPane.tsx` - xterm terminal pane.
+- `src/components/TerminalContextMenu.tsx` - clipboard and selection actions.
 - `src/components/HostKeyTrustDialog.tsx` - host-key trust and mismatch UI.
 
 ## Current Capabilities
@@ -31,11 +32,14 @@
 - Create, edit, delete, and select SSH connections.
 - Start, close, and track terminal sessions.
 - Hydrate session history and append live terminal events.
-- Split terminal panes, search, copy logs, and export redacted logs.
+- Split terminal panes, search, use clipboard/selection context actions, copy
+  logs, and export redacted logs.
 - Prompt for host-key trust and show mismatch errors.
 - Lazily open an SFTP channel from a terminal tab, browse remote files, create,
   rename, and delete entries, and stream one upload or download per SSH
   connection with progress and cancellation.
+- Create and run serial SSH tasks composed of command, upload, and download
+  steps, with persisted run summaries and logs.
 
 ## Known Gaps
 
