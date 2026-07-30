@@ -69,4 +69,15 @@ describe("TableDataGrid", () => {
     expect(screen.queryByText("Ada")).toBeNull();
     expect(container.querySelector(".animate-pulse")).toBeNull();
   });
+
+  it("reserves room for the delete action before editing becomes available", () => {
+    const view = render(<TableDataGrid loading result={result} />);
+
+    expect(view.container.querySelector("col")?.getAttribute("style")).toContain("72px");
+
+    view.rerender(<TableDataGrid editing={editing} result={result} />);
+
+    expect(screen.getByRole("button", { name: /delete row/i })).toBeTruthy();
+    expect(view.container.querySelector("col")?.getAttribute("style")).toContain("72px");
+  });
 });

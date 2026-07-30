@@ -36,6 +36,7 @@ import {
 
 const MAX_RENDERED_ROWS = 500;
 const EMPTY_PENDING_CHANGES: PendingTableChange[] = [];
+const ROW_ACTION_COLUMN_WIDTH = 72;
 
 type CellViewer = { columnName: string; value: string | null };
 type DataRow = Array<string | null> & { pendingRowKey?: string };
@@ -88,7 +89,7 @@ export function TableDataGrid({
   const [editMode, setEditMode] = useState<"value" | "null">("value");
   const [selection, setSelection] = useState<DataTableSelection | null>(null);
   const [columnsWidths, setColumnsWidths] = useState<Record<string, number>>(() => ({
-    __row_actions: editing ? 72 : 48,
+    __row_actions: ROW_ACTION_COLUMN_WIDTH,
   }));
 
   const viewerValue = viewer?.value ?? null;
@@ -203,7 +204,10 @@ export function TableDataGrid({
   }
 
   const rowActionColumn: DataTableColumn<DataRow> = {
-    autoFitWidth: editing ? 72 : 48,
+    // Editing becomes available only after the initial table view has loaded.
+    // Reserve both action slots up front so DataTable's initial width cache
+    // cannot clip the delete action when editing appears.
+    autoFitWidth: ROW_ACTION_COLUMN_WIDTH,
     cell: (row, rowIndex) => {
       const rowKey = row.pendingRowKey ?? editing?.rowKey(row);
       const deleted = rowKey
@@ -233,7 +237,7 @@ export function TableDataGrid({
     },
     header: "#",
     id: "__row_actions",
-    width: columnsWidths.__row_actions ?? (editing ? 72 : 48),
+    width: columnsWidths.__row_actions ?? ROW_ACTION_COLUMN_WIDTH,
   };
 
   const dataColumns: DataTableColumn<DataRow>[] = [
