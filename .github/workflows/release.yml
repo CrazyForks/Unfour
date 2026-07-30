@@ -22,11 +22,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Community GitHub releases are currently pre-releases on the Test
-          # channel. A future formal release switches CHANNEL to "stable" and
-          # PRERELEASE to "false" (one place, kept in lockstep here).
-          CHANNEL="test"
-          PRERELEASE="true"
+          # Community GitHub releases currently publish on the Stable channel
+          # so installed builds keep using the existing ~/.unfour data tree.
+          # Keep the GitHub release identity in lockstep with that channel.
+          CHANNEL="stable"
+          PRERELEASE="false"
 
           # Build contract: Stable must not ship as a pre-release, and Test must
           # ship as a pre-release. This guards against a channel/prerelease mismatch.
@@ -47,7 +47,7 @@ jobs:
           echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
 
   verify:
-    name: Verify release candidate
+    name: Verify release
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -251,7 +251,7 @@ jobs:
           name: Unfour ${{ github.ref_name }}
           prerelease: ${{ needs.identity.outputs.prerelease }}
           body: |
-            Unfour `${{ github.ref_name }}` is an early pre-release. Do not use it in production without your own validation.
+            Unfour `${{ github.ref_name }}` is a stable Community release.
 
             This release is unsigned and may trigger SmartScreen or other operating-system security warnings.
 
