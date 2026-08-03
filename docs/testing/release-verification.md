@@ -1,13 +1,13 @@
 # Release Verification
 
-This is the active verification matrix for the `v0.3.0-rc.1` release
-candidate. Results must come from this candidate; evidence from earlier
+This is the active verification matrix for the Community Stable `v0.3.1`
+release. Results must come from this release commit; evidence from earlier
 releases is historical context only. An artifact build is not proof of
 platform, live-service, credential-store, or feature-level verification.
 
 ## Status Labels
 
-- `PASS`: executed successfully for this release candidate.
+- `PASS`: executed successfully for this release commit.
 - `FAIL`: executed and failed.
 - `NOT RUN`: automated check was not executed; include the reason.
 - `NOT VERIFIED`: manual, platform, network, or live-service behavior was not
@@ -19,7 +19,7 @@ platform, live-service, credential-store, or feature-level verification.
 Run from the repository root and replace each placeholder with current
 evidence.
 
-| Area | Command | Required for v0.3.0-rc.1 | Result |
+| Area | Command | Required for v0.3.1 | Result |
 | --- | --- | --- | --- |
 | Working tree | `git status --short` | Yes | NOT RUN (release-preparation changes are present) |
 | Patch hygiene | `git diff --check` | Yes | PASS (documentation update) |
@@ -28,6 +28,7 @@ evidence.
 | Large-file guard | `pnpm run check:large-files` | Yes | NOT RUN |
 | Frontend lint | `pnpm run lint` | Yes | NOT RUN |
 | Frontend unit tests | `pnpm run test` | Yes | NOT RUN |
+| Release/environment unit tests | `pnpm run test:release-env` | Yes | NOT RUN |
 | Playwright browser install | `pnpm exec playwright install chromium` | When required by the runner | NOT RUN |
 | Playwright smoke | `pnpm run test:e2e` | Yes | NOT RUN |
 | Rust workspace check | `pnpm run check:rust` | Yes | NOT RUN |
@@ -56,7 +57,7 @@ Platform checks that cannot be run must remain `NOT VERIFIED` with a reason.
 | --- | --- | --- |
 | API request scripts | Persist pre/post scripts; request and temporary-variable mutation; environment reads and writes; console output; passing/failing tests; pre-script failure/timeout; post-script failure; OpenAPI import/export round trip. | NOT VERIFIED |
 | Workspace domain foundation | Existing-workspace migration; Workspace/variable/environment CRUD; revision and tombstone behavior; transactional rollback; external apply; local active/default preferences remain local; desktop and MCP paths agree. | NOT VERIFIED |
-| Storage profiles | Stable remains at `~/.unfour`; `dev` and `test` use sibling roots; absolute override works; relative override is rejected; desktop and MCP resolve the same root. | NOT VERIFIED |
+| Release/storage environment | Local Tauri defaults to Test; Stable is explicit; invalid channel/profile values fail; Stable uses `~/.unfour`; `dev` and `test` use sibling roots; absolute override works; relative override is rejected; desktop and MCP resolve the same root. | NOT VERIFIED |
 | SSH live server | Password/key auth, terminal input/output, resize, clipboard menu, SFTP, task automation, host-key checks, reconnect, and redacted log export. | NOT VERIFIED |
 | Database | SQLite/PostgreSQL/MySQL connection and query flows, table edit/delete actions, multi-statement execution, errors, and confirmation gates. | NOT VERIFIED |
 | MCP | Initialize, tools/list, Workspace and environment operations, API reads, database read-only query, activity list, SSH diagnostics, and selected storage profile. | NOT VERIFIED |
@@ -85,14 +86,15 @@ example client rather than the Unfour release. Historical references inside
 ## Release Evidence Template
 
 ```text
-Release candidate: v0.3.0-rc.1
-Commit: <release candidate commit>
+Release: v0.3.1
+Commit: <release commit>
 Platform: <runner or physical device>
 
 Automated checks:
 - pnpm install --frozen-lockfile: PASS / FAIL / NOT RUN
 - pnpm run lint: PASS / FAIL / NOT RUN
 - pnpm run test: PASS / FAIL / NOT RUN
+- pnpm run test:release-env: PASS / FAIL / NOT RUN
 - pnpm run check: PASS / FAIL / NOT RUN
 - pnpm run check:rust:ssh: PASS / FAIL / NOT RUN
 - pnpm run test:rust: PASS / FAIL / NOT RUN

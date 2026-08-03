@@ -43,7 +43,7 @@ by the runtime path resolver.
 
 | Profile | Product data root | SQLite |
 | --- | --- | --- |
-| `stable` (default) | `~/.unfour` | `~/.unfour/unfour.sqlite` |
+| `stable` | `~/.unfour` | `~/.unfour/unfour.sqlite` |
 | `test` | `~/.unfour-test` | `~/.unfour-test/unfour.sqlite` |
 | `dev` | `~/.unfour-dev` | `~/.unfour-dev/unfour.sqlite` |
 
@@ -60,6 +60,22 @@ Under product root `<root>`:
 - config / cache: follow `<root>` (same product-data tree as today's stable
   layout)
 
+### Release channel and storage profile
+
+Release identity and local data isolation are separate axes:
+
+- `UNFOUR_RELEASE_CHANNEL` is a build-time input and accepts only `test` or
+  `stable`. It controls Community release metadata and supplies the default
+  storage profile for that compiled artifact. It never accepts `dev`.
+- `UNFOUR_STORAGE_PROFILE` is a runtime local-data override and accepts only
+  `dev`, `test`, or `stable`. It does not change edition, keychain namespace,
+  package identity, or any service address.
+- `UNFOUR_DATA_DIR` is the highest-priority complete product-tree override and
+  must be absolute.
+
+All non-empty values are validated. Invalid values return an error instead of
+falling back to another profile.
+
 ### Resolution priority
 
 `initialize_unfour_storage()`, `resolve_unfour_paths()`,
@@ -68,9 +84,25 @@ Under product root `<root>`:
 1. `UNFOUR_DATA_DIR` — absolute path that replaces the entire product tree
    (CI / sandboxes). Relative values are rejected.
 2. `UNFOUR_STORAGE_PROFILE` — runtime `dev` | `test` | `stable`.
-3. Compile-time `UNFOUR_RELEASE_CHANNEL` when baked into `unfour-paths`
-   (`stable` → stable, `test` → test, `dev` → dev).
-4. Default `stable` → `~/.unfour`.
+3. Compile-time `UNFOUR_RELEASE_CHANNEL` (`stable` → stable, `test` → test).
+
+The root Tauri launcher always exports a channel to the complete child process
+and Cargo graph. Local `pnpm tauri dev` and `pnpm tauri build` default to Test;
+formal Community Stable CI must explicitly set
+`UNFOUR_RELEASE_CHANNEL=stable`. Direct Cargo/Tauri invocations without the
+variable emit a warning and consistently compile as Test.
+
+Common commands:
+
+```bash
+pnpm tauri dev
+UNFOUR_STORAGE_PROFILE=dev pnpm tauri dev
+pnpm tauri build
+UNFOUR_RELEASE_CHANNEL=stable UNFOUR_BUILD_COMMIT=<exact-sha> pnpm tauri build
+```
+
+The last command describes the formal CI build contract; ordinary local builds
+should use the Test default.
 
 Callers (desktop, MCP, command-bus) keep using the existing public path APIs;
 they do not need separate profile arguments.
@@ -81,8 +113,8 @@ Storage profiles isolate the local product data tree only. They do **not**
 change:
 
 - OS keychain / `SECRET_STORE_NAMESPACE` (service name stays `unfour`);
-- Pro account session isolation;
-- Community vs Pro separate SQLite databases.
+- edition or package identity;
+- service or updater endpoints.
 
 Runtime diagnostics are owned by `crates/unfour-diag`, not by
 `tauri-plugin-log`. File logs use daily `unfour.log*` files under the logs

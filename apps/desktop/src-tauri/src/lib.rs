@@ -27,12 +27,13 @@ pub fn run() {
         .expect("error while running Unfour");
 }
 
-/// Release channel injected at build time by `build.rs`. Only "test" and
-/// "stable" are emitted; anything else defaults to Test.
+/// Release channel injected at build time by `build.rs`. The build script
+/// rejects every value except "test" and "stable".
 fn build_channel() -> unfour_app::ReleaseChannel {
     match env!("UNFOUR_RELEASE_CHANNEL") {
+        "test" => unfour_app::ReleaseChannel::Test,
         "stable" => unfour_app::ReleaseChannel::Stable,
-        _ => unfour_app::ReleaseChannel::Test,
+        value => panic!("invalid compiled UNFOUR_RELEASE_CHANNEL: {value}"),
     }
 }
 

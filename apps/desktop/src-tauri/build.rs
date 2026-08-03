@@ -10,15 +10,11 @@ fn main() {
         println!("cargo:rustc-link-search=native={}", out_dir.display());
     }
 
-    // Release channel. Formal CI must set `UNFOUR_RELEASE_CHANNEL` explicitly
-    // (Test for pre-releases, Stable for formal releases). Local/dev builds
-    // default to "test". The channel is NEVER inferred from the cargo profile
-    // or `debug_assertions`; only these two values are accepted.
-    let channel = std::env::var("UNFOUR_RELEASE_CHANNEL")
-        .ok()
-        .map(|value| value.trim().to_ascii_lowercase())
-        .filter(|value| value == "test" || value == "stable")
-        .unwrap_or_else(|| "test".to_string());
+    // Release channel. Community Stable CI must set
+    // `UNFOUR_RELEASE_CHANNEL=stable` explicitly. Local/dev builds default to
+    // "test". The channel is NEVER inferred from the cargo profile or
+    // `debug_assertions`; only these two values are accepted.
+    let channel = resolve_release_channel();
     println!("cargo:rustc-env=UNFOUR_RELEASE_CHANNEL={channel}");
 
     // Build commit. Precedence:
@@ -51,6 +47,25 @@ fn main() {
             println!("cargo:rerun-if-changed={}", refs_heads.display());
         }
     }
+}
+
+fn resolve_release_channel() -> String {
+    match std::env::var("UNFOUR_RELEASE_CHANNEL") {
+        Ok(value) if value.is_empty() => default_test_channel_with_warning(),
+        Ok(value) => match value.as_str() {
+            "test" | "stable" => value,
+            _ => panic!("UNFOUR_RELEASE_CHANNEL must be exactly 'test' or 'stable', got {value:?}"),
+        },
+        Err(std::env::VarError::NotPresent) => default_test_channel_with_warning(),
+        Err(error) => panic!("UNFOUR_RELEASE_CHANNEL is not valid Unicode: {error}"),
+    }
+}
+
+fn default_test_channel_with_warning() -> String {
+    println!(
+        "cargo:warning=UNFOUR_RELEASE_CHANNEL was not provided; defaulting this local Community build to 'test'. Use root `pnpm tauri ...` or set the variable explicitly."
+    );
+    "test".to_string()
 }
 
 fn resolve_build_commit() -> String {

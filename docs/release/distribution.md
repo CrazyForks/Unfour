@@ -1,7 +1,7 @@
 # Distribution
 
 This document describes the public distribution format and release-asset
-verification for Unfour `v0.3.0-rc.1`.
+verification for Community Stable Unfour `v0.3.1`.
 
 ## Release workflow
 
@@ -17,8 +17,11 @@ GitHub Actions runs the release workflow in three gates:
 
 If `verify` fails, the build jobs do not run and no release assets are created.
 
-For local builds, use `pnpm run tauri build`. On Windows, the configured release
-target produces an NSIS installer.
+For local test builds, use `pnpm tauri build`; the root launcher exports the
+Test channel to Tauri, sidecar builds, and the complete Cargo graph. A formal
+Stable build is CI-owned and must explicitly provide
+`UNFOUR_RELEASE_CHANNEL=stable` and the exact `UNFOUR_BUILD_COMMIT`. On
+Windows, the configured release target produces an NSIS installer.
 
 ## Target artifacts
 

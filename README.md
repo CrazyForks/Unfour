@@ -36,7 +36,7 @@ what Codex can access and execute; connecting Codex does not grant unrestricted
 access by default.
 
 > [!WARNING]
-> The source tree is preparing Unfour `v0.3.0-rc.1`. This release candidate is
+> The source tree is preparing the Community Stable `v0.3.1` release. It is
 > unsigned and still requires release verification; installers may trigger
 > SmartScreen or other operating-system security warnings.
 
@@ -44,7 +44,7 @@ access by default.
 
 Download published builds from [GitHub Releases](https://github.com/zyqzyq/Unfour/releases).
 The latest stable release is [`v0.2.0`](https://github.com/zyqzyq/Unfour/releases/tag/v0.2.0);
-`v0.3.0-rc.1` will appear there after the release candidate is published.
+`v0.3.1` will appear there after the release is published.
 
 - Windows: NSIS `.exe` installer.
 - macOS and Linux packages are experimental and unverified until real-device
@@ -121,7 +121,7 @@ pnpm tauri dev
 Common commands:
 
 ```bash
-pnpm tauri build        # create Tauri release bundles
+pnpm tauri build        # create local Test-channel Tauri bundles
 pnpm run build          # build the desktop frontend only
 pnpm run check          # frontend build + Rust check + large-file check
 pnpm run lint           # ESLint
@@ -130,9 +130,15 @@ pnpm run test:e2e       # Playwright smoke tests
 pnpm run check:rust     # cargo check --workspace
 pnpm run check:rust:ssh # cargo check with the ssh-native feature
 pnpm run test:rust      # cargo test --workspace
+pnpm run test:release-env # release/channel contract unit tests
 ```
 
 Run commands from the repository root unless a package document says otherwise.
+Both `pnpm tauri dev` and local `pnpm tauri build` default to the Test release
+channel. Set `UNFOUR_STORAGE_PROFILE=dev` when development data should use
+`~/.unfour-dev`; this storage override is independent from release identity.
+Only CI should create formal Stable artifacts, with
+`UNFOUR_RELEASE_CHANNEL=stable` and an exact `UNFOUR_BUILD_COMMIT`.
 
 ## Project Layout
 
@@ -155,8 +161,8 @@ map.
 
 ## Release Status
 
-The source tree is preparing `v0.3.0-rc.1`; the latest published stable version
-is `v0.2.0`. Release-candidate readiness is documented in:
+The source tree is preparing Community Stable `v0.3.1`; the latest published
+stable version is `v0.2.0`. Release readiness is documented in:
 
 - `docs/testing/release-verification.md`
 - `docs/testing/manual-test-cases.md`

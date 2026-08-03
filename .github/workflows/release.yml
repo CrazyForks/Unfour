@@ -5,6 +5,11 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing Community Stable tag to publish (vX.Y.Z)'
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -16,41 +21,36 @@ jobs:
     outputs:
       channel: ${{ steps.resolve.outputs.channel }}
       prerelease: ${{ steps.resolve.outputs.prerelease }}
+      tag: ${{ steps.resolve.outputs.tag }}
+      version: ${{ steps.resolve.outputs.version }}
+      commit: ${{ steps.commit.outputs.commit }}
     steps:
-      - name: Resolve channel and prerelease flag
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+
+      - name: Validate Community Stable release contract
         id: resolve
+        env:
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+        run: node scripts/release-contract.mjs "$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve checked-out build commit
+        id: commit
         shell: bash
-        run: |
-          set -euo pipefail
-          # Community GitHub releases currently publish on the Stable channel
-          # so installed builds keep using the existing ~/.unfour data tree.
-          # Keep the GitHub release identity in lockstep with that channel.
-          CHANNEL="stable"
-          PRERELEASE="false"
-
-          # Build contract: Stable must not ship as a pre-release, and Test must
-          # ship as a pre-release. This guards against a channel/prerelease mismatch.
-          if [ "$CHANNEL" = "stable" ] && [ "$PRERELEASE" != "false" ]; then
-            echo "::error::Stable channel must publish a formal (non-prerelease) GitHub Release."
-            exit 1
-          fi
-          if [ "$CHANNEL" = "test" ] && [ "$PRERELEASE" != "true" ]; then
-            echo "::error::Test channel must publish a GitHub pre-release."
-            exit 1
-          fi
-          if [ "$CHANNEL" != "test" ] && [ "$CHANNEL" != "stable" ]; then
-            echo "::error::Release channel must be exactly 'test' or 'stable'."
-            exit 1
-          fi
-
-          echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
-          echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
+        run: echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
   verify:
     name: Verify release
+    needs: identity
     runs-on: ubuntu-latest
+    env:
+      UNFOUR_RELEASE_CHANNEL: ${{ needs.identity.outputs.channel }}
+      UNFOUR_BUILD_COMMIT: ${{ needs.identity.outputs.commit }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.identity.outputs.tag }}
 
       - name: Install Tauri system dependencies (Linux)
         run: |
@@ -101,6 +101,9 @@ jobs:
       - name: Frontend unit tests
         run: pnpm run test
 
+      - name: Release and environment unit tests
+        run: pnpm run test:release-env
+
       - name: Repository checks
         run: pnpm run check
 
@@ -134,8 +137,13 @@ jobs:
             target: x86_64-pc-windows-msvc
 
     runs-on: ${{ matrix.platform }}
+    env:
+      UNFOUR_RELEASE_CHANNEL: ${{ needs.identity.outputs.channel }}
+      UNFOUR_BUILD_COMMIT: ${{ needs.identity.outputs.commit }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.identity.outputs.tag }}
 
       - name: Install Tauri system dependencies (Linux)
         if: matrix.platform == 'ubuntu-latest'
@@ -182,11 +190,6 @@ jobs:
         run: pnpm run tauri build ${{ matrix.args }}
         env:
           UNFOUR_TAURI_TARGET: ${{ matrix.target }}
-          # Explicitly inject the release identity. The channel is decided by the
-          # identity job (never inferred from the cargo profile), and the commit
-          # is pinned to the exact SHA being built.
-          UNFOUR_RELEASE_CHANNEL: ${{ needs.identity.outputs.channel }}
-          UNFOUR_BUILD_COMMIT: ${{ github.sha }}
 
       - name: Collect Windows NSIS assets
         if: matrix.platform == 'windows-latest'
@@ -247,11 +250,11 @@ jobs:
       - name: Create release and upload assets
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-          name: Unfour ${{ github.ref_name }}
+          tag_name: ${{ needs.identity.outputs.tag }}
+          name: Unfour ${{ needs.identity.outputs.tag }}
           prerelease: ${{ needs.identity.outputs.prerelease }}
           body: |
-            Unfour `${{ github.ref_name }}` is a stable Community release.
+            Unfour `${{ needs.identity.outputs.tag }}` is a stable Community release.
 
             This release is unsigned and may trigger SmartScreen or other operating-system security warnings.
 

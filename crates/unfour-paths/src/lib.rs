@@ -34,7 +34,7 @@ impl StorageProfile {
     }
 
     pub fn parse(value: &str) -> Option<Self> {
-        match value.trim().to_ascii_lowercase().as_str() {
+        match value {
             "stable" => Some(Self::Stable),
             "dev" => Some(Self::Dev),
             "test" => Some(Self::Test),
@@ -105,11 +105,17 @@ pub fn default_database_path() -> io::Result<PathBuf> {
 ///
 /// Priority:
 /// 1. `UNFOUR_STORAGE_PROFILE` (`dev` | `test` | `stable`)
-/// 2. compile-time `UNFOUR_RELEASE_CHANNEL` when baked in (`stable` | `test` | `dev`)
-/// 3. `stable`
+/// 2. compile-time `UNFOUR_RELEASE_CHANNEL` (`stable` | `test`)
 ///
 /// `UNFOUR_DATA_DIR` bypasses profile selection and replaces the whole tree.
 pub fn resolve_storage_profile() -> StorageProfile {
+    try_resolve_storage_profile().unwrap_or_else(|error| panic!("{error}"))
+}
+
+/// Fallible storage-profile resolver used by every path API.
+///
+/// A non-empty invalid runtime value is an error rather than a fallback.
+pub fn try_resolve_storage_profile() -> io::Result<StorageProfile> {
     resolve_storage_profile_from(
         std::env::var(ENV_STORAGE_PROFILE).ok().as_deref(),
         option_env!("UNFOUR_RELEASE_CHANNEL"),
@@ -119,18 +125,30 @@ pub fn resolve_storage_profile() -> StorageProfile {
 fn resolve_storage_profile_from(
     runtime_profile: Option<&str>,
     compile_time_channel: Option<&str>,
-) -> StorageProfile {
+) -> io::Result<StorageProfile> {
     if let Some(value) = runtime_profile {
-        if let Some(profile) = StorageProfile::parse(value) {
-            return profile;
+        if !value.is_empty() {
+            return StorageProfile::parse(value).ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    format!(
+                        "UNFOUR_STORAGE_PROFILE must be exactly 'dev', 'test', or 'stable', got {value:?}"
+                    ),
+                )
+            });
         }
     }
     if let Some(channel) = compile_time_channel {
-        if let Some(profile) = StorageProfile::parse(channel) {
-            return profile;
-        }
+        return match channel {
+            "stable" => Ok(StorageProfile::Stable),
+            "test" => Ok(StorageProfile::Test),
+            value => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("invalid compiled UNFOUR_RELEASE_CHANNEL: {value:?}"),
+            )),
+        };
     }
-    StorageProfile::Stable
+    Ok(StorageProfile::Test)
 }
 
 /// All Unfour data lives under a home-relative product root on every platform.
@@ -162,10 +180,11 @@ fn data_dir_override() -> io::Result<Option<PathBuf>> {
 }
 
 fn resolve_with_env(roots: &PathRoots) -> io::Result<UnfourPaths> {
+    let profile = try_resolve_storage_profile()?;
     if let Some(override_dir) = data_dir_override()? {
         return Ok(paths_under_product_root(override_dir));
     }
-    resolve_with_roots(roots, resolve_storage_profile())
+    resolve_with_roots(roots, profile)
 }
 
 fn initialize_with_env(roots: &PathRoots) -> io::Result<UnfourPaths> {
@@ -297,22 +316,21 @@ mod tests {
     }
 
     #[test]
-    fn resolve_default_database_path_uses_stable_product_data_dir() {
+    fn compiled_channel_selects_the_matching_default_product_data_dir() {
         let _guard = env_lock().lock().expect("env lock");
         std::env::remove_var(ENV_DATA_DIR);
         std::env::remove_var(ENV_STORAGE_PROFILE);
 
         let paths = resolve_unfour_paths().expect("resolve paths");
 
-        assert_ends_with(
-            &paths.database_path,
-            &[DEFAULT_PRODUCT_DATA_DIR, DEFAULT_DATABASE_FILE],
-        );
-        assert_eq!(
-            paths.product_data_dir.file_name().unwrap(),
-            DEFAULT_PRODUCT_DATA_DIR
-        );
-        assert_eq!(resolve_storage_profile(), StorageProfile::Stable);
+        let (profile, directory) = match option_env!("UNFOUR_RELEASE_CHANNEL") {
+            Some("stable") => (StorageProfile::Stable, DEFAULT_PRODUCT_DATA_DIR),
+            Some("test") => (StorageProfile::Test, TEST_PRODUCT_DATA_DIR),
+            value => panic!("unexpected compiled channel: {value:?}"),
+        };
+        assert_ends_with(&paths.database_path, &[directory, DEFAULT_DATABASE_FILE]);
+        assert_eq!(paths.product_data_dir.file_name().unwrap(), directory);
+        assert_eq!(resolve_storage_profile(), profile);
     }
 
     #[test]
@@ -331,15 +349,15 @@ mod tests {
     #[test]
     fn resolve_storage_profile_prefers_runtime_over_compile_time() {
         assert_eq!(
-            resolve_storage_profile_from(Some("dev"), Some("stable")),
+            resolve_storage_profile_from(Some("dev"), Some("stable")).expect("dev profile"),
             StorageProfile::Dev
         );
         assert_eq!(
-            resolve_storage_profile_from(Some("test"), Some("dev")),
+            resolve_storage_profile_from(Some("test"), Some("stable")).expect("test profile"),
             StorageProfile::Test
         );
         assert_eq!(
-            resolve_storage_profile_from(Some("stable"), Some("test")),
+            resolve_storage_profile_from(Some("stable"), Some("test")).expect("stable profile"),
             StorageProfile::Stable
         );
     }
@@ -347,36 +365,33 @@ mod tests {
     #[test]
     fn resolve_storage_profile_maps_compile_time_channel() {
         assert_eq!(
-            resolve_storage_profile_from(None, Some("stable")),
+            resolve_storage_profile_from(None, Some("stable")).expect("stable channel"),
             StorageProfile::Stable
         );
         assert_eq!(
-            resolve_storage_profile_from(None, Some("test")),
+            resolve_storage_profile_from(None, Some("test")).expect("test channel"),
             StorageProfile::Test
         );
+        assert!(resolve_storage_profile_from(None, Some("dev")).is_err());
+        assert!(resolve_storage_profile_from(None, Some("nightly")).is_err());
         assert_eq!(
-            resolve_storage_profile_from(None, Some("dev")),
-            StorageProfile::Dev
-        );
-        assert_eq!(
-            resolve_storage_profile_from(None, Some("nightly")),
-            StorageProfile::Stable
-        );
-        assert_eq!(
-            resolve_storage_profile_from(None, None),
-            StorageProfile::Stable
+            resolve_storage_profile_from(None, None).expect("local default"),
+            StorageProfile::Test
         );
     }
 
     #[test]
-    fn resolve_storage_profile_ignores_unknown_runtime_value() {
+    fn resolve_storage_profile_rejects_unknown_runtime_value() {
+        let error = resolve_storage_profile_from(Some("nightly"), Some("test"))
+            .expect_err("invalid runtime profile must fail");
+        assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+        assert!(error.to_string().contains("UNFOUR_STORAGE_PROFILE"));
+        assert!(resolve_storage_profile_from(Some("Dev"), Some("test")).is_err());
+        assert!(resolve_storage_profile_from(Some(" dev"), Some("test")).is_err());
+        assert!(resolve_storage_profile_from(Some(" "), Some("test")).is_err());
         assert_eq!(
-            resolve_storage_profile_from(Some("nightly"), Some("dev")),
-            StorageProfile::Dev
-        );
-        assert_eq!(
-            resolve_storage_profile_from(Some(""), None),
-            StorageProfile::Stable
+            resolve_storage_profile_from(Some(""), None).expect("blank uses default"),
+            StorageProfile::Test
         );
     }
 
@@ -510,6 +525,35 @@ mod tests {
             &[TEST_PRODUCT_DATA_DIR, DEFAULT_DATABASE_FILE],
         );
         assert_eq!(resolve_storage_profile(), StorageProfile::Test);
+
+        std::env::remove_var(ENV_STORAGE_PROFILE);
+    }
+
+    #[test]
+    fn runtime_env_storage_profile_stable_selects_stable_dir() {
+        let _guard = env_lock().lock().expect("env lock");
+        std::env::remove_var(ENV_DATA_DIR);
+        std::env::set_var(ENV_STORAGE_PROFILE, "stable");
+
+        let paths = resolve_unfour_paths().expect("resolve paths");
+        assert_eq!(
+            paths.product_data_dir.file_name().unwrap(),
+            DEFAULT_PRODUCT_DATA_DIR
+        );
+        assert_eq!(resolve_storage_profile(), StorageProfile::Stable);
+
+        std::env::remove_var(ENV_STORAGE_PROFILE);
+    }
+
+    #[test]
+    fn runtime_env_invalid_storage_profile_returns_clear_error() {
+        let _guard = env_lock().lock().expect("env lock");
+        std::env::remove_var(ENV_DATA_DIR);
+        std::env::set_var(ENV_STORAGE_PROFILE, "nightly");
+
+        let error = resolve_unfour_paths().expect_err("invalid profile must fail");
+        assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+        assert!(error.to_string().contains("UNFOUR_STORAGE_PROFILE"));
 
         std::env::remove_var(ENV_STORAGE_PROFILE);
     }

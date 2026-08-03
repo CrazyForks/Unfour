@@ -1,16 +1,19 @@
 # Release Checklist
 
-This checklist is for the `v0.3.0-rc.1` release candidate.
+This checklist is for the Community Stable `v0.3.1` release.
 
-## Release candidate setup
+## Release setup
 
-- Confirm the release candidate commit and a clean working tree.
-- Confirm the version is `0.3.0-rc.1` in the root package, desktop package,
+- Confirm the release commit and a clean working tree.
+- Confirm the unique version source is `0.3.1` in root
+  `[workspace.package]`; run the version sync and confirm the root package,
+  desktop package,
   Tauri configuration, and any packaged Rust crates.
-- Confirm the release tag will be exactly `v0.3.0-rc.1` and points to the
-  verified candidate commit.
-- Confirm the release workflow resolves the Test channel with
-  `prerelease = true` for this RC.
+- Confirm the release tag is exactly `v0.3.1` and points to the verified
+  release commit. Community rejects every pre-release tag.
+- Confirm the release workflow resolves Stable with `prerelease = false`,
+  exports `UNFOUR_RELEASE_CHANNEL=stable`, and embeds the exact checked-out
+  commit as `UNFOUR_BUILD_COMMIT` throughout verification and artifact builds.
 - Review `README.md`, `README.zh-CN.md`, `CHANGELOG.md`, `SECURITY.md`, and
   `LICENSE`.
 - Confirm release notes describe this as a release and do not claim
@@ -35,7 +38,7 @@ the Windows NSIS target. The Windows release asset set must contain one NSIS
 
 ## Artifact review
 
-- Build artifacts come from the verified release candidate.
+- Build artifacts come from the verified release commit.
 - The single aggregation job generates and uploads `SHA256SUMS.txt` alongside
   the installers.
 - Artifact names identify the app, version, platform, and architecture where

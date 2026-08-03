@@ -9,7 +9,7 @@
     "dev": "pnpm --filter @unfour/desktop dev",
     "build": "pnpm --filter @unfour/desktop build",
     "preview": "pnpm --filter @unfour/desktop preview",
-    "tauri": "pnpm --filter @unfour/desktop tauri",
+    "tauri": "node scripts/run-tauri.mjs",
     "tauri:prepare-sidecars": "node scripts/prepare-tauri-sidecars.mjs",
     "check": "pnpm run build && pnpm run check:rust && pnpm run check:migrations && pnpm run check:large-files && pnpm run check:tokens",
     "check:rust": "cargo check --workspace",
@@ -22,7 +22,8 @@
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
-    "test:rust": "cargo test --workspace"
+    "test:rust": "cargo test --workspace",
+    "test:release-env": "node --test scripts/release-environment.test.mjs scripts/release-contract.test.mjs"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
