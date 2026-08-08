@@ -6,10 +6,17 @@ import { DesktopApp } from "./DesktopApp";
 import type {
   DesktopAppExtensionContext,
   DesktopAppSettingsSection,
+  DesktopAppWorkspaceActionsProvider,
+  DesktopAppWorkspaceMenuFooterAction,
 } from "./extensions";
 
+const queryMocks = vi.hoisted(() => ({
+  invalidateQueries: vi.fn().mockResolvedValue(undefined),
+  mutate: vi.fn(),
+}));
+
 vi.mock("@tanstack/react-query", () => ({
-  useMutation: () => ({ mutate: vi.fn() }),
+  useMutation: () => ({ mutate: queryMocks.mutate }),
   useQuery: ({ queryKey }: { queryKey: readonly unknown[] }) => {
     if (queryKey[0] === "system-health") {
       return { data: { storageReady: true } };
@@ -53,7 +60,7 @@ vi.mock("@tanstack/react-query", () => ({
     }
     return { data: undefined };
   },
-  useQueryClient: () => ({ invalidateQueries: vi.fn() }),
+  useQueryClient: () => ({ invalidateQueries: queryMocks.invalidateQueries }),
 }));
 
 vi.mock("@unfour/command-client", () => ({
@@ -176,19 +183,40 @@ vi.mock("./components/AppTitleBar", () => ({
     extensionContext,
     onManageVariables,
     settingsSections = [],
+    workspaceMenuActions,
+    workspaceMenuFooterActions = [],
   }: {
     endAccessory?: ReactNode;
     extensionContext: DesktopAppExtensionContext;
     onManageVariables?: () => void;
     settingsSections?: readonly DesktopAppSettingsSection[];
+    workspaceMenuActions?: DesktopAppWorkspaceActionsProvider;
+    workspaceMenuFooterActions?: readonly DesktopAppWorkspaceMenuFooterAction[];
   }) => (
     <>
       {endAccessory}
       <button onClick={onManageVariables} type="button">
         Manage variables
       </button>
+      <button onClick={() => void extensionContext.refreshWorkspaces()} type="button">
+        Refresh workspaces through extension
+      </button>
+      <button
+        onClick={() => void extensionContext.activateWorkspace("ws-imported")}
+        type="button"
+      >
+        Activate workspace through extension
+      </button>
       {settingsSections.map(({ component: Section, id }) => (
         <Section key={id} {...extensionContext} />
+      ))}
+      {extensionContext.activeWorkspace &&
+        workspaceMenuActions?.(
+          extensionContext,
+          extensionContext.activeWorkspace,
+        ).map((action) => <span key={action.id}>{action.label}</span>)}
+      {workspaceMenuFooterActions.map((action) => (
+        <span key={action.id}>{action.label}</span>
       ))}
     </>
   ),
@@ -255,6 +283,20 @@ describe("DesktopApp extensions", () => {
           ],
           statusBarEnd: observe("Edition status"),
           titleBarEnd: observe("Edition title"),
+          workspaceMenuActions: () => [
+            {
+              id: "edition.workspace-action",
+              label: "Edition workspace action",
+              run: vi.fn(),
+            },
+          ],
+          workspaceMenuFooterActions: [
+            {
+              id: "edition.workspace-footer",
+              label: "Edition workspace footer",
+              run: vi.fn(),
+            },
+          ],
         }}
       />,
     );
@@ -263,8 +305,15 @@ describe("DesktopApp extensions", () => {
     expect(screen.getByText("Edition status")).toBeTruthy();
     expect(screen.getByText("Edition settings")).toBeTruthy();
     expect(screen.getByText("Edition overlay")).toBeTruthy();
+    expect(screen.getByText("Edition workspace action")).toBeTruthy();
+    expect(screen.getByText("Edition workspace footer")).toBeTruthy();
     for (const context of observedContexts) {
-      expect(Object.keys(context).sort()).toEqual(["activeTab", "activeWorkspace"]);
+      expect(Object.keys(context).sort()).toEqual([
+        "activateWorkspace",
+        "activeTab",
+        "activeWorkspace",
+        "refreshWorkspaces",
+      ]);
       expect(context.activeTab).toMatchObject({ id: "api-main", kind: "api" });
       expect(context.activeWorkspace).toMatchObject({ id: "ws-default", name: "Default Workspace" });
     }
@@ -280,6 +329,24 @@ describe("DesktopApp extensions", () => {
       }),
     );
     expect(screen.queryByLabelText("Command palette")).toBeNull();
+  });
+
+  it("exposes semantic workspace refresh and activation operations", async () => {
+    queryMocks.invalidateQueries.mockClear();
+    queryMocks.mutate.mockClear();
+    render(<DesktopApp />);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Refresh workspaces through extension" }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Activate workspace through extension" }),
+    );
+
+    expect(queryMocks.invalidateQueries).toHaveBeenCalledWith({
+      queryKey: ["workspaces"],
+    });
+    expect(queryMocks.mutate).toHaveBeenCalledWith("ws-imported");
   });
 
   it("opens workspace variable management outside the API Client", () => {

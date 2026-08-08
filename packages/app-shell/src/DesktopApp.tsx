@@ -231,6 +231,12 @@ export function DesktopApp({ extensions }: DesktopAppProps) {
     },
     [requestLeaveVariableManager],
   );
+  const refreshWorkspaces = useCallback(
+    async () => {
+      await queryClient.invalidateQueries({ queryKey: ["workspaces"] });
+    },
+    [queryClient],
+  );
   const handleApiSidebarChange = useCallback((content: ReactNode | null) => {
     setApiSidebarContent(content);
   }, []);
@@ -245,8 +251,13 @@ export function DesktopApp({ extensions }: DesktopAppProps) {
   }, []);
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? tabs[0];
   const extensionContext: DesktopAppExtensionContext = useMemo(
-    () => ({ activeTab, activeWorkspace }),
-    [activeTab, activeWorkspace],
+    () => ({
+      activeTab,
+      activeWorkspace,
+      activateWorkspace: handleActivateWorkspace,
+      refreshWorkspaces,
+    }),
+    [activeTab, activeWorkspace, handleActivateWorkspace, refreshWorkspaces],
   );
   const TitleBarEnd = extensions?.titleBarEnd;
   const StatusBarEnd = extensions?.statusBarEnd;
@@ -328,6 +339,8 @@ export function DesktopApp({ extensions }: DesktopAppProps) {
             settingsSections={extensions?.settingsSections}
             workspaceActions={extensions?.workspaceActions}
             workspaceDecoration={extensions?.workspaceDecoration}
+            workspaceMenuActions={extensions?.workspaceMenuActions}
+            workspaceMenuFooterActions={extensions?.workspaceMenuFooterActions}
             workspaces={workspaceQuery.data?.workspaces ?? []}
           />
         }

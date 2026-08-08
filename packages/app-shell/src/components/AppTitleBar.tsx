@@ -14,7 +14,9 @@ import type {
   DesktopAppExtensionContext,
   DesktopAppSettingsSection,
   DesktopAppWorkspaceAction,
+  DesktopAppWorkspaceActionsProvider,
   DesktopAppWorkspaceDecoration,
+  DesktopAppWorkspaceMenuFooterAction,
 } from "../extensions";
 
 export function AppTitleBar({
@@ -29,6 +31,8 @@ export function AppTitleBar({
   settingsSections,
   workspaceActions,
   workspaceDecoration,
+  workspaceMenuActions,
+  workspaceMenuFooterActions,
   workspaces,
 }: {
   activeWorkspace?: Workspace;
@@ -42,6 +46,8 @@ export function AppTitleBar({
   settingsSections?: readonly DesktopAppSettingsSection[];
   workspaceActions?: readonly DesktopAppWorkspaceAction[];
   workspaceDecoration?: DesktopAppWorkspaceDecoration;
+  workspaceMenuActions?: DesktopAppWorkspaceActionsProvider;
+  workspaceMenuFooterActions?: readonly DesktopAppWorkspaceMenuFooterAction[];
   workspaces: Workspace[];
 }) {
   const { t } = useI18n();
@@ -57,7 +63,9 @@ export function AppTitleBar({
               decoration={workspaceDecoration}
               extensionContext={extensionContext}
               onActivateWorkspace={onActivateWorkspace}
+              workspaceActionProvider={workspaceMenuActions}
               workspaceActions={workspaceActions}
+              workspaceMenuFooterActions={workspaceMenuFooterActions}
               workspaces={workspaces}
             />
             <ActiveEnvironmentSelect

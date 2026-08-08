@@ -11,6 +11,8 @@ export type DesktopAppExtensionId = `${string}.${string}`;
 export type DesktopAppExtensionContext = Readonly<{
   activeWorkspace: Readonly<Workspace> | undefined;
   activeTab: Readonly<WorkspaceTab>;
+  activateWorkspace: (workspaceId: string) => void | Promise<void>;
+  refreshWorkspaces: () => void | Promise<void>;
 }>;
 
 export type DesktopAppExtensionSlot = ComponentType<DesktopAppExtensionContext>;
@@ -51,6 +53,19 @@ export type DesktopAppWorkspaceAction = Readonly<{
   run: (context: DesktopAppWorkspaceActionContext) => void | Promise<unknown>;
 }>;
 
+export type DesktopAppWorkspaceActionsProvider = (
+  context: DesktopAppExtensionContext,
+  workspace: Readonly<Workspace>,
+) => readonly DesktopAppWorkspaceAction[];
+
+export type DesktopAppWorkspaceMenuFooterAction = Readonly<{
+  id: DesktopAppExtensionId;
+  label: ReactNode;
+  icon?: ReactNode;
+  disabled?: boolean | ((context: DesktopAppExtensionContext) => boolean);
+  run: (context: DesktopAppExtensionContext) => void | Promise<unknown>;
+}>;
+
 export type DesktopAppWorkspaceVariableDecorationProps =
   DesktopAppExtensionContext &
     Readonly<{
@@ -66,6 +81,8 @@ export type DesktopAppExtensions = Readonly<{
   settingsSections?: readonly DesktopAppSettingsSection[];
   commandPaletteActions?: readonly DesktopAppCommandPaletteAction[];
   workspaceDecoration?: DesktopAppWorkspaceDecoration;
+  workspaceMenuActions?: DesktopAppWorkspaceActionsProvider;
+  workspaceMenuFooterActions?: readonly DesktopAppWorkspaceMenuFooterAction[];
   workspaceActions?: readonly DesktopAppWorkspaceAction[];
   workspaceVariableDecoration?: DesktopAppWorkspaceVariableDecoration;
   overlays?: DesktopAppExtensionSlot;

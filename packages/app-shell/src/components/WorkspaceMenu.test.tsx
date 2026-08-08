@@ -32,6 +32,8 @@ function extensionContext(activeWorkspace: Workspace): DesktopAppExtensionContex
   return {
     activeTab: { id: "api-main", kind: "api", title: "API Client" },
     activeWorkspace,
+    activateWorkspace: vi.fn(),
+    refreshWorkspaces: vi.fn(),
   };
 }
 
@@ -45,6 +47,27 @@ function createWrapper() {
 }
 
 describe("WorkspaceMenu", () => {
+  it("does not render empty extension groups without extensions", async () => {
+    const active = workspace("Default Workspace");
+    render(
+      <WorkspaceMenu
+        activeWorkspace={active}
+        extensionContext={extensionContext(active)}
+        onActivateWorkspace={vi.fn()}
+        workspaces={[active]}
+      />,
+      { wrapper: createWrapper() },
+    );
+
+    fireEvent.pointerDown(screen.getByRole("button", { name: /default workspace/i }), {
+      button: 0,
+      ctrlKey: false,
+    });
+
+    expect(await screen.findByText("New workspace")).toBeTruthy();
+    expect(screen.getAllByRole("separator")).toHaveLength(1);
+  });
+
   it("keeps the trigger width fixed while workspace names change", () => {
     const first = workspace("Default Workspace");
     const second = workspace("A much longer workspace name");
@@ -161,6 +184,99 @@ describe("WorkspaceMenu", () => {
     expect(run).toHaveBeenCalledWith(
       expect.objectContaining({ workspace: active, activeWorkspace: active }),
     );
+  });
+
+  it("renders workspace-specific decorations and permits null decorations", async () => {
+    const active = workspace("Default Workspace");
+    const decorated = workspace("Decorated Workspace");
+    render(
+      <WorkspaceMenu
+        activeWorkspace={active}
+        decoration={({ placement, workspace: item }) =>
+          item.id === decorated.id ? <span>{`marker-${placement}`}</span> : null
+        }
+        extensionContext={extensionContext(active)}
+        onActivateWorkspace={vi.fn()}
+        workspaces={[active, decorated]}
+      />,
+      { wrapper: createWrapper() },
+    );
+
+    expect(screen.queryByText("marker-trigger")).toBeNull();
+    fireEvent.pointerDown(screen.getByRole("button", { name: /default workspace/i }), {
+      button: 0,
+      ctrlKey: false,
+    });
+    expect(await screen.findByText("marker-listItem")).toBeTruthy();
+  });
+
+  it("resolves workspace actions for the active workspace and respects disabled actions", async () => {
+    const active = workspace("Default Workspace");
+    const runEnabled = vi.fn();
+    const runDisabled = vi.fn();
+    const provider = vi.fn(() => [
+      { id: "test.enabled" as const, label: "Enabled extension action", run: runEnabled },
+      {
+        id: "test.disabled" as const,
+        label: "Disabled extension action",
+        disabled: true,
+        run: runDisabled,
+      },
+    ]);
+    const context = extensionContext(active);
+    render(
+      <WorkspaceMenu
+        activeWorkspace={active}
+        extensionContext={context}
+        onActivateWorkspace={vi.fn()}
+        workspaceActionProvider={provider}
+        workspaces={[active]}
+      />,
+      { wrapper: createWrapper() },
+    );
+
+    fireEvent.pointerDown(screen.getByRole("button", { name: /default workspace/i }), {
+      button: 0,
+      ctrlKey: false,
+    });
+    fireEvent.click(await screen.findByText("Enabled extension action"));
+    expect(runEnabled).toHaveBeenCalledWith(
+      expect.objectContaining({ activeWorkspace: active, workspace: active }),
+    );
+    expect(provider).toHaveBeenCalledWith(context, active);
+
+    fireEvent.pointerDown(screen.getByRole("button", { name: /default workspace/i }), {
+      button: 0,
+      ctrlKey: false,
+    });
+    fireEvent.click(await screen.findByText("Disabled extension action"));
+    expect(runDisabled).not.toHaveBeenCalled();
+  });
+
+  it("renders footer actions in a final group and runs them with extension context", async () => {
+    const active = workspace("Default Workspace");
+    const context = extensionContext(active);
+    const run = vi.fn();
+    render(
+      <WorkspaceMenu
+        activeWorkspace={active}
+        extensionContext={context}
+        onActivateWorkspace={vi.fn()}
+        workspaceMenuFooterActions={[
+          { id: "test.import", label: "Import workspace", run },
+        ]}
+        workspaces={[active]}
+      />,
+      { wrapper: createWrapper() },
+    );
+
+    fireEvent.pointerDown(screen.getByRole("button", { name: /default workspace/i }), {
+      button: 0,
+      ctrlKey: false,
+    });
+    fireEvent.click(await screen.findByText("Import workspace"));
+
+    expect(run).toHaveBeenCalledWith(context);
   });
 
   it("does not show a static disabled reason when an action is disabled only by pending work", async () => {

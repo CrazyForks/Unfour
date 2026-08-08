@@ -61,6 +61,8 @@ function extensionContext(activeWorkspace: Workspace): DesktopAppExtensionContex
   return {
     activeTab: { id: "api-main", kind: "api", title: "API Client" },
     activeWorkspace,
+    activateWorkspace: vi.fn(),
+    refreshWorkspaces: vi.fn(),
   };
 }
 

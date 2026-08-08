@@ -7,7 +7,9 @@ import type {
   DesktopAppExtensionContext,
   DesktopAppWorkspaceAction,
   DesktopAppWorkspaceActionContext,
+  DesktopAppWorkspaceActionsProvider,
   DesktopAppWorkspaceDecoration,
+  DesktopAppWorkspaceMenuFooterAction,
 } from "../extensions";
 import { WorkspaceDialogs } from "./WorkspaceDialogs";
 
@@ -17,7 +19,9 @@ export function WorkspaceMenu({
   decoration: Decoration,
   extensionContext,
   onActivateWorkspace,
+  workspaceActionProvider,
   workspaceActions = [],
+  workspaceMenuFooterActions = [],
   workspaces,
 }: {
   activeWorkspace?: Workspace;
@@ -25,7 +29,9 @@ export function WorkspaceMenu({
   decoration?: DesktopAppWorkspaceDecoration;
   extensionContext: DesktopAppExtensionContext;
   onActivateWorkspace: (workspaceId: string) => void;
+  workspaceActionProvider?: DesktopAppWorkspaceActionsProvider;
   workspaceActions?: readonly DesktopAppWorkspaceAction[];
+  workspaceMenuFooterActions?: readonly DesktopAppWorkspaceMenuFooterAction[];
   workspaces: Workspace[];
 }) {
   const { t } = useI18n();
@@ -35,6 +41,10 @@ export function WorkspaceMenu({
   const [environmentOpen, setEnvironmentOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [pendingActionId, setPendingActionId] = useState<string | null>(null);
+  const providedWorkspaceActions = activeWorkspace
+    ? (workspaceActionProvider?.(extensionContext, activeWorkspace) ?? [])
+    : [];
+  const activeWorkspaceActions = [...workspaceActions, ...providedWorkspaceActions];
 
   async function runWorkspaceAction(
     action: DesktopAppWorkspaceAction,
@@ -43,6 +53,17 @@ export function WorkspaceMenu({
     setPendingActionId(action.id);
     try {
       await action.run(context);
+    } catch (error) {
+      handleError(error, { key: "feedback.command.actionFailed" });
+    } finally {
+      setPendingActionId(null);
+    }
+  }
+
+  async function runFooterAction(action: DesktopAppWorkspaceMenuFooterAction) {
+    setPendingActionId(action.id);
+    try {
+      await action.run(extensionContext);
     } catch (error) {
       handleError(error, { key: "feedback.command.actionFailed" });
     } finally {
@@ -92,10 +113,10 @@ export function WorkspaceMenu({
               onRename={() => setRenameOpen(true)}
               workspaceCount={workspaces.length}
             />
-            {activeWorkspace && workspaceActions.length > 0 && (
+            {activeWorkspace && activeWorkspaceActions.length > 0 && (
               <>
                 <DropdownMenu.Separator className="my-1 h-px bg-[var(--u-color-border)]" />
-                {workspaceActions.map((action) => {
+                {activeWorkspaceActions.map((action) => {
                   const context: DesktopAppWorkspaceActionContext = {
                     ...extensionContext,
                     workspace: activeWorkspace,
@@ -121,6 +142,28 @@ export function WorkspaceMenu({
                           </span>
                         )}
                       </span>
+                    </DropdownMenu.Item>
+                  );
+                })}
+              </>
+            )}
+            {workspaceMenuFooterActions.length > 0 && (
+              <>
+                <DropdownMenu.Separator className="my-1 h-px bg-[var(--u-color-border)]" />
+                {workspaceMenuFooterActions.map((action) => {
+                  const actionDisabled =
+                    typeof action.disabled === "function"
+                      ? action.disabled(extensionContext)
+                      : Boolean(action.disabled);
+                  return (
+                    <DropdownMenu.Item
+                      className="flex min-h-8 cursor-pointer items-center gap-2 rounded px-2 py-1 outline-none hover:bg-[var(--u-color-surface-hover)] focus:bg-[var(--u-color-surface-hover)] data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50"
+                      disabled={pendingActionId !== null || actionDisabled}
+                      key={action.id}
+                      onSelect={() => void runFooterAction(action)}
+                    >
+                      {action.icon}
+                      <span className="min-w-0 flex-1 truncate">{action.label}</span>
                     </DropdownMenu.Item>
                   );
                 })}

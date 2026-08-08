@@ -11,8 +11,10 @@ export type {
   DesktopAppSettingsSection,
   DesktopAppWorkspaceAction,
   DesktopAppWorkspaceActionContext,
+  DesktopAppWorkspaceActionsProvider,
   DesktopAppWorkspaceDecoration,
   DesktopAppWorkspaceDecorationProps,
+  DesktopAppWorkspaceMenuFooterAction,
   DesktopAppWorkspaceVariableDecoration,
   DesktopAppWorkspaceVariableDecorationProps,
 } from "./extensions";
