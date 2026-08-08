@@ -97,8 +97,50 @@ describe("WorkspaceMenu", () => {
     const secondTrigger = screen.getByRole("button", {
       name: /a much longer workspace name/i,
     });
+    expect(secondTrigger).toBe(firstTrigger);
     expect(secondTrigger).toHaveClass("w-[220px]");
     expect(secondTrigger.querySelector("svg")).toHaveClass("ml-auto");
+  });
+
+  it("mounts and survives parent rerenders without a maximum update depth error", () => {
+    const active = workspace("Default Workspace");
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const onActivateWorkspace = vi.fn();
+    const context = extensionContext(active);
+    const workspaces = [active];
+    const { rerender } = render(
+      <div data-render-count={-1}>
+        <WorkspaceMenu
+          activeWorkspace={active}
+          extensionContext={context}
+          onActivateWorkspace={onActivateWorkspace}
+          workspaces={workspaces}
+        />
+      </div>,
+      { wrapper: createWrapper() },
+    );
+    const trigger = screen.getByRole("button", { name: /default workspace/i });
+
+    for (let renderCount = 0; renderCount < 10; renderCount += 1) {
+      rerender(
+        <div data-render-count={renderCount}>
+          <WorkspaceMenu
+            activeWorkspace={active}
+            extensionContext={context}
+            onActivateWorkspace={onActivateWorkspace}
+            workspaces={workspaces}
+          />
+        </div>,
+      );
+      expect(screen.getByRole("button", { name: /default workspace/i })).toBe(trigger);
+    }
+
+    expect(
+      consoleError.mock.calls.some((call) =>
+        call.some((value) => String(value).includes("Maximum update depth exceeded")),
+      ),
+    ).toBe(false);
+    consoleError.mockRestore();
   });
 
   it("shows environment badges and MCP summaries in the workspace menu", async () => {
