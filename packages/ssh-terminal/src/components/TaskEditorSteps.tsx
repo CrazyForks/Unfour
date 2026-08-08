@@ -71,6 +71,7 @@ export function StepRow({
         }`}
         onClick={onToggleExpand}
         onKeyDown={(event) => {
+          if (event.target !== event.currentTarget) return;
           if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
             onToggleExpand();
