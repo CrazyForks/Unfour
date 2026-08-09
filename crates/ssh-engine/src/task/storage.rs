@@ -1,6 +1,6 @@
 use super::*;
 use sqlx::Row;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 #[cfg(feature = "ssh-native")]
@@ -14,6 +14,7 @@ struct StoredTask {
     workspace_id: String,
     name: String,
     description: String,
+    sort_order: i64,
     created_at: String,
     updated_at: String,
     deleted_at: Option<String>,
@@ -63,10 +64,11 @@ impl SshService {
         validate_workspace_id(&workspace_id)?;
         let rows = sqlx::query_as::<_, StoredTask>(
             r#"
-            SELECT id, workspace_id, name, description, created_at, updated_at, deleted_at
+            SELECT id, workspace_id, name, description, sort_order,
+                   created_at, updated_at, deleted_at
             FROM ssh_task
             WHERE workspace_id = ?1 AND deleted_at IS NULL
-            ORDER BY updated_at DESC, name COLLATE NOCASE, id
+            ORDER BY sort_order, name COLLATE NOCASE, id
             "#,
         )
         .bind(&workspace_id)
@@ -80,7 +82,8 @@ impl SshService {
         validate_task_id(task_id)?;
         let task = sqlx::query_as::<_, StoredTask>(
             r#"
-            SELECT id, workspace_id, name, description, created_at, updated_at, deleted_at
+            SELECT id, workspace_id, name, description, sort_order,
+                   created_at, updated_at, deleted_at
             FROM ssh_task
             WHERE workspace_id = ?1 AND id = ?2 AND deleted_at IS NULL
             "#,
@@ -233,17 +236,29 @@ impl SshService {
             .execute(&mut *transaction)
             .await?;
         } else {
+            let sort_order: i64 = sqlx::query_scalar(
+                r#"
+                SELECT COALESCE(MAX(sort_order), -1) + 1
+                FROM ssh_task
+                WHERE workspace_id = ?1 AND deleted_at IS NULL
+                "#,
+            )
+            .bind(&input.workspace_id)
+            .fetch_one(&mut *transaction)
+            .await?;
             sqlx::query(
                 r#"
                 INSERT INTO ssh_task (
-                  id, workspace_id, name, description, created_at, updated_at, deleted_at
-                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL)
+                  id, workspace_id, name, description, sort_order,
+                  created_at, updated_at, deleted_at
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL)
                 "#,
             )
             .bind(&id)
             .bind(&input.workspace_id)
             .bind(&name)
             .bind(input.description.trim())
+            .bind(sort_order)
             .bind(&created_at)
             .bind(&now)
             .execute(&mut *transaction)
@@ -331,6 +346,55 @@ impl SshService {
         }
         transaction.commit().await?;
         self.get_task(&input.workspace_id, &id).await
+    }
+
+    pub async fn reorder_tasks(&self, input: SshTasksReorderInput) -> AppResult<Vec<SshTask>> {
+        validate_workspace_id(&input.workspace_id)?;
+        for task_id in &input.task_ids {
+            validate_task_id(task_id)?;
+        }
+        let unique = input.task_ids.iter().collect::<HashSet<_>>();
+        if unique.len() != input.task_ids.len() {
+            return Err(AppError::Validation(
+                "SSH task reorder cannot contain duplicate task ids".to_string(),
+            ));
+        }
+        let mut transaction = self.db.pool().begin().await?;
+        let active_ids = sqlx::query_scalar::<_, String>(
+            r#"
+            SELECT id
+            FROM ssh_task
+            WHERE workspace_id = ?1 AND deleted_at IS NULL
+            "#,
+        )
+        .bind(&input.workspace_id)
+        .fetch_all(&mut *transaction)
+        .await?;
+        let active = active_ids.iter().collect::<HashSet<_>>();
+        if active.len() != unique.len() || active != unique {
+            return Err(AppError::Validation(
+                "SSH task reorder must contain every active task in the workspace exactly once"
+                    .to_string(),
+            ));
+        }
+
+        for (position, task_id) in input.task_ids.iter().enumerate() {
+            sqlx::query(
+                r#"
+                UPDATE ssh_task
+                SET sort_order = ?1
+                WHERE workspace_id = ?2 AND id = ?3 AND deleted_at IS NULL
+                  AND sort_order <> ?1
+                "#,
+            )
+            .bind(position as i64)
+            .bind(&input.workspace_id)
+            .bind(task_id)
+            .execute(&mut *transaction)
+            .await?;
+        }
+        transaction.commit().await?;
+        self.list_tasks(input.workspace_id).await
     }
 
     pub async fn duplicate_task(
@@ -479,9 +543,8 @@ impl SshService {
         if !path.exists() {
             return Ok(String::new());
         }
-        let bytes = std::fs::read(&path).map_err(|error| {
-            AppError::Config(format!("failed to read SSH task log: {error}"))
-        })?;
+        let bytes = std::fs::read(&path)
+            .map_err(|error| AppError::Config(format!("failed to read SSH task log: {error}")))?;
         let capped = if bytes.len() > MAX_TASK_LOG_READ_BYTES {
             &bytes[..MAX_TASK_LOG_READ_BYTES]
         } else {
@@ -726,6 +789,7 @@ fn task_from_row(row: StoredTask) -> SshTask {
         workspace_id: row.workspace_id,
         name: row.name,
         description: row.description,
+        sort_order: row.sort_order,
         created_at: row.created_at,
         updated_at: row.updated_at,
         deleted_at: row.deleted_at,

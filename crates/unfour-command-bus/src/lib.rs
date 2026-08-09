@@ -22,9 +22,9 @@ use unfour_core::models::{
     SshKnownHostsImportInput, SshKnownHostsImportResult, SshLogExport, SshLogExportInput,
     SshReconnectCancelInput, SshResizeInput, SshSessionEvent, SshSessionInput, SshSessionSummary,
     SshTask, SshTaskCancelInput, SshTaskCleanupInput, SshTaskCleanupResult, SshTaskDetail,
-    SshTaskRun, SshTaskRunInput, SshTaskSaveInput, SshTestResult, SystemHealth, Workspace,
-    WorkspaceEnvironment, WorkspaceEnvironmentVariable, WorkspaceLayout, WorkspaceState,
-    WorkspaceVariable, WorkspaceVariableInput,
+    SshTaskRun, SshTaskRunInput, SshTaskSaveInput, SshTasksReorderInput, SshTestResult,
+    SystemHealth, Workspace, WorkspaceEnvironment, WorkspaceEnvironmentVariable, WorkspaceLayout,
+    WorkspaceState, WorkspaceVariable, WorkspaceVariableInput,
 };
 use unfour_core::AppResult;
 use unfour_database_engine::DatabaseService;

@@ -10,7 +10,7 @@ use unfour_core::{
         SshLogExport, SshLogExportInput, SshReconnectCancelInput, SshResizeInput, SshSessionEvent,
         SshSessionInput, SshSessionSummary, SshTask, SshTaskCancelInput, SshTaskCleanupInput,
         SshTaskCleanupResult, SshTaskDetail, SshTaskRun, SshTaskRunInput, SshTaskSaveInput,
-        SshTestResult,
+        SshTasksReorderInput, SshTestResult,
     },
     AppResult,
 };
@@ -23,6 +23,14 @@ pub async fn ssh_tasks_list(
     state: State<'_, AppState>,
 ) -> AppResult<Vec<SshTask>> {
     state.command_bus.list_ssh_tasks(workspace_id).await
+}
+
+#[tauri::command]
+pub async fn ssh_tasks_reorder(
+    input: SshTasksReorderInput,
+    state: State<'_, AppState>,
+) -> AppResult<Vec<SshTask>> {
+    state.command_bus.reorder_ssh_tasks(input).await
 }
 
 #[tauri::command]

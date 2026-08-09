@@ -186,6 +186,7 @@ async fn ssh_tasks_schema_separates_syncable_templates_from_local_state() {
         .map(|(name,)| name.as_str())
         .collect::<Vec<_>>();
     assert!(task_names.contains(&"deleted_at"));
+    assert!(task_names.contains(&"sort_order"));
     assert!(!task_names.contains(&"default_connection_id"));
 
     let step_columns: Vec<(String,)> =

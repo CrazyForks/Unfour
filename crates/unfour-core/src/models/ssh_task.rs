@@ -8,6 +8,7 @@ pub struct SshTask {
     pub workspace_id: String,
     pub name: String,
     pub description: String,
+    pub sort_order: i64,
     pub created_at: String,
     pub updated_at: String,
     pub deleted_at: Option<String>,
@@ -76,12 +77,21 @@ pub struct SshTaskSaveInput {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
+pub struct SshTasksReorderInput {
+    pub workspace_id: String,
+    pub task_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct SshTaskRunInput {
     pub workspace_id: String,
     pub task_id: String,
     pub connection_id: Option<String>,
     #[serde(default)]
     pub inputs: BTreeMap<String, String>,
+    #[serde(default)]
+    pub secret_input_names: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

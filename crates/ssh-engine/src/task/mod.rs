@@ -1,17 +1,17 @@
 use super::*;
-#[cfg(feature = "ssh-native")]
+#[cfg(any(feature = "ssh-native", test))]
 use unfour_core::models::SshTaskRunEvent;
 use unfour_core::models::{
     SshTask, SshTaskCancelInput, SshTaskCleanupInput, SshTaskCleanupResult, SshTaskCommandConfig,
     SshTaskDetail, SshTaskDownloadConfig, SshTaskLocalBinding, SshTaskRun, SshTaskRunInput,
-    SshTaskSaveInput, SshTaskStep, SshTaskStepInput, SshTaskUploadConfig,
+    SshTaskSaveInput, SshTaskStep, SshTaskStepInput, SshTaskUploadConfig, SshTasksReorderInput,
 };
 
 #[cfg(any(feature = "ssh-native", test))]
 mod command_step;
 #[cfg(feature = "ssh-native")]
 mod download_step;
-#[cfg(feature = "ssh-native")]
+#[cfg(any(feature = "ssh-native", test))]
 mod events;
 #[cfg(feature = "ssh-native")]
 mod native;
@@ -22,11 +22,11 @@ mod template;
 #[cfg(feature = "ssh-native")]
 mod upload_step;
 
-#[cfg(feature = "ssh-native")]
+#[cfg(any(feature = "ssh-native", test))]
 use events::*;
 #[cfg(feature = "ssh-native")]
 use native::*;
-#[cfg(feature = "ssh-native")]
+#[cfg(any(feature = "ssh-native", test))]
 use runner::*;
 use template::*;
 #[cfg(feature = "ssh-native")]
@@ -63,6 +63,7 @@ impl SshService {
             .get_connection(&input.workspace_id, &connection_id)
             .await?;
         let steps = resolve_enabled_steps(&detail.steps, &input.inputs)?;
+        let secret_values = task_secret_values(&input.inputs, &input.secret_input_names)?;
         if steps.is_empty() {
             return Err(AppError::Validation(
                 "SSH task has no enabled steps".to_string(),
@@ -71,7 +72,7 @@ impl SshService {
 
         #[cfg(not(feature = "ssh-native"))]
         {
-            let _ = (connection, steps);
+            let _ = (connection, steps, secret_values);
             return Err(AppError::Unsupported(
                 "SSH task execution requires a build with the ssh-native feature".to_string(),
             ));
@@ -116,7 +117,14 @@ impl SshService {
             let run_for_task = run.clone();
             tokio::spawn(async move {
                 service
-                    .execute_task_background(run_for_task, connection, steps, cancel_rx, log)
+                    .execute_task_background(
+                        run_for_task,
+                        connection,
+                        steps,
+                        secret_values,
+                        cancel_rx,
+                        log,
+                    )
                     .await;
             });
             Ok(run)
@@ -155,6 +163,7 @@ impl SshService {
         run: SshTaskRun,
         connection: SshConnection,
         steps: Vec<SshTaskStep>,
+        secret_values: Vec<String>,
         mut cancel_rx: tokio::sync::watch::Receiver<bool>,
         mut log: TaskLogWriter,
     ) {
@@ -163,32 +172,8 @@ impl SshService {
                 let run_id = run.id.clone();
                 let task_id = run.task_id.clone();
                 let outcome = execute_serial(steps, &mut driver, &mut cancel_rx, |runner_event| {
-                    let event = match runner_event {
-                        RunnerEvent::StepStarted(step) => {
-                            step_event(&run_id, &task_id, &step, "running", None, None, None)
-                        }
-                        RunnerEvent::Driver(step, DriverEvent::Output { stream, data }) => {
-                            output_event(&run_id, &task_id, &step, &stream, data)
-                        }
-                        RunnerEvent::Driver(step, DriverEvent::Transfer(progress)) => {
-                            transfer_event(&run_id, &task_id, &step, &progress)
-                        }
-                        RunnerEvent::StepFinished {
-                            step,
-                            status,
-                            duration_ms,
-                            exit_code,
-                            error,
-                        } => step_event(
-                            &run_id,
-                            &task_id,
-                            &step,
-                            &status,
-                            Some(duration_ms),
-                            exit_code,
-                            error,
-                        ),
-                    };
+                    let event =
+                        task_run_event_from_runner(&run_id, &task_id, runner_event, &secret_values);
                     log.write_event(&event);
                     self.emit_task_run_event(&event);
                 })
@@ -206,6 +191,7 @@ impl SshService {
             },
         };
 
+        let outcome = redact_task_run_outcome(outcome, &secret_values);
         let final_event = run_event(
             &run.id,
             &run.task_id,
@@ -228,6 +214,55 @@ impl SshService {
         let _ = self
             .cleanup_task_retention(&run.workspace_id, &run.task_id)
             .await;
+    }
+}
+
+#[cfg(any(feature = "ssh-native", test))]
+fn task_run_event_from_runner(
+    run_id: &str,
+    task_id: &str,
+    runner_event: RunnerEvent,
+    secret_values: &[String],
+) -> SshTaskRunEvent {
+    match runner_event {
+        RunnerEvent::StepStarted(step) => {
+            step_event(run_id, task_id, &step, "running", None, None, None)
+        }
+        RunnerEvent::Driver(step, DriverEvent::Output { stream, data }) => output_event(
+            run_id,
+            task_id,
+            &step,
+            &stream,
+            redact_task_secret_values(&data, secret_values),
+        ),
+        RunnerEvent::Driver(step, DriverEvent::Transfer(progress)) => {
+            transfer_event(run_id, task_id, &step, &progress)
+        }
+        RunnerEvent::StepFinished {
+            step,
+            status,
+            duration_ms,
+            exit_code,
+            error,
+        } => step_event(
+            run_id,
+            task_id,
+            &step,
+            &status,
+            Some(duration_ms),
+            exit_code,
+            error.map(|value| redact_task_secret_values(&value, secret_values)),
+        ),
+    }
+}
+
+#[cfg(any(feature = "ssh-native", test))]
+fn redact_task_run_outcome(outcome: TaskRunOutcome, secret_values: &[String]) -> TaskRunOutcome {
+    TaskRunOutcome {
+        status: outcome.status,
+        error: outcome
+            .error
+            .map(|value| redact_task_secret_values(&value, secret_values)),
     }
 }
 
@@ -431,6 +466,156 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn task_manual_order_is_stable_and_reorder_requires_the_complete_workspace_set() {
+        let (service, workspace_id) = service().await;
+        let mut first_input = docker_export_input(workspace_id.clone());
+        first_input.name = "First".to_string();
+        let first = service.save_task(first_input).await.unwrap();
+        let mut second_input = docker_export_input(workspace_id.clone());
+        second_input.name = "Second".to_string();
+        let second = service.save_task(second_input).await.unwrap();
+        assert_eq!(first.task.sort_order, 0);
+        assert_eq!(second.task.sort_order, 1);
+
+        let mut first_update = edit_input(&first);
+        first_update.description = "Updated without moving".to_string();
+        let updated = service.save_task(first_update).await.unwrap();
+        assert_eq!(updated.task.sort_order, 0);
+        assert_eq!(
+            service
+                .list_tasks(workspace_id.clone())
+                .await
+                .unwrap()
+                .iter()
+                .map(|task| task.id.as_str())
+                .collect::<Vec<_>>(),
+            vec![first.task.id.as_str(), second.task.id.as_str()]
+        );
+
+        let reordered = service
+            .reorder_tasks(SshTasksReorderInput {
+                workspace_id: workspace_id.clone(),
+                task_ids: vec![second.task.id.clone(), first.task.id.clone()],
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            reordered
+                .iter()
+                .map(|task| (task.id.as_str(), task.sort_order))
+                .collect::<Vec<_>>(),
+            vec![(second.task.id.as_str(), 0), (first.task.id.as_str(), 1)]
+        );
+        assert_eq!(reordered[0].updated_at, second.task.updated_at);
+        assert_eq!(reordered[1].updated_at, updated.task.updated_at);
+
+        let missing = service
+            .reorder_tasks(SshTasksReorderInput {
+                workspace_id: workspace_id.clone(),
+                task_ids: vec![first.task.id.clone()],
+            })
+            .await
+            .unwrap_err();
+        assert!(missing.to_string().contains("every active task"));
+        let duplicate = service
+            .reorder_tasks(SshTasksReorderInput {
+                workspace_id: workspace_id.clone(),
+                task_ids: vec![first.task.id.clone(), first.task.id.clone()],
+            })
+            .await
+            .unwrap_err();
+        assert!(duplicate.to_string().contains("duplicate"));
+
+        let other_workspace_id = unfour_core::id::new_id();
+        sqlx::query(
+            r#"
+            INSERT INTO workspaces (
+              id, name, is_default, created_at, updated_at, revision, sync_status
+            ) VALUES (?1, 'Other Tasks', 0, ?2, ?2, 1, 'local')
+            "#,
+        )
+        .bind(&other_workspace_id)
+        .bind(Utc::now().to_rfc3339())
+        .execute(service.db.pool())
+        .await
+        .unwrap();
+        let mut other_input = docker_export_input(other_workspace_id);
+        other_input.name = "Other".to_string();
+        let other = service.save_task(other_input).await.unwrap();
+        let cross_workspace = service
+            .reorder_tasks(SshTasksReorderInput {
+                workspace_id,
+                task_ids: vec![second.task.id, other.task.id],
+            })
+            .await
+            .unwrap_err();
+        assert!(cross_workspace.to_string().contains("every active task"));
+    }
+
+    #[tokio::test]
+    async fn task_secrets_are_redacted_from_events_errors_and_persisted_logs() {
+        let (service, workspace_id) = service().await;
+        let detail = service
+            .save_task(docker_export_input(workspace_id))
+            .await
+            .unwrap();
+        let step = detail.steps[0].clone();
+        let secret = "task-secret-value";
+        let secret_values = vec![secret.to_string()];
+        let output = task_run_event_from_runner(
+            "run-id",
+            &detail.task.id,
+            RunnerEvent::Driver(
+                step.clone(),
+                DriverEvent::Output {
+                    stream: "stdout".to_string(),
+                    data: format!("token={secret}\n"),
+                },
+            ),
+            &secret_values,
+        );
+        let failed = task_run_event_from_runner(
+            "run-id",
+            &detail.task.id,
+            RunnerEvent::StepFinished {
+                step,
+                status: "failed".to_string(),
+                duration_ms: 1,
+                exit_code: Some(1),
+                error: Some(format!("remote rejected {secret}")),
+            },
+            &secret_values,
+        );
+        let outcome = redact_task_run_outcome(
+            TaskRunOutcome {
+                status: "failed".to_string(),
+                error: Some(format!("run failed with {secret}")),
+            },
+            &secret_values,
+        );
+        let final_event = run_event("run-id", &detail.task.id, &outcome.status, outcome.error);
+
+        for event in [&output, &failed, &final_event] {
+            let serialized = serde_json::to_string(event).unwrap();
+            assert!(!serialized.contains(secret));
+            assert!(serialized.contains(unfour_core::redaction::REDACTED_VALUE));
+        }
+
+        std::fs::create_dir_all(service.task_log_dir.as_ref()).unwrap();
+        let log_path = service.task_log_dir.join("secret-redaction.log");
+        {
+            let mut log = TaskLogWriter::create(&log_path).unwrap();
+            log.write_event(&output);
+            log.write_event(&failed);
+            log.write_event(&final_event);
+        }
+        let log = std::fs::read_to_string(&log_path).unwrap();
+        assert!(!log.contains(secret));
+        assert!(log.contains(unfour_core::redaction::REDACTED_VALUE));
+        std::fs::remove_dir_all(service.task_log_dir.as_ref()).unwrap();
+    }
+
+    #[tokio::test]
     async fn task_delete_soft_deletes_templates_and_removes_local_state() {
         let (service, workspace_id) = service().await;
         let connection = connection(&service, &workspace_id).await;
@@ -546,6 +731,7 @@ mod tests {
                 task_id: saved.task.id.clone(),
                 connection_id: None,
                 inputs: std::collections::BTreeMap::new(),
+                secret_input_names: Vec::new(),
             })
             .await
             .unwrap_err();

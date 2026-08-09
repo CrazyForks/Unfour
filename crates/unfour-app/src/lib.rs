@@ -531,6 +531,7 @@ macro_rules! generate_handlers {
             unfour_app::commands::ssh_task_runs_list,
             unfour_app::commands::ssh_task_save,
             unfour_app::commands::ssh_tasks_list,
+            unfour_app::commands::ssh_tasks_reorder,
             unfour_app::commands::ssh_register_task_run_channel,
             $( $handler ),*
         ]

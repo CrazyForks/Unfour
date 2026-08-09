@@ -4,6 +4,7 @@ import type {
   SshTaskRun,
   SshTaskRunInput,
   SshTaskSaveInput,
+  SshTasksReorderInput,
 } from "../../types";
 import { mockStore } from "./state";
 import { UNHANDLED, type MockResult } from "./types";
@@ -15,6 +16,7 @@ type TaskMockHandler = <T>(
 
 const TASK_MOCK_HANDLERS: TaskMockHandler[] = [
   handleTaskListMock,
+  handleTaskReorderMock,
   handleTaskGetMock,
   handleTaskSaveMock,
   handleTaskDuplicateMock,
@@ -48,7 +50,40 @@ function handleTaskListMock<T>(
       (detail) =>
         detail.task.workspaceId === workspaceId && detail.task.deletedAt === null,
     )
+    .sort((left, right) => left.task.sortOrder - right.task.sortOrder)
     .map((detail) => detail.task) as T;
+}
+
+function handleTaskReorderMock<T>(
+  command: string,
+  args?: Record<string, unknown>,
+): MockResult<T> {
+  if (command !== "ssh_tasks_reorder") return UNHANDLED;
+  const input = args?.input as SshTasksReorderInput;
+  const active = mockStore.sshTasks.filter(
+    (detail) =>
+      detail.task.workspaceId === input.workspaceId && detail.task.deletedAt === null,
+  );
+  const unique = new Set(input.taskIds);
+  if (
+    unique.size !== input.taskIds.length ||
+    active.length !== input.taskIds.length ||
+    active.some((detail) => !unique.has(detail.task.id))
+  ) {
+    throw new Error(
+      "SSH task reorder must contain every active task in the workspace exactly once",
+    );
+  }
+  input.taskIds.forEach((taskId, sortOrder) => {
+    const detail = active.find((item) => item.task.id === taskId)!;
+    if (detail.task.sortOrder !== sortOrder) {
+      detail.task.sortOrder = sortOrder;
+    }
+  });
+  return active
+    .slice()
+    .sort((left, right) => left.task.sortOrder - right.task.sortOrder)
+    .map((detail) => structuredClone(detail.task)) as T;
 }
 
 function handleTaskGetMock<T>(
@@ -252,6 +287,7 @@ function saveTask(input: SshTaskSaveInput): SshTaskDetail {
       workspaceId: input.workspaceId,
       name: input.name.trim(),
       description: input.description.trim(),
+      sortOrder: taskSortOrder(existing, input.workspaceId),
       createdAt: existing?.task.createdAt ?? now,
       updatedAt: now,
       deletedAt: null,
@@ -281,4 +317,19 @@ function saveTask(input: SshTaskSaveInput): SshTaskDetail {
     ...mockStore.sshTasks.filter((item) => item.task.id !== taskId),
   ];
   return structuredClone(detail);
+}
+
+function taskSortOrder(existing: SshTaskDetail | undefined, workspaceId: string) {
+  if (existing) return existing.task.sortOrder;
+  return (
+    Math.max(
+      -1,
+      ...mockStore.sshTasks
+        .filter(
+          (detail) =>
+            detail.task.workspaceId === workspaceId && detail.task.deletedAt === null,
+        )
+        .map((detail) => detail.task.sortOrder),
+    ) + 1
+  );
 }

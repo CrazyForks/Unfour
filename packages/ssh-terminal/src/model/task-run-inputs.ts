@@ -7,6 +7,7 @@ export type WorkspaceVariableLike = {
 };
 
 export type WorkspaceEnvironmentLike = {
+  id?: string;
   name?: string;
   isActive: boolean;
   deletedAt?: string | null;
@@ -23,10 +24,10 @@ function lookupKey(key: string) {
   return key.trim().toLowerCase();
 }
 
-/** Merge workspace-level vars with the active environment (env overrides). */
-export function mergeActiveWorkspaceVariables(
+/** Merge workspace-level vars with one explicitly selected environment (env overrides). */
+export function mergeWorkspaceVariables(
   workspaceVariables: WorkspaceVariableLike[],
-  environments: WorkspaceEnvironmentLike[],
+  environment: WorkspaceEnvironmentLike | null,
 ): Map<string, MergedWorkspaceVariable> {
   const values = new Map<string, MergedWorkspaceVariable>();
 
@@ -41,10 +42,7 @@ export function mergeActiveWorkspaceVariables(
     });
   }
 
-  const activeEnvironment = environments.find(
-    (environment) => environment.isActive && !environment.deletedAt,
-  );
-  for (const variable of activeEnvironment?.variables ?? []) {
+  for (const variable of environment?.variables ?? []) {
     if (!variable.isEnabled || variable.deletedAt) continue;
     const key = variable.key.trim();
     if (!key) continue;
@@ -92,4 +90,27 @@ export function activeWorkspaceEnvironmentName(
   );
   const name = active?.name?.trim();
   return name || null;
+}
+
+export function activeWorkspaceEnvironmentId(
+  environments: WorkspaceEnvironmentLike[],
+): string {
+  return (
+    environments.find(
+      (environment) => environment.isActive && !environment.deletedAt,
+    )?.id ?? ""
+  );
+}
+
+export function workspaceEnvironmentById(
+  environments: WorkspaceEnvironmentLike[],
+  environmentId: string,
+): WorkspaceEnvironmentLike | null {
+  if (!environmentId) return null;
+  return (
+    environments.find(
+      (environment) =>
+        environment.id === environmentId && !environment.deletedAt,
+    ) ?? null
+  );
 }

@@ -2,18 +2,27 @@ import type { SshTask } from "@unfour/command-client";
 import { useMemo, useState } from "react";
 import {
   Button,
-  ContextMenu,
-  ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
-  ContextMenuTrigger,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
   IconButton,
   Input,
   LoadingState,
   SidebarSection,
+  TreeView,
+  type TreeViewDropPosition,
+  type TreeViewItem,
   useI18n,
 } from "@unfour/ui";
-import { Play, Plus, Workflow } from "lucide-react";
+import { ArrowUpDown, Check, Play, Plus, Workflow } from "lucide-react";
+import {
+  reorderTaskIds,
+  sortTasksForView,
+  type TaskSortMode,
+} from "../model/task-list-order";
 import { SshSidebarModeSwitcher } from "./SshSidebarModeSwitcher";
 
 export function TaskList({
@@ -23,8 +32,10 @@ export function TaskList({
   onExample,
   onNew,
   onOpenConnections,
+  onReorder,
   onRun,
   onSelect,
+  reordering,
   selectedTaskId,
   tasks,
 }: {
@@ -34,22 +45,107 @@ export function TaskList({
   onExample: () => void;
   onNew: () => void;
   onOpenConnections: () => void;
+  onReorder: (taskIds: string[]) => void;
   onRun: (task: SshTask) => void;
   onSelect: (taskId: string) => void;
+  reordering: boolean;
   selectedTaskId: string | null;
   tasks: SshTask[];
 }) {
   const { t } = useI18n();
   const [filter, setFilter] = useState("");
+  const [sortMode, setSortMode] = useState<TaskSortMode>("manual");
+  const manualTasks = useMemo(() => sortTasksForView(tasks, "manual"), [tasks]);
   const filtered = useMemo(() => {
     const query = filter.trim().toLowerCase();
-    if (!query) return tasks;
-    return tasks.filter(
-      (task) =>
-        task.name.toLowerCase().includes(query) ||
-        task.description.toLowerCase().includes(query),
+    const matches = query
+      ? manualTasks.filter(
+          (task) =>
+            task.name.toLowerCase().includes(query) ||
+            task.description.toLowerCase().includes(query),
+        )
+      : manualTasks;
+    return sortTasksForView(matches, sortMode);
+  }, [filter, manualTasks, sortMode]);
+  const reorderEnabled = sortMode === "manual" && !filter.trim() && !reordering;
+  const manualTaskIds = useMemo(() => manualTasks.map((task) => task.id), [manualTasks]);
+  const items: TreeViewItem[] = filtered.map((task) => {
+    const index = manualTaskIds.indexOf(task.id);
+    return {
+      id: taskItemId(task.id),
+      label: task.name,
+      title: task.description || t("ssh.tasks.list.noDescription"),
+      actions: (
+        <IconButton
+          disableTooltip
+          label={t("ssh.tasks.actions.run")}
+          onClick={(event) => {
+            event.stopPropagation();
+            onRun(task);
+          }}
+          size="compact"
+        >
+          <Play size={12} />
+        </IconButton>
+      ),
+      contextMenu: (
+        <>
+          <ContextMenuItem onSelect={() => onRun(task)}>
+            {t("ssh.tasks.actions.run")}
+          </ContextMenuItem>
+          <ContextMenuItem onSelect={() => onSelect(task.id)}>
+            {t("ssh.tasks.actions.open")}
+          </ContextMenuItem>
+          <ContextMenuItem onSelect={() => onDuplicate(task)}>
+            {t("ssh.tasks.actions.duplicate")}
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuItem
+            disabled={!reorderEnabled || index <= 0}
+            onSelect={() => moveTask(task.id, -1)}
+          >
+            {t("ssh.tasks.actions.moveTaskUp")}
+          </ContextMenuItem>
+          <ContextMenuItem
+            disabled={!reorderEnabled || index >= manualTasks.length - 1}
+            onSelect={() => moveTask(task.id, 1)}
+          >
+            {t("ssh.tasks.actions.moveTaskDown")}
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuItem onSelect={() => onDelete(task)} tone="danger">
+            {t("ssh.tasks.actions.delete")}
+          </ContextMenuItem>
+        </>
+      ),
+    };
+  });
+
+  function moveTask(taskId: string, direction: -1 | 1) {
+    const index = manualTaskIds.indexOf(taskId);
+    const targetId = manualTaskIds[index + direction];
+    if (!reorderEnabled || index < 0 || !targetId) return;
+    onReorder(
+      reorderTaskIds(
+        manualTaskIds,
+        taskId,
+        targetId,
+        direction < 0 ? "before" : "after",
+      ),
     );
-  }, [filter, tasks]);
+  }
+
+  function dropTask(source: TreeViewItem, target: TreeViewItem, position: TreeViewDropPosition) {
+    if (!reorderEnabled || position === "inside") return;
+    onReorder(
+      reorderTaskIds(
+        manualTaskIds,
+        taskIdFromItem(source),
+        taskIdFromItem(target),
+        position,
+      ),
+    );
+  }
 
   return (
     <SidebarSection className="flex h-full min-h-0 flex-col">
@@ -59,6 +155,21 @@ export function TaskList({
           onChange={(mode) => mode === "connections" && onOpenConnections()}
         />
         <div className="flex items-center gap-0.5">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <IconButton label={t("ssh.tasks.list.sortLabel")} size="compact">
+                <ArrowUpDown size={14} />
+              </IconButton>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {(["manual", "name", "updated"] as const).map((mode) => (
+                <DropdownMenuItem key={mode} onSelect={() => setSortMode(mode)}>
+                  <Check className={sortMode === mode ? "opacity-100" : "opacity-0"} size={13} />
+                  {t(`ssh.tasks.list.sort.${mode}`)}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
           <IconButton
             label={t("ssh.tasks.actions.new")}
             onClick={() => onNew()}
@@ -85,66 +196,19 @@ export function TaskList({
           </div>
           {filtered.length ? (
             <div className="min-h-0 flex-1 overflow-y-auto py-1">
-              {filtered.map((task) => {
-                const selected = selectedTaskId === task.id;
-                return (
-                  <ContextMenu key={task.id}>
-                    <ContextMenuTrigger asChild>
-                      <div
-                        className={`group flex min-h-9 items-center gap-1 rounded-[var(--u-radius-sm)] px-1.5 transition-colors ${
-                          selected
-                            ? "bg-[var(--u-color-surface-active)] text-[var(--u-color-text)]"
-                            : "text-[var(--u-color-text-muted)] hover:bg-[var(--u-color-surface-hover)] hover:text-[var(--u-color-text)]"
-                        }`}
-                      >
-                        <button
-                          className="min-w-0 flex-1 cursor-pointer py-0.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--u-color-focus)]"
-                          onClick={() => onSelect(task.id)}
-                          type="button"
-                        >
-                          <span className="block truncate text-[12px] font-medium leading-4">
-                            {task.name}
-                          </span>
-                          <span className="block truncate text-[10px] leading-3 text-[var(--u-color-text-soft)]">
-                            {task.description || t("ssh.tasks.list.noDescription")}
-                          </span>
-                        </button>
-                        <div
-                          className={`flex shrink-0 transition-opacity ${
-                            selected
-                              ? "opacity-100"
-                              : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
-                          }`}
-                        >
-                          <IconButton
-                            disableTooltip
-                            label={t("ssh.tasks.actions.run")}
-                            onClick={() => onRun(task)}
-                            size="compact"
-                          >
-                            <Play size={12} />
-                          </IconButton>
-                        </div>
-                      </div>
-                    </ContextMenuTrigger>
-                    <ContextMenuContent>
-                      <ContextMenuItem onSelect={() => onRun(task)}>
-                        {t("ssh.tasks.actions.run")}
-                      </ContextMenuItem>
-                      <ContextMenuItem onSelect={() => onSelect(task.id)}>
-                        {t("ssh.tasks.actions.open")}
-                      </ContextMenuItem>
-                      <ContextMenuItem onSelect={() => onDuplicate(task)}>
-                        {t("ssh.tasks.actions.duplicate")}
-                      </ContextMenuItem>
-                      <ContextMenuSeparator />
-                      <ContextMenuItem onSelect={() => onDelete(task)} tone="danger">
-                        {t("ssh.tasks.actions.delete")}
-                      </ContextMenuItem>
-                    </ContextMenuContent>
-                  </ContextMenu>
-                );
-              })}
+              <TreeView
+                canDrag={() => reorderEnabled}
+                canDrop={(_source, _target, position) =>
+                  reorderEnabled && position !== "inside"
+                }
+                items={items}
+                onActivate={(item) => onSelect(taskIdFromItem(item))}
+                onDrop={({ position, source, target }) =>
+                  dropTask(source, target, position)
+                }
+                onSelect={(item) => onSelect(taskIdFromItem(item))}
+                selectedId={selectedTaskId ? taskItemId(selectedTaskId) : null}
+              />
             </div>
           ) : (
             <div className="flex min-h-0 flex-1 items-center justify-center px-3 text-center text-[12px] text-[var(--u-color-text-muted)]">
@@ -173,4 +237,12 @@ export function TaskList({
       )}
     </SidebarSection>
   );
+}
+
+function taskItemId(taskId: string) {
+  return `task:${taskId}`;
+}
+
+function taskIdFromItem(item: TreeViewItem) {
+  return item.id.startsWith("task:") ? item.id.slice("task:".length) : item.id;
 }

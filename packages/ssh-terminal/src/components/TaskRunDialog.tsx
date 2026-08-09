@@ -19,10 +19,14 @@ export function TaskRunDialog({
   activeEnvironmentName,
   connectionId,
   connections,
+  environmentId,
+  environmentLoadFailed,
+  environments,
   error,
   filledFromWorkspace,
   inputValues,
   onConnectionChange,
+  onEnvironmentChange,
   onInputChange,
   onOpenChange,
   onRun,
@@ -34,10 +38,14 @@ export function TaskRunDialog({
   activeEnvironmentName: string | null;
   connectionId: string;
   connections: SshConnection[];
+  environmentId: string;
+  environmentLoadFailed: boolean;
+  environments: Array<{ id: string; name: string }>;
   error: Error | null;
   filledFromWorkspace: boolean;
   inputValues: Record<string, string>;
   onConnectionChange: (connectionId: string) => void;
+  onEnvironmentChange: (environmentId: string) => void;
   onInputChange: (name: string, value: string) => void;
   onOpenChange: (open: boolean) => void;
   onRun: () => void;
@@ -79,6 +87,28 @@ export function TaskRunDialog({
                 ))}
               </Select>
             </label>
+
+            <label className="flex flex-col gap-1">
+              <span className="text-[11px] font-medium text-[var(--u-color-text-muted)]">
+                {t("ssh.tasks.run.environment")}
+              </span>
+              <Select
+                onChange={(event) => onEnvironmentChange(event.target.value)}
+                value={environmentId}
+              >
+                <option value="">{t("ssh.tasks.run.workspaceOnly")}</option>
+                {environments.map((environment) => (
+                  <option key={environment.id} value={environment.id}>
+                    {environment.name}
+                  </option>
+                ))}
+              </Select>
+            </label>
+            {environmentLoadFailed && (
+              <p className="text-[12px] text-[var(--u-color-warning)]" role="alert">
+                {t("ssh.tasks.run.environmentLoadFailed")}
+              </p>
+            )}
 
             <section>
               <h3 className="mb-2 text-[12px] font-semibold text-[var(--u-color-text)]">

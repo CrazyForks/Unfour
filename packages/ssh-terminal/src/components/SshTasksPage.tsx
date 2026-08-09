@@ -19,6 +19,7 @@ import {
   listWorkspaceVariables,
   readSshTaskRunLog,
   registerSshTaskRunChannel,
+  reorderSshTasks,
   runSshTask,
   saveSshTask,
   type SshConnection,
@@ -27,6 +28,8 @@ import {
   type SshTaskRun,
   type SshTaskRunEvent,
   type SshTaskSaveInput,
+  type WorkspaceEnvironment,
+  type WorkspaceVariable,
 } from "@unfour/command-client";
 import {
   ConfirmDialog,
@@ -51,8 +54,10 @@ import {
 } from "../model/task-template";
 import {
   activeWorkspaceEnvironmentName,
+  activeWorkspaceEnvironmentId,
   defaultTaskRunInputs,
-  mergeActiveWorkspaceVariables,
+  mergeWorkspaceVariables,
+  workspaceEnvironmentById,
 } from "../model/task-run-inputs";
 import {
   closeTaskTab,
@@ -94,6 +99,10 @@ export function SshTasksPage({
   const [runInputs, setRunInputs] = useState<Record<string, string>>({});
   const [runSecretInputs, setRunSecretInputs] = useState<string[]>([]);
   const [runFilledFromWorkspace, setRunFilledFromWorkspace] = useState(false);
+  const [runEnvironmentId, setRunEnvironmentId] = useState("");
+  const [runEnvironments, setRunEnvironments] = useState<WorkspaceEnvironment[]>([]);
+  const [runWorkspaceVariables, setRunWorkspaceVariables] = useState<WorkspaceVariable[]>([]);
+  const [runEnvironmentLoadFailed, setRunEnvironmentLoadFailed] = useState(false);
   const [runActiveEnvironmentName, setRunActiveEnvironmentName] = useState<string | null>(
     null,
   );
@@ -195,6 +204,37 @@ export function SshTasksPage({
     },
     onError: (error) => handleError(error, { key: "feedback.ssh.taskDeleteFailed" }),
   });
+  const reorderMutation = useMutation({
+    mutationFn: (taskIds: string[]) => reorderSshTasks({ workspaceId, taskIds }),
+    onMutate: async (taskIds) => {
+      await queryClient.cancelQueries({ queryKey: ["ssh-tasks", workspaceId] });
+      const previous = queryClient.getQueryData<SshTask[]>(["ssh-tasks", workspaceId]);
+      const positions = new Map(taskIds.map((taskId, index) => [taskId, index]));
+      queryClient.setQueryData<SshTask[]>(["ssh-tasks", workspaceId], (current) =>
+        (current ?? [])
+          .map((task) => ({
+            ...task,
+            sortOrder: positions.get(task.id) ?? task.sortOrder,
+          }))
+          .sort((left, right) => left.sortOrder - right.sortOrder),
+      );
+      return { previous };
+    },
+    onError: (error, _taskIds, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(["ssh-tasks", workspaceId], context.previous);
+      }
+      handleError(error, {
+        message: t("ssh.tasks.list.reorderFailed"),
+      });
+    },
+    onSuccess: (nextTasks) => {
+      queryClient.setQueryData(["ssh-tasks", workspaceId], nextTasks);
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["ssh-tasks", workspaceId] });
+    },
+  });
   const runMutation = useMutation({
     mutationFn: () =>
       runSshTask({
@@ -202,6 +242,7 @@ export function SshTasksPage({
         taskId: runDialogTask!.task.id,
         connectionId: runConnectionId || null,
         inputs: runInputs,
+        secretInputNames: runSecretInputs,
       }),
     onSuccess: (run) => {
       setActiveRun(run);
@@ -229,6 +270,7 @@ export function SshTasksPage({
       handleError(error, { key: "feedback.ssh.taskHistoryClearFailed" }),
   });
   const duplicateTask = duplicateMutation.mutate;
+  const reorderTasks = reorderMutation.mutate;
   const resetRunMutation = runMutation.reset;
   const saveTask = saveMutation.mutateAsync;
 
@@ -268,9 +310,13 @@ export function SshTasksPage({
         let secretNames: string[] = [];
         let filledFromWorkspace = false;
         let activeEnvironmentName: string | null = null;
+        let environmentId = "";
+        let workspaceVariables: WorkspaceVariable[] = [];
+        let environments: WorkspaceEnvironment[] = [];
+        let environmentLoadFailed = false;
 
         try {
-          const [workspaceVariables, environments] = await Promise.all([
+          [workspaceVariables, environments] = await Promise.all([
             queryClient.fetchQuery({
               queryKey: ["workspace-variables", workspaceId],
               queryFn: () => listWorkspaceVariables(workspaceId),
@@ -280,9 +326,13 @@ export function SshTasksPage({
               queryFn: () => listWorkspaceEnvironments(workspaceId),
             }),
           ]);
+          environmentId = activeWorkspaceEnvironmentId(environments);
           const defaults = defaultTaskRunInputs(
             detectedInputs,
-            mergeActiveWorkspaceVariables(workspaceVariables, environments),
+            mergeWorkspaceVariables(
+              workspaceVariables,
+              workspaceEnvironmentById(environments, environmentId),
+            ),
           );
           inputs = defaults.inputs;
           secretNames = defaults.secretNames;
@@ -290,6 +340,7 @@ export function SshTasksPage({
           activeEnvironmentName = activeWorkspaceEnvironmentName(environments);
         } catch {
           // Workspace defaults are optional; keep empty inputs if they fail to load.
+          environmentLoadFailed = true;
         }
 
         setRunDialogTask(detail);
@@ -298,6 +349,10 @@ export function SshTasksPage({
         setRunSecretInputs(secretNames);
         setRunFilledFromWorkspace(filledFromWorkspace);
         setRunActiveEnvironmentName(activeEnvironmentName);
+        setRunEnvironmentId(environmentId);
+        setRunEnvironments(environments);
+        setRunWorkspaceVariables(workspaceVariables);
+        setRunEnvironmentLoadFailed(environmentLoadFailed);
         resetRunMutation();
       } catch (error) {
         handleError(error, { key: "feedback.ssh.taskLoadFailed" });
@@ -354,6 +409,26 @@ export function SshTasksPage({
     [newTask, workspaceId],
   );
 
+  const changeRunEnvironment = useCallback(
+    (environmentId: string) => {
+      if (!runDialogTask) return;
+      const defaults = defaultTaskRunInputs(
+        detectTaskInputs(runDialogTask.steps, true),
+        mergeWorkspaceVariables(
+          runWorkspaceVariables,
+          workspaceEnvironmentById(runEnvironments, environmentId),
+        ),
+      );
+      const environment = workspaceEnvironmentById(runEnvironments, environmentId);
+      setRunEnvironmentId(environmentId);
+      setRunInputs(defaults.inputs);
+      setRunSecretInputs(defaults.secretNames);
+      setRunFilledFromWorkspace(defaults.filledFromWorkspace.length > 0);
+      setRunActiveEnvironmentName(environment?.name?.trim() || null);
+    },
+    [runDialogTask, runEnvironments, runWorkspaceVariables],
+  );
+
   const openHistoryRun = useCallback(
     async (run: SshTaskRun) => {
       try {
@@ -393,14 +468,17 @@ export function SshTasksPage({
   const shellSidebar = useMemo(
     () => (
       <TaskList
+        key={workspaceId}
         loading={tasksQuery.isLoading}
         onDelete={setDeleteTarget}
         onDuplicate={handleDuplicate}
         onExample={handleExample}
         onNew={newTask}
         onOpenConnections={onOpenConnections}
+        onReorder={reorderTasks}
         onRun={handleListRun}
         onSelect={selectTask}
+        reordering={reorderMutation.isPending}
         selectedTaskId={activeTaskId}
         tasks={tasks}
       />
@@ -412,9 +490,12 @@ export function SshTasksPage({
       handleListRun,
       newTask,
       onOpenConnections,
+      reorderMutation.isPending,
+      reorderTasks,
       selectTask,
       tasks,
       tasksQuery.isLoading,
+      workspaceId,
     ],
   );
 
@@ -619,10 +700,14 @@ export function SshTasksPage({
         activeEnvironmentName={runActiveEnvironmentName}
         connectionId={runConnectionId}
         connections={connections}
+        environmentId={runEnvironmentId}
+        environmentLoadFailed={runEnvironmentLoadFailed}
+        environments={runEnvironments.map(({ id, name }) => ({ id, name }))}
         error={runMutation.error}
         filledFromWorkspace={runFilledFromWorkspace}
         inputValues={runInputs}
         onConnectionChange={setRunConnectionId}
+        onEnvironmentChange={changeRunEnvironment}
         onInputChange={(name, value) =>
           setRunInputs((current) => ({ ...current, [name]: value }))
         }

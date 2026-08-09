@@ -1032,6 +1032,8 @@
         "duplicate": "复制",
         "duplicateStep": "复制步骤",
         "moveDown": "下移步骤",
+        "moveTaskDown": "下移 Task",
+        "moveTaskUp": "上移 Task",
         "moveUp": "上移步骤",
         "more": "更多 Task 操作",
         "new": "新建 Task",
@@ -1107,8 +1109,15 @@
         "filterPlaceholder": "筛选 Tasks…",
         "loading": "正在加载 SSH Tasks...",
         "noDescription": "无描述",
+        "reorderFailed": "无法保存 SSH Task 顺序，已恢复之前的顺序。",
         "selectTask": "选择一个 Task 以查看或编辑。",
         "selectTitle": "打开一个 Task",
+        "sort": {
+          "manual": "手动顺序",
+          "name": "名称 A–Z",
+          "updated": "最近更新"
+        },
+        "sortLabel": "排序 SSH Tasks",
         "title": "Tasks"
       },
       "run": {
@@ -1116,6 +1125,8 @@
         "connection": "SSH 连接",
         "currentStep": "当前：{name}",
         "disabled": "已禁用",
+        "environment": "变量环境",
+        "environmentLoadFailed": "无法加载 Workspace 环境，仍可为本次运行手动填写输入值。",
         "exitCode": "退出码 {code}",
         "historyReplayHint": "此次历史运行没有可显示的输出。",
         "host": "Host",
@@ -1125,6 +1136,7 @@
         "noInputs": "此 Task 没有临时输入项。",
         "workspaceDefaults": "已从工作区变量加载匹配项，可在本次运行中修改。",
         "workspaceDefaultsWithEnv": "已从工作区变量和「{name}」环境加载匹配项，可在本次运行中修改。",
+        "workspaceOnly": "仅使用 Workspace 变量",
         "openLog": "打开日志",
         "resize": "调整运行面板高度",
         "selectConnection": "选择 SSH 连接",

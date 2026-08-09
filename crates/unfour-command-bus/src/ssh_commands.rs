@@ -261,6 +261,21 @@ impl CommandBus {
         self.ssh.list_tasks(workspace_id).await
     }
 
+    pub async fn reorder_ssh_tasks(&self, input: SshTasksReorderInput) -> AppResult<Vec<SshTask>> {
+        let workspace_id = input.workspace_id.clone();
+        let task_count = input.task_ids.len();
+        let tasks = self.ssh.reorder_tasks(input).await?;
+        self.activity_log
+            .record(
+                Some(&workspace_id),
+                "ssh.task.reorder",
+                None,
+                serde_json::json!({ "taskCount": task_count }),
+            )
+            .await?;
+        Ok(tasks)
+    }
+
     pub async fn get_ssh_task(
         &self,
         workspace_id: String,

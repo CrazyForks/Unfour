@@ -1034,6 +1034,8 @@
         "duplicate": "Duplicate",
         "duplicateStep": "Duplicate step",
         "moveDown": "Move step down",
+        "moveTaskDown": "Move task down",
+        "moveTaskUp": "Move task up",
         "moveUp": "Move step up",
         "more": "More task actions",
         "new": "New Task",
@@ -1109,8 +1111,15 @@
         "filterPlaceholder": "Filter tasks…",
         "loading": "Loading SSH tasks...",
         "noDescription": "No description",
+        "reorderFailed": "Could not save the SSH task order. The previous order was restored.",
         "selectTask": "Select a task to view or edit it.",
         "selectTitle": "Open a task",
+        "sort": {
+          "manual": "Manual order",
+          "name": "Name A–Z",
+          "updated": "Recently updated"
+        },
+        "sortLabel": "Sort SSH tasks",
         "title": "Tasks"
       },
       "run": {
@@ -1118,6 +1127,8 @@
         "connection": "SSH connection",
         "currentStep": "Current: {name}",
         "disabled": "Disabled",
+        "environment": "Variable environment",
+        "environmentLoadFailed": "Workspace environments could not be loaded. You can still enter values manually for this run.",
         "exitCode": "exit {code}",
         "historyReplayHint": "No output is available for this past run.",
         "host": "Host",
@@ -1127,6 +1138,7 @@
         "noInputs": "This task has no temporary inputs.",
         "workspaceDefaults": "Matching values were loaded from workspace variables. Edit them for this run only.",
         "workspaceDefaultsWithEnv": "Matching values were loaded from workspace variables and \"{name}\". Edit them for this run only.",
+        "workspaceOnly": "Workspace variables only",
         "openLog": "Open log",
         "resize": "Resize run panel",
         "selectConnection": "Select an SSH connection",

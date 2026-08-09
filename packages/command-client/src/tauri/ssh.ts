@@ -28,6 +28,7 @@ import type {
   SshTaskRunEvent,
   SshTaskRunInput,
   SshTaskSaveInput,
+  SshTasksReorderInput,
   SftpCancelTransferInput,
   SftpDeleteInput,
   SftpDirectoryListing,
@@ -42,6 +43,10 @@ import type {
 
 export function listSshTasks(workspaceId: string) {
   return call<SshTask[]>("ssh_tasks_list", { workspaceId });
+}
+
+export function reorderSshTasks(input: SshTasksReorderInput) {
+  return call<SshTask[]>("ssh_tasks_reorder", { input });
 }
 
 export function getSshTask(workspaceId: string, taskId: string) {

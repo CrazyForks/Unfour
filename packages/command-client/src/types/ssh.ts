@@ -252,6 +252,7 @@ export type SshTask = {
   workspaceId: string;
   name: string;
   description: string;
+  sortOrder: number;
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
@@ -332,11 +333,17 @@ export type SshTaskSaveInput = {
   steps: SshTaskStepInput[];
 };
 
+export type SshTasksReorderInput = {
+  workspaceId: string;
+  taskIds: string[];
+};
+
 export type SshTaskRunInput = {
   workspaceId: string;
   taskId: string;
   connectionId: string | null;
   inputs: Record<string, string>;
+  secretInputNames: string[];
 };
 
 export type SshTaskCancelInput = {

@@ -1,13 +1,34 @@
 import { describe, expect, it } from "vitest";
 import {
   activeWorkspaceEnvironmentName,
+  activeWorkspaceEnvironmentId,
   defaultTaskRunInputs,
-  mergeActiveWorkspaceVariables,
+  mergeWorkspaceVariables,
+  workspaceEnvironmentById,
 } from "./task-run-inputs";
 
 describe("task run workspace variable defaults", () => {
   it("merges workspace vars then overlays the active environment", () => {
-    const merged = mergeActiveWorkspaceVariables(
+    const environment = {
+      id: "dev",
+      name: "Dev",
+      isActive: true,
+      variables: [
+        {
+          key: "archive_name",
+          value: "from-env",
+          isEnabled: true,
+          isSecret: false,
+        },
+        {
+          key: "token",
+          value: "secret-token",
+          isEnabled: true,
+          isSecret: true,
+        },
+      ],
+    };
+    const merged = mergeWorkspaceVariables(
       [
         {
           key: "source_image",
@@ -28,38 +49,7 @@ describe("task run workspace variable defaults", () => {
           isSecret: false,
         },
       ],
-      [
-        {
-          name: "Dev",
-          isActive: true,
-          variables: [
-            {
-              key: "archive_name",
-              value: "from-env",
-              isEnabled: true,
-              isSecret: false,
-            },
-            {
-              key: "token",
-              value: "secret-token",
-              isEnabled: true,
-              isSecret: true,
-            },
-          ],
-        },
-        {
-          name: "Prod",
-          isActive: false,
-          variables: [
-            {
-              key: "archive_name",
-              value: "prod-should-not-win",
-              isEnabled: true,
-              isSecret: false,
-            },
-          ],
-        },
-      ],
+      environment,
     );
 
     expect(merged.get("source_image")?.value).toBe("workspace-image");
@@ -73,7 +63,7 @@ describe("task run workspace variable defaults", () => {
   });
 
   it("prefills matching placeholders case-insensitively and leaves the rest empty", () => {
-    const variables = mergeActiveWorkspaceVariables(
+    const variables = mergeWorkspaceVariables(
       [
         {
           key: "SOURCE_IMAGE",
@@ -88,7 +78,7 @@ describe("task run workspace variable defaults", () => {
           isSecret: true,
         },
       ],
-      [],
+      null,
     );
 
     expect(
@@ -117,5 +107,16 @@ describe("task run workspace variable defaults", () => {
     expect(activeWorkspaceEnvironmentName([{ isActive: false, variables: [] }])).toBe(
       null,
     );
+  });
+
+  it("selects a run-only environment without changing active state", () => {
+    const environments = [
+      { id: "dev", name: "Dev", isActive: true, variables: [] },
+      { id: "prod", name: "Prod", isActive: false, variables: [] },
+    ];
+    expect(activeWorkspaceEnvironmentId(environments)).toBe("dev");
+    expect(workspaceEnvironmentById(environments, "prod")?.name).toBe("Prod");
+    expect(workspaceEnvironmentById(environments, "")).toBeNull();
+    expect(environments[0].isActive).toBe(true);
   });
 });

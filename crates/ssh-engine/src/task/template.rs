@@ -73,6 +73,41 @@ pub(super) fn resolve_enabled_steps(
         .collect()
 }
 
+pub(super) fn task_secret_values(
+    inputs: &std::collections::BTreeMap<String, String>,
+    secret_input_names: &[String],
+) -> AppResult<Vec<String>> {
+    let mut names = std::collections::HashSet::new();
+    let mut values = Vec::new();
+    for name in secret_input_names {
+        if !names.insert(name.as_str()) {
+            return Err(AppError::Validation(
+                "SSH task secret input names cannot contain duplicates".to_string(),
+            ));
+        }
+        if !valid_variable_name(name) || !inputs.contains_key(name) {
+            return Err(AppError::Validation(format!(
+                "SSH task secret input name is not present in inputs: {name}"
+            )));
+        }
+        let value = inputs[name].as_str();
+        if !value.is_empty() && !values.iter().any(|item| item == value) {
+            values.push(value.to_string());
+        }
+    }
+    values.sort_by_key(|value| std::cmp::Reverse(value.len()));
+    Ok(values)
+}
+
+#[cfg_attr(not(feature = "ssh-native"), allow(dead_code))]
+pub(super) fn redact_task_secret_values(value: &str, secret_values: &[String]) -> String {
+    secret_values
+        .iter()
+        .fold(value.to_string(), |redacted, secret| {
+            redacted.replace(secret, unfour_core::redaction::REDACTED_VALUE)
+        })
+}
+
 pub(super) fn validate_step_config(
     step_type: &str,
     config_version: i64,
@@ -363,6 +398,23 @@ mod tests {
         );
         assert_eq!(resolved[0].config_json["workingDirectory"], "/tmp/work");
         assert_eq!(steps[0].config_json["command"], "printf '%s' '{{value}}'");
+    }
+
+    #[test]
+    fn validates_and_redacts_declared_secret_input_values() {
+        let inputs = std::collections::BTreeMap::from([
+            ("token".to_string(), "long-secret-value".to_string()),
+            ("empty".to_string(), String::new()),
+        ]);
+        let values =
+            task_secret_values(&inputs, &["token".to_string(), "empty".to_string()]).unwrap();
+        assert_eq!(values, vec!["long-secret-value"]);
+        assert_eq!(
+            redact_task_secret_values("echo long-secret-value", &values),
+            "echo <redacted>"
+        );
+        assert!(task_secret_values(&inputs, &["missing".to_string()]).is_err());
+        assert!(task_secret_values(&inputs, &["token".to_string(), "token".to_string()]).is_err());
     }
 
     #[test]
