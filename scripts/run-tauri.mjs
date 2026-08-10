@@ -3,11 +3,19 @@
 import { spawnSync } from "node:child_process";
 import { dirname, extname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { tauriEnvironment } from "./release-environment.mjs";
+import {
+  resolveTauriInvocation,
+  tauriEnvironment,
+} from "./release-environment.mjs";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const tauriArgs = process.argv.slice(2);
-const { channel, environment } = tauriEnvironment(process.env);
+const invocation = resolveTauriInvocation(process.argv.slice(2));
+const { channel, environment } = tauriEnvironment(
+  process.env,
+  invocation.defaultChannel,
+  invocation.forcedChannel,
+);
+const tauriArgs = invocation.args;
 const args = ["--filter", "@unfour/desktop", "tauri", ...tauriArgs];
 
 let command = "pnpm";

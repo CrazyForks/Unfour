@@ -1,7 +1,9 @@
 const releaseChannels = new Set(["test", "stable"]);
 
-export function resolveReleaseChannel(explicitChannel) {
-  if (explicitChannel === undefined || explicitChannel === "") return "test";
+export function resolveReleaseChannel(explicitChannel, defaultChannel = "test") {
+  if (explicitChannel === undefined || explicitChannel === "") {
+    return defaultChannel;
+  }
   if (!releaseChannels.has(explicitChannel)) {
     throw new Error(
       `UNFOUR_RELEASE_CHANNEL must be exactly "test" or "stable", got ${JSON.stringify(explicitChannel)}`,
@@ -10,8 +12,31 @@ export function resolveReleaseChannel(explicitChannel) {
   return explicitChannel;
 }
 
-export function tauriEnvironment(environment = process.env) {
-  const channel = resolveReleaseChannel(environment.UNFOUR_RELEASE_CHANNEL);
+export function resolveTauriInvocation(args) {
+  if (args[0] === "build:test") {
+    return {
+      args: ["build", ...args.slice(1)],
+      defaultChannel: "test",
+      forcedChannel: "test",
+    };
+  }
+
+  return {
+    args,
+    defaultChannel: args[0] === "build" ? "stable" : "test",
+    forcedChannel: undefined,
+  };
+}
+
+export function tauriEnvironment(
+  environment = process.env,
+  defaultChannel = "test",
+  forcedChannel,
+) {
+  const channel = resolveReleaseChannel(
+    forcedChannel ?? environment.UNFOUR_RELEASE_CHANNEL,
+    defaultChannel,
+  );
   return {
     channel,
     environment: {

@@ -17,9 +17,10 @@ GitHub Actions runs the release workflow in three gates:
 
 If `verify` fails, the build jobs do not run and no release assets are created.
 
-For local test builds, use `pnpm tauri build`; the root launcher exports the
+Local `pnpm tauri build` bundles default to the Stable channel. For isolated
+local test builds, use `pnpm tauri build:test`; the root launcher exports the
 Test channel to Tauri, sidecar builds, and the complete Cargo graph. A formal
-Stable build is CI-owned and must explicitly provide
+publishable Stable build is CI-owned and must explicitly provide
 `UNFOUR_RELEASE_CHANNEL=stable` and the exact `UNFOUR_BUILD_COMMIT`. On
 Windows, the configured release target produces an NSIS installer.
 

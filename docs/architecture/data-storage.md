@@ -87,10 +87,12 @@ falling back to another profile.
 3. Compile-time `UNFOUR_RELEASE_CHANNEL` (`stable` → stable, `test` → test).
 
 The root Tauri launcher always exports a channel to the complete child process
-and Cargo graph. Local `pnpm tauri dev` and `pnpm tauri build` default to Test;
-formal Community Stable CI must explicitly set
-`UNFOUR_RELEASE_CHANNEL=stable`. Direct Cargo/Tauri invocations without the
-variable emit a warning and consistently compile as Test.
+and Cargo graph. Local `pnpm tauri dev` defaults to Test, while
+`pnpm tauri build` defaults to Stable. Use `pnpm tauri build:test` for an
+isolated Test-channel bundle. Formal Community Stable CI still explicitly sets
+`UNFOUR_RELEASE_CHANNEL=stable` and the exact build commit. Direct Cargo/Tauri
+invocations without the variable emit a warning and consistently compile as
+Test.
 
 Common commands:
 
@@ -98,11 +100,12 @@ Common commands:
 pnpm tauri dev
 UNFOUR_STORAGE_PROFILE=dev pnpm tauri dev
 pnpm tauri build
+pnpm tauri build:test
 UNFOUR_RELEASE_CHANNEL=stable UNFOUR_BUILD_COMMIT=<exact-sha> pnpm tauri build
 ```
 
-The last command describes the formal CI build contract; ordinary local builds
-should use the Test default.
+The last command describes the formal CI build contract. A local Stable build
+uses the Stable data root but is not a verified or publishable release artifact.
 
 Callers (desktop, MCP, command-bus) keep using the existing public path APIs;
 they do not need separate profile arguments.

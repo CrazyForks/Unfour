@@ -105,7 +105,8 @@ pnpm tauri dev
 常用命令：
 
 ```bash
-pnpm tauri build        # 生成 Tauri 发布包
+pnpm tauri build        # 生成使用 Stable 数据目录的 Tauri 安装包
+pnpm tauri build:test   # 生成使用 Test 隔离数据目录的 Tauri 安装包
 pnpm run build          # 仅构建桌面前端
 pnpm run check          # 前端构建 + Rust 检查 + 大文件检查
 pnpm run lint           # ESLint
@@ -117,6 +118,10 @@ pnpm run test:rust      # cargo test --workspace
 ```
 
 除非某个包的文档另有说明，否则请从仓库根目录运行上述命令。
+`pnpm tauri dev` 默认使用 Test 通道，`pnpm tauri build` 默认使用 Stable 通道，
+需要隔离数据的本地测试安装包请使用 `pnpm tauri build:test`。本地 Stable 构建不等于
+经过 CI 验证的正式发布产物；正式发布仍须显式提供 `UNFOUR_RELEASE_CHANNEL=stable`
+和准确的 `UNFOUR_BUILD_COMMIT`。
 
 ## 项目结构
 

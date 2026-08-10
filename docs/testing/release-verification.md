@@ -57,7 +57,7 @@ Platform checks that cannot be run must remain `NOT VERIFIED` with a reason.
 | --- | --- | --- |
 | API request scripts | Persist pre/post scripts; request and temporary-variable mutation; environment reads and writes; console output; passing/failing tests; pre-script failure/timeout; post-script failure; OpenAPI import/export round trip. | NOT VERIFIED |
 | Workspace domain foundation | Existing-workspace migration; Workspace/variable/environment CRUD; revision and tombstone behavior; transactional rollback; external apply; local active/default preferences remain local; desktop and MCP paths agree. | NOT VERIFIED |
-| Release/storage environment | Local Tauri defaults to Test; Stable is explicit; invalid channel/profile values fail; Stable uses `~/.unfour`; `dev` and `test` use sibling roots; absolute override works; relative override is rejected; desktop and MCP resolve the same root. | NOT VERIFIED |
+| Release/storage environment | Local Tauri dev defaults to Test; build defaults to Stable; build:test forces Test; invalid channel/profile values fail; Stable uses `~/.unfour`; `dev` and `test` use sibling roots; absolute override works; relative override is rejected; desktop and MCP resolve the same root. | NOT VERIFIED |
 | SSH live server | Password/key auth, terminal input/output, resize, clipboard menu, SFTP, task automation, host-key checks, reconnect, and redacted log export. | NOT VERIFIED |
 | Database | SQLite/PostgreSQL/MySQL connection and query flows, table edit/delete actions, multi-statement execution, errors, and confirmation gates. | NOT VERIFIED |
 | MCP | Initialize, tools/list, Workspace and environment operations, API reads, database read-only query, activity list, SSH diagnostics, and selected storage profile. | NOT VERIFIED |

@@ -121,7 +121,8 @@ pnpm tauri dev
 Common commands:
 
 ```bash
-pnpm tauri build        # create local Test-channel Tauri bundles
+pnpm tauri build        # create local Stable-channel Tauri bundles
+pnpm tauri build:test   # create isolated Test-channel Tauri bundles
 pnpm run build          # build the desktop frontend only
 pnpm run check          # frontend build + Rust check + large-file check
 pnpm run lint           # ESLint
@@ -134,11 +135,12 @@ pnpm run test:release-env # release/channel contract unit tests
 ```
 
 Run commands from the repository root unless a package document says otherwise.
-Both `pnpm tauri dev` and local `pnpm tauri build` default to the Test release
-channel. Set `UNFOUR_STORAGE_PROFILE=dev` when development data should use
-`~/.unfour-dev`; this storage override is independent from release identity.
-Only CI should create formal Stable artifacts, with
-`UNFOUR_RELEASE_CHANNEL=stable` and an exact `UNFOUR_BUILD_COMMIT`.
+`pnpm tauri dev` defaults to the Test release channel, while local
+`pnpm tauri build` defaults to Stable. Use `pnpm tauri build:test` for an
+isolated Test-channel bundle. Set `UNFOUR_STORAGE_PROFILE=dev` when development
+data should use `~/.unfour-dev`; this storage override is independent from
+release identity. Only CI should create formal publishable Stable artifacts,
+with `UNFOUR_RELEASE_CHANNEL=stable` and an exact `UNFOUR_BUILD_COMMIT`.
 
 ## Project Layout
 
