@@ -1,6 +1,8 @@
 mod connection;
 mod helpers;
 mod operations;
+mod task_schemas;
+mod tasks;
 
 use serde_json::json;
 
@@ -14,7 +16,7 @@ const DEFAULT_FILE_LIMIT: u64 = 20 * 1024;
 const MAX_FILE_LIMIT: u64 = 128 * 1024;
 
 pub(super) fn registered_tools() -> Vec<RegisteredTool> {
-    vec![
+    let mut tools = vec![
         RegisteredTool {
             definition: ToolDefinition {
                 name: "unfour.ssh.create_connection",
@@ -212,7 +214,9 @@ pub(super) fn registered_tools() -> Vec<RegisteredTool> {
             },
             handler: ssh_list_dir,
         },
-    ]
+    ];
+    tools.extend(tasks::registered_tools());
+    tools
 }
 
 #[cfg(test)]

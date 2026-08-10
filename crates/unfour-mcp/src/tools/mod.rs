@@ -7,6 +7,7 @@ mod real;
 mod ssh;
 mod ssh_risk;
 mod system;
+mod workspace;
 
 use std::sync::Arc;
 
@@ -126,6 +127,7 @@ pub(crate) enum ToolCallError {
 impl ToolRegistry {
     pub fn with_command_bus(command_bus: Arc<dyn CommandBusAdapter>) -> Self {
         let mut tools = real::registered_tools();
+        tools.extend(workspace::registered_tools());
         tools.extend(api::registered_tools());
         tools.extend(database::registered_tools());
         tools.extend(system::registered_tools());

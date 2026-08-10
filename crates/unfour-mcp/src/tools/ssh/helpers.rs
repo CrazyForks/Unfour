@@ -4,9 +4,7 @@ use unfour_core::models::SshConnection;
 
 use crate::command_bus_adapter::CommandBusAdapter;
 
-use super::super::ssh_risk::{
-    parse_optional_u64, redact_command_display, shell_quote,
-};
+use super::super::ssh_risk::{parse_optional_u64, redact_command_display, shell_quote};
 use super::super::ToolCallError;
 use super::{MAX_DIAGNOSTIC_TIMEOUT_MS, MAX_ONE_SHOT_COMMAND_CHARS};
 #[derive(Debug, Clone)]

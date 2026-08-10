@@ -38,6 +38,7 @@ impl ResolvedMcpPolicy {
 #[allow(dead_code)]
 pub(super) enum McpCapability {
     WorkspaceRead,
+    WorkspaceMutate,
     ApiRead,
     ApiSend,
     ApiMutate,
@@ -47,6 +48,7 @@ pub(super) enum McpCapability {
     DbDataWrite,
     SshConnect,
     SshExec,
+    SshTaskManage,
     SecretUse,
     SecretReveal,
     DestructiveRun,
@@ -56,6 +58,7 @@ impl McpCapability {
     pub(super) fn as_str(self) -> &'static str {
         match self {
             Self::WorkspaceRead => "workspace:read",
+            Self::WorkspaceMutate => "workspace:mutate",
             Self::ApiRead => "api:read",
             Self::ApiSend => "api:send",
             Self::ApiMutate => "api:mutate",
@@ -65,6 +68,7 @@ impl McpCapability {
             Self::DbDataWrite => "db:data:write",
             Self::SshConnect => "ssh:connect",
             Self::SshExec => "ssh:exec",
+            Self::SshTaskManage => "ssh:task:manage",
             Self::SecretUse => "secret:use",
             Self::SecretReveal => "secret:reveal",
             Self::DestructiveRun => "destructive:run",
@@ -183,7 +187,18 @@ pub(super) fn classify_mcp_action(
         | "unfour.workspace.list"
         | "unfour.connection.list"
         | "unfour.activity.list"
-        | "unfour.system.health" => (McpCapability::WorkspaceRead, McpRisk::Read),
+        | "unfour.system.health"
+        | "unfour.workspace.list_variables"
+        | "unfour.ssh.list_tasks"
+        | "unfour.ssh.get_task"
+        | "unfour.ssh.list_task_runs"
+        | "unfour.ssh.read_task_run_log" => (McpCapability::WorkspaceRead, McpRisk::Read),
+        "unfour.workspace.create_variable"
+        | "unfour.workspace.update_variable"
+        | "unfour.workspace.replace_variables" => (McpCapability::WorkspaceMutate, McpRisk::Write),
+        "unfour.workspace.delete_variable" => {
+            (McpCapability::WorkspaceMutate, McpRisk::Destructive)
+        }
         "unfour.api.list_collections"
         | "unfour.api.list_requests"
         | "unfour.api.get_request"
@@ -255,6 +270,15 @@ pub(super) fn classify_mcp_action(
         }
         "unfour.ssh.write_file" | "unfour.ssh.patch_file" => {
             (McpCapability::SshExec, McpRisk::Write)
+        }
+        "unfour.ssh.save_task" | "unfour.ssh.duplicate_task" | "unfour.ssh.reorder_tasks" => {
+            (McpCapability::SshTaskManage, McpRisk::Write)
+        }
+        "unfour.ssh.delete_task" | "unfour.ssh.clear_task_runs" => {
+            (McpCapability::SshTaskManage, McpRisk::Destructive)
+        }
+        "unfour.ssh.run_task" | "unfour.ssh.cancel_task_run" => {
+            (McpCapability::SshExec, McpRisk::Execute)
         }
         _ => (McpCapability::WorkspaceRead, McpRisk::Read),
     }

@@ -28,6 +28,8 @@ Tools with `openWorldHint: true`:
 - `unfour.ssh.write_file`
 - `unfour.ssh.patch_file`
 - `unfour.ssh.list_dir`
+- `unfour.ssh.run_task`
+- `unfour.ssh.cancel_task_run`
 
 Write-capable tools are also checked by workspace policy at call time. The
 default `auto` mapping is dev = full access, test = guarded, prod = read-only.
@@ -42,6 +44,11 @@ text to execute.
 | `unfour.system.health` | `{}` | Returns command-bus and storage readiness. |
 | `unfour.workspace.current` | `{}` | Returns the active workspace. |
 | `unfour.workspace.list` | `{}` | Lists local workspaces and marks the active one. |
+| `unfour.workspace.list_variables` | `{ "workspaceId": "optional" }` | Lists workspace-global variables. Explicit secrets and sensitive keys are masked. |
+| `unfour.workspace.create_variable` | `{ "workspaceId": "optional", "key": "required", "value": "required", "isSecret": "optional", "isEnabled": "optional", "description": "optional", "sortOrder": "optional" }` | Creates one workspace-global variable. Returned sensitive values are masked. |
+| `unfour.workspace.update_variable` | `{ "workspaceId": "optional", "variableId": "required", "key": "required", "value": "required", "isSecret": "optional", "isEnabled": "optional", "description": "optional", "sortOrder": "optional" }` | Updates one workspace-global variable. Omitted optional fields keep their current values. |
+| `unfour.workspace.replace_variables` | `{ "workspaceId": "optional", "variables": "required array" }` | Replaces the exact workspace-global variable set; omitted records are soft-deleted. |
+| `unfour.workspace.delete_variable` | `{ "workspaceId": "optional", "variableId": "required", "confirm": "optional", "confirmation_text": "optional" }` | Soft-deletes one workspace-global variable; guarded policy requires confirmation. |
 | `unfour.connection.list` | `{ "type": "optional" }` | Returns safe database and SSH connection summaries. `type` may be `all`, `api`, `database`, or `ssh`; default is `all`. |
 | `unfour.activity.list` | `{ "workspaceId": "optional", "limit": "optional" }` | Lists recent redacted local activity events. Default limit is 50; max is 200. |
 | `unfour.api.list_collections` | `{ "workspaceId": "optional" }` | Lists API request collections derived from saved request folders. |
@@ -76,6 +83,27 @@ text to execute.
 | `unfour.ssh.write_file` | `{ "connectionId": "required", "path": "required", "content": "required", "workspaceId": "optional", "mode": "optional", "timeoutMs": "optional", "confirm": "optional", "confirmation_text": "optional" }` | Writes or appends a remote file when policy allows. Test workspaces and sensitive paths require confirmation. |
 | `unfour.ssh.patch_file` | `{ "connectionId": "required", "path": "required", "search": "required", "replace": "required", "workspaceId": "optional", "timeoutMs": "optional", "confirm": "optional", "confirmation_text": "optional" }` | Applies a search/replace patch. Multiple matches, test workspaces, and sensitive paths require confirmation. |
 | `unfour.ssh.list_dir` | `{ "connectionId": "required", "path": "required", "workspaceId": "optional", "limit": "optional", "timeoutMs": "optional" }` | Lists one remote directory with size and modified-time metadata. |
+| `unfour.ssh.list_tasks` | `{ "workspaceId": "optional" }` | Lists saved SSH task summaries. |
+| `unfour.ssh.get_task` | `{ "workspaceId": "optional", "taskId": "required" }` | Returns one task, its steps, and local binding with sensitive configuration fields masked. |
+| `unfour.ssh.save_task` | `{ "workspaceId": "optional", "taskId": "optional", "name": "required", "description": "optional", "defaultConnectionId": "optional", "steps": "required array" }` | Creates or updates a task. On update, omitted `description` and `defaultConnectionId` keep their current values; pass `null` for `defaultConnectionId` to clear it. Supported step types are `command`, `upload`, and `download`. |
+| `unfour.ssh.duplicate_task` | `{ "workspaceId": "optional", "taskId": "required" }` | Duplicates a saved task and its steps. |
+| `unfour.ssh.reorder_tasks` | `{ "workspaceId": "optional", "taskIds": "required array" }` | Reorders the exact active task set. |
+| `unfour.ssh.delete_task` | `{ "workspaceId": "optional", "taskId": "required", "confirm": "optional", "confirmation_text": "optional" }` | Soft-deletes a task; guarded policy requires confirmation. |
+| `unfour.ssh.run_task` | `{ "workspaceId": "optional", "taskId": "required", "connectionId": "optional", "inputs": "optional object", "secretInputNames": "optional array", "confirm": "optional", "confirmation_text": "optional" }` | Starts a task run. Guarded policy requires confirmation; production/read-only policy blocks execution. |
+| `unfour.ssh.cancel_task_run` | `{ "workspaceId": "optional", "runId": "required" }` | Cancels an active task run when execution policy allows. |
+| `unfour.ssh.list_task_runs` | `{ "workspaceId": "optional", "taskId": "required" }` | Lists task run summaries without local log paths. |
+| `unfour.ssh.read_task_run_log` | `{ "workspaceId": "optional", "runId": "required" }` | Reads a redacted task log capped at 128 KiB characters. |
+| `unfour.ssh.clear_task_runs` | `{ "workspaceId": "optional", "taskId": "optional", "confirm": "optional", "confirmation_text": "optional" }` | Deletes task run records and local logs for one task or the workspace; guarded policy requires confirmation. |
+
+## Workspace Variable Tools
+
+Workspace-global variables are distinct from variables attached to an API
+environment. All reads and mutation results mask values when `isSecret=true`
+or the key matches the shared sensitive-key policy. The replace operation uses
+the same exact-set semantics as the desktop command: variables omitted from the
+submitted array are soft-deleted. For `update_variable`, and for replace items
+that include an existing `id`, omitted optional fields such as `isSecret`
+keep their current values instead of resetting to create defaults.
 
 ## API Client Tools
 
@@ -240,6 +268,12 @@ returns only path, mode, byte count, and command status. `unfour.ssh.patch_file`
 performs search/replace without returning full file content; if the search text
 matches multiple locations, it returns a confirmation request before replacing
 all matches.
+
+SSH task metadata operations use the same task service and command-bus methods
+as the desktop UI. Task execution is asynchronous and returns a run summary.
+Because a saved task can contain multiple remote commands and transfers,
+`unfour.ssh.run_task` requires the normal confirmation handshake under guarded
+policy. Run summaries omit local log paths, and log reads are capped.
 
 ## Sensitive Data Masking
 

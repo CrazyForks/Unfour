@@ -11,7 +11,10 @@ use unfour_core::models::{
     ApiCollection, ApiEnvironment, ApiRequestInput, ApiResponse, ApiSavedRequest,
     CredentialCreateInput, CredentialMetadata, DatabaseConnection, DatabaseConnectionInput,
     DatabaseQueryInput, DatabaseQueryResult, DatabaseSchema, DatabaseTestResult, KeyValue,
-    SshConnection, SshConnectionInput, SshDiagnosticInput, SshDiagnosticResult, SystemHealth,
+    SshConnection, SshConnectionInput, SshDiagnosticInput, SshDiagnosticResult, SshTask,
+    SshTaskCancelInput, SshTaskCleanupInput, SshTaskCleanupResult, SshTaskDetail, SshTaskRun,
+    SshTaskRunInput, SshTaskSaveInput, SshTasksReorderInput, SystemHealth, WorkspaceVariable,
+    WorkspaceVariableInput,
 };
 use unfour_core::AppError;
 
@@ -360,6 +363,89 @@ impl CommandBusAdapter for LocalCommandBusAdapter {
             })
     }
 
+    fn list_workspace_variables(
+        &self,
+        workspace_id: &str,
+    ) -> Result<Vec<WorkspaceVariable>, CommandBusAdapterError> {
+        self.run(self.bus.workspace_variables_list(workspace_id.to_string()))
+            .map_err(|e| {
+                CommandBusAdapterError::from_app_error(
+                    "The command-bus workspace variable list operation failed.",
+                    &e,
+                )
+            })
+    }
+
+    fn replace_workspace_variables(
+        &self,
+        workspace_id: &str,
+        variables: Vec<WorkspaceVariableInput>,
+    ) -> Result<Vec<WorkspaceVariable>, CommandBusAdapterError> {
+        self.run(
+            self.bus
+                .workspace_variables_replace(workspace_id.to_string(), variables),
+        )
+        .map_err(|e| {
+            CommandBusAdapterError::from_app_error(
+                "The command-bus workspace variable replacement failed.",
+                &e,
+            )
+        })
+    }
+
+    fn create_workspace_variable(
+        &self,
+        workspace_id: &str,
+        input: WorkspaceVariableInput,
+    ) -> Result<WorkspaceVariable, CommandBusAdapterError> {
+        self.run(
+            self.bus
+                .workspace_variable_create(workspace_id.to_string(), input),
+        )
+        .map_err(|e| {
+            CommandBusAdapterError::from_app_error(
+                "The command-bus workspace variable create operation failed.",
+                &e,
+            )
+        })
+    }
+
+    fn update_workspace_variable(
+        &self,
+        workspace_id: &str,
+        variable_id: &str,
+        input: WorkspaceVariableInput,
+    ) -> Result<WorkspaceVariable, CommandBusAdapterError> {
+        self.run(self.bus.workspace_variable_update(
+            workspace_id.to_string(),
+            variable_id.to_string(),
+            input,
+        ))
+        .map_err(|e| {
+            CommandBusAdapterError::from_app_error(
+                "The command-bus workspace variable update operation failed.",
+                &e,
+            )
+        })
+    }
+
+    fn delete_workspace_variable(
+        &self,
+        workspace_id: &str,
+        variable_id: &str,
+    ) -> Result<Vec<WorkspaceVariable>, CommandBusAdapterError> {
+        self.run(
+            self.bus
+                .workspace_variable_delete(workspace_id.to_string(), variable_id.to_string()),
+        )
+        .map_err(|e| {
+            CommandBusAdapterError::from_app_error(
+                "The command-bus workspace variable delete operation failed.",
+                &e,
+            )
+        })
+    }
+
     fn save_db_connection(
         &self,
         input: DatabaseConnectionInput,
@@ -479,6 +565,158 @@ impl CommandBusAdapter for LocalCommandBusAdapter {
     ) -> Result<SshDiagnosticResult, CommandBusAdapterError> {
         self.run(self.bus.run_ssh_command(input)).map_err(|e| {
             CommandBusAdapterError::from_ssh_app_error("The command-bus SSH command failed.", &e)
+        })
+    }
+
+    fn list_ssh_tasks(&self, workspace_id: &str) -> Result<Vec<SshTask>, CommandBusAdapterError> {
+        self.run(self.bus.list_ssh_tasks(workspace_id.to_string()))
+            .map_err(|e| {
+                CommandBusAdapterError::from_app_error(
+                    "The command-bus SSH task list operation failed.",
+                    &e,
+                )
+            })
+    }
+
+    fn reorder_ssh_tasks(
+        &self,
+        input: SshTasksReorderInput,
+    ) -> Result<Vec<SshTask>, CommandBusAdapterError> {
+        self.run(self.bus.reorder_ssh_tasks(input)).map_err(|e| {
+            CommandBusAdapterError::from_app_error(
+                "The command-bus SSH task reorder operation failed.",
+                &e,
+            )
+        })
+    }
+
+    fn get_ssh_task(
+        &self,
+        workspace_id: &str,
+        task_id: &str,
+    ) -> Result<SshTaskDetail, CommandBusAdapterError> {
+        self.run(
+            self.bus
+                .get_ssh_task(workspace_id.to_string(), task_id.to_string()),
+        )
+        .map_err(|e| {
+            CommandBusAdapterError::from_app_error(
+                "The command-bus SSH task detail operation failed.",
+                &e,
+            )
+        })
+    }
+
+    fn save_ssh_task(
+        &self,
+        input: SshTaskSaveInput,
+    ) -> Result<SshTaskDetail, CommandBusAdapterError> {
+        self.run(self.bus.save_ssh_task(input)).map_err(|e| {
+            CommandBusAdapterError::from_app_error(
+                "The command-bus SSH task save operation failed.",
+                &e,
+            )
+        })
+    }
+
+    fn duplicate_ssh_task(
+        &self,
+        workspace_id: &str,
+        task_id: &str,
+    ) -> Result<SshTaskDetail, CommandBusAdapterError> {
+        self.run(
+            self.bus
+                .duplicate_ssh_task(workspace_id.to_string(), task_id.to_string()),
+        )
+        .map_err(|e| {
+            CommandBusAdapterError::from_app_error(
+                "The command-bus SSH task duplicate operation failed.",
+                &e,
+            )
+        })
+    }
+
+    fn delete_ssh_task(
+        &self,
+        workspace_id: &str,
+        task_id: &str,
+    ) -> Result<(), CommandBusAdapterError> {
+        self.run(
+            self.bus
+                .delete_ssh_task(workspace_id.to_string(), task_id.to_string()),
+        )
+        .map_err(|e| {
+            CommandBusAdapterError::from_app_error(
+                "The command-bus SSH task delete operation failed.",
+                &e,
+            )
+        })
+    }
+
+    fn run_ssh_task(&self, input: SshTaskRunInput) -> Result<SshTaskRun, CommandBusAdapterError> {
+        self.run(self.bus.run_ssh_task(input)).map_err(|e| {
+            CommandBusAdapterError::from_ssh_app_error(
+                "The command-bus SSH task execution failed.",
+                &e,
+            )
+        })
+    }
+
+    fn cancel_ssh_task_run(
+        &self,
+        input: SshTaskCancelInput,
+    ) -> Result<SshTaskRun, CommandBusAdapterError> {
+        self.run(self.bus.cancel_ssh_task_run(input)).map_err(|e| {
+            CommandBusAdapterError::from_app_error(
+                "The command-bus SSH task cancellation failed.",
+                &e,
+            )
+        })
+    }
+
+    fn list_ssh_task_runs(
+        &self,
+        workspace_id: &str,
+        task_id: &str,
+    ) -> Result<Vec<SshTaskRun>, CommandBusAdapterError> {
+        self.run(
+            self.bus
+                .list_ssh_task_runs(workspace_id.to_string(), task_id.to_string()),
+        )
+        .map_err(|e| {
+            CommandBusAdapterError::from_app_error(
+                "The command-bus SSH task run list operation failed.",
+                &e,
+            )
+        })
+    }
+
+    fn read_ssh_task_run_log(
+        &self,
+        workspace_id: &str,
+        run_id: &str,
+    ) -> Result<String, CommandBusAdapterError> {
+        self.run(
+            self.bus
+                .read_ssh_task_run_log(workspace_id.to_string(), run_id.to_string()),
+        )
+        .map_err(|e| {
+            CommandBusAdapterError::from_app_error(
+                "The command-bus SSH task log read operation failed.",
+                &e,
+            )
+        })
+    }
+
+    fn clear_ssh_task_runs(
+        &self,
+        input: SshTaskCleanupInput,
+    ) -> Result<SshTaskCleanupResult, CommandBusAdapterError> {
+        self.run(self.bus.clear_ssh_task_runs(input)).map_err(|e| {
+            CommandBusAdapterError::from_app_error(
+                "The command-bus SSH task run cleanup failed.",
+                &e,
+            )
         })
     }
 }

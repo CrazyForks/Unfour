@@ -308,7 +308,7 @@ fn tool_annotations_classify_side_effects() {
 fn tool_schemas_are_available() {
     let definitions = ToolRegistry::with_command_bus(Arc::new(StubCommandBus)).definitions();
 
-    assert_eq!(definitions.len(), 37);
+    assert_eq!(definitions.len(), 53);
     assert!(definitions
         .iter()
         .all(|definition| definition.input_schema["type"] == "object"));

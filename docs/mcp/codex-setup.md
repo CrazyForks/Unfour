@@ -78,6 +78,8 @@ Use the Unfour MCP server to run a read-only query: select id, email from users 
 Use the Unfour MCP server to explain this query on connection <id>: select * from users where email = 'me@example.com'.
 Use the Unfour MCP server to dry-run this database fix on connection <id>: update users set active = true where id = 42.
 Use the Unfour MCP server to list recent workspace activity.
+Use the Unfour MCP server to list workspace-global variables and update the BASE_URL variable.
+Use the Unfour MCP server to inspect the saved SSH task with id <task-id>, then run it on connection <id> with the required inputs.
 Use the Unfour MCP server to run the read-only SSH diagnostic command df -h on connection <id>.
 Use the Unfour MCP server to list /var/log on SSH connection <id>.
 Use the Unfour MCP server to read the last 20000 bytes of /var/log/app.log on SSH connection <id>.

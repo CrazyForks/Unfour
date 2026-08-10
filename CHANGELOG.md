@@ -6,6 +6,13 @@ This file is the user-facing change history for Unfour, following
 
 ## [Unreleased]
 
+### Added
+
+- **MCP workspace variables and SSH tasks** — Add policy-aware workspace-global
+  variable CRUD and complete SSH task management, execution, run inspection,
+  cancellation, and cleanup tools over the existing command bus, including
+  confirmation handshakes and LLM-facing masking.
+
 ## [0.3.0] - 2026-07-30
 
 Release candidate adding API request scripting and the transactional Workspace

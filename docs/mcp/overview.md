@@ -48,8 +48,9 @@ The `initialize` response includes instructions for a diagnose-then-act flow:
 3. For API issues, inspect API history and saved request details.
 4. For database issues, inspect saved database connections, schemas, and
    read-only query or explain output before executing a fix.
-5. For host/service issues, start with SSH diagnostics, directory listings, and
-   file reads before running commands or writing files.
+5. For host/service issues, start with SSH diagnostics, directory listings,
+   file reads, or saved task inspection before running commands, writing files,
+   or starting an SSH task.
 
 ## Safety Posture
 
