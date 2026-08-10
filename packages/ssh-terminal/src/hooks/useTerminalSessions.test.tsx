@@ -14,10 +14,9 @@ import { useTerminalSessions } from "./useTerminalSessions";
 
 const listMock = vi.mocked(listSshSessions);
 
-function createWrapper() {
-  const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
+function createWrapper(client = new QueryClient({
+  defaultOptions: { queries: { retry: false } },
+})) {
   return function Wrapper({ children }: { children: ReactNode }) {
     return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
   };
@@ -41,5 +40,20 @@ describe("useTerminalSessions", () => {
   it("stays disabled while the workspace id is empty", () => {
     renderHook(() => useTerminalSessions(""), { wrapper: createWrapper() });
     expect(listMock).not.toHaveBeenCalled();
+  });
+
+  it("disables refetchInterval while the Connections surface is inactive", async () => {
+    listMock.mockResolvedValue([]);
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+
+    renderHook(() => useTerminalSessions("ws-1", { active: false }), {
+      wrapper: createWrapper(client),
+    });
+
+    await waitFor(() => expect(listMock).toHaveBeenCalledTimes(1));
+    const query = client.getQueryCache().find({ queryKey: ["ssh-sessions", "ws-1"] });
+    expect(query?.options.refetchInterval).toBe(false);
   });
 });

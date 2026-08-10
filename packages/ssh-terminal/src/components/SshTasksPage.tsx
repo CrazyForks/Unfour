@@ -113,8 +113,10 @@ export function SshTasksPage({
   const [historyLogLoading, setHistoryLogLoading] = useState(false);
   const eventsByRunRef = useRef(eventsByRun);
   const historyLogByRunRef = useRef(historyLogByRun);
+  const tasksSurfaceActiveRef = useRef(active);
   eventsByRunRef.current = eventsByRun;
   historyLogByRunRef.current = historyLogByRun;
+  tasksSurfaceActiveRef.current = active;
   const nextNewTabIdRef = useRef(0);
 
   const tasksQuery = useQuery({
@@ -151,15 +153,44 @@ export function SshTasksPage({
   useEffect(() => {
     let disposed = false;
     let dispose: (() => void) | null = null;
+    // Coalesce per-line task output into one React update ~per frame. Without
+    // this, a verbose command (or transfer progress) re-renders thousands of
+    // transcript spans and can freeze the Tasks surface.
+    let pending: SshTaskRunEvent[] = [];
+    let flushTimer: ReturnType<typeof setTimeout> | null = null;
+    const flushPending = () => {
+      flushTimer = null;
+      if (!pending.length) return;
+      // Keep buffering while Connections is shown so a hidden Tasks tree does
+      // not re-render on every remote line; flush when Tasks becomes active.
+      if (!tasksSurfaceActiveRef.current) {
+        flushTimer = setTimeout(flushPending, 250);
+        return;
+      }
+      const batch = pending;
+      pending = [];
+      setEventsByRun((current) => {
+        const next = { ...current };
+        for (const event of batch) {
+          next[event.runId] = [...(next[event.runId] ?? []), event].slice(-5_000);
+        }
+        return next;
+      });
+      for (const event of batch) {
+        if (event.kind === "run" && event.status && event.status !== "running") {
+          queryClient.invalidateQueries({
+            queryKey: ["ssh-task-runs", workspaceId, event.taskId],
+          });
+        }
+      }
+    };
     registerSshTaskRunChannel((event) => {
-      setEventsByRun((current) => ({
-        ...current,
-        [event.runId]: [...(current[event.runId] ?? []), event].slice(-5_000),
-      }));
-      if (event.kind === "run" && event.status && event.status !== "running") {
-        queryClient.invalidateQueries({
-          queryKey: ["ssh-task-runs", workspaceId, event.taskId],
-        });
+      pending.push(event);
+      if (pending.length > 10_000) {
+        pending = pending.slice(-10_000);
+      }
+      if (flushTimer === null) {
+        flushTimer = setTimeout(flushPending, 16);
       }
     }).then((cleanup) => {
       if (disposed) cleanup();
@@ -167,6 +198,8 @@ export function SshTasksPage({
     });
     return () => {
       disposed = true;
+      if (flushTimer !== null) clearTimeout(flushTimer);
+      flushPending();
       dispose?.();
     };
   }, [queryClient, workspaceId]);

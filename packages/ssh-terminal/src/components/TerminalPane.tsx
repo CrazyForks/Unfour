@@ -19,6 +19,7 @@ export function TerminalPane({
   className,
   events,
   inputDisabled,
+  paintActive = true,
   readOnly,
   session,
 }: {
@@ -26,6 +27,8 @@ export function TerminalPane({
   className?: string;
   events: SshSessionEvent[];
   inputDisabled?: boolean;
+  /** When false (Connections hidden under Tasks), skip xterm writes/refreshes. */
+  paintActive?: boolean;
   readOnly?: boolean;
   session: SshSessionSummary | null;
 }) {
@@ -254,7 +257,7 @@ export function TerminalPane({
 
   useEffect(() => {
     const terminal = terminalRef.current;
-    if (!terminal) {
+    if (!terminal || !paintActive) {
       return;
     }
 
@@ -334,12 +337,19 @@ export function TerminalPane({
     const lastRenderedIndex = lastRenderedEventRef.current
       ? events.indexOf(lastRenderedEventRef.current)
       : -1;
-    events.slice(lastRenderedIndex + 1).forEach((event) => {
+    // Cursor can disappear while Connections is hidden under Tasks and the
+    // bounded store prunes the paused tip — reset and replay the retained tail.
+    if (lastRenderedIndex < 0 && lastRenderedEventRef.current) {
+      terminal.reset();
+      renderedEmptyStateRef.current = false;
+    }
+    const startIndex = lastRenderedIndex < 0 ? 0 : lastRenderedIndex + 1;
+    events.slice(startIndex).forEach((event) => {
       const data = event.kind === "input" ? `$ ${event.data}` : event.data;
       writeToTerminal(event.kind === "output" ? data : ensureNewline(data));
     });
     lastRenderedEventRef.current = events[events.length - 1] ?? null;
-  }, [events, session]);
+  }, [events, paintActive, session]);
 
   return (
     <TerminalContextMenu

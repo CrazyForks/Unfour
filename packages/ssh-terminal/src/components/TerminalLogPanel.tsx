@@ -1,4 +1,5 @@
 import { Activity, Copy, Download, Minus } from "lucide-react";
+import { useMemo } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { exportSshLog } from "@unfour/command-client";
 import {
@@ -10,6 +11,8 @@ import {
   ToolbarGroup,
 } from "@unfour/ui";
 import { useTerminalStore, redactTerminalLog } from "../model/terminal-state";
+
+const EMPTY_EVENTS: never[] = [];
 
 export function TerminalLogPanel({
   collapsed,
@@ -25,13 +28,28 @@ export function TerminalLogPanel({
   workspaceId: string;
 }) {
   const activeSessionId = useTerminalStore((state) => state.activeSessionId);
-  const events = useTerminalStore((state) => state.terminalEvents);
+  const eventCount = useTerminalStore((state) => state.terminalEvents.length);
+  // Collapsed by default in the shell. Skip rebuilding the full log string on
+  // every PTY chunk while the panel is hidden (critical when Tasks keeps SSH
+  // mounted with live sessions underneath).
+  const events = useTerminalStore((state) =>
+    collapsed ? EMPTY_EVENTS : state.terminalEvents,
+  );
   const exportedLog = useTerminalStore((state) => state.exportedLog);
   const setExportedLog = useTerminalStore((state) => state.setExportedLog);
-  const logLines = events.map(
-    (event) => `[${event.createdAt}] ${event.kind} ${redactTerminalLog(event.data).trim()}`,
-  );
-  const visibleLog = redactTerminalLog(exportedLog ?? logLines.join("\n"));
+  const visibleLog = useMemo(() => {
+    if (exportedLog) {
+      return redactTerminalLog(exportedLog);
+    }
+    if (collapsed) {
+      return "";
+    }
+    const logLines = events.map(
+      (event) =>
+        `[${event.createdAt}] ${event.kind} ${redactTerminalLog(event.data).trim()}`,
+    );
+    return redactTerminalLog(logLines.join("\n"));
+  }, [collapsed, events, exportedLog]);
 
   const exportMutation = useMutation({
     mutationFn: () => exportSshLog({ workspaceId, sessionId: activeSessionId ?? "" }),
@@ -52,7 +70,7 @@ export function TerminalLogPanel({
           <span className="text-[12px] font-semibold text-[var(--u-color-text)]">
             Connection Events
           </span>
-          <StatusBadge>{events.length}</StatusBadge>
+          <StatusBadge>{eventCount}</StatusBadge>
           {exportMutation.error && <StatusBadge tone="danger">Export failed</StatusBadge>}
         </ToolbarGroup>
         <ToolbarGroup>

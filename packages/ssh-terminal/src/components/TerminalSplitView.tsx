@@ -20,17 +20,24 @@ export function TerminalSplitView({
   primary,
   secondary,
   splitMode,
+  surfaceActive = true,
 }: {
   onRetry: (connectionId: string) => void;
   primary: TerminalPaneModel;
   secondary: TerminalPaneModel | null;
   splitMode: TerminalSplitMode;
+  surfaceActive?: boolean;
 }) {
   const { t } = useI18n();
   const split = splitMode !== "single";
 
   const primaryPane = (
-    <PaneShell active model={primary} onRetry={onRetry} />
+    <PaneShell
+      active={surfaceActive}
+      model={primary}
+      onRetry={onRetry}
+      paintActive={surfaceActive}
+    />
   );
 
   if (!split) {
@@ -48,7 +55,12 @@ export function TerminalSplitView({
       {primaryPane}
       <div className={cn("flex min-h-0 min-w-0 flex-1 flex-col")}>
         {secondary ? (
-          <PaneShell model={secondary} onRetry={onRetry} readOnly />
+          <PaneShell
+            model={secondary}
+            onRetry={onRetry}
+            paintActive={surfaceActive}
+            readOnly
+          />
         ) : (
           <div className="flex min-h-0 flex-1 items-center justify-center bg-[var(--u-color-terminal-bg)] p-3 font-mono text-[12px] text-[var(--u-color-terminal-muted)]">
             {t("ssh.pane.secondaryPlaceholder")}
@@ -63,11 +75,14 @@ function PaneShell({
   active,
   model,
   onRetry,
+  paintActive = true,
   readOnly,
 }: {
   active?: boolean;
   model: TerminalPaneModel;
   onRetry: (connectionId: string) => void;
+  /** False while Connections is hidden under Tasks. */
+  paintActive?: boolean;
   readOnly?: boolean;
 }) {
   const { t } = useI18n();
@@ -108,6 +123,7 @@ function PaneShell({
           active={active}
           events={events}
           inputDisabled={session.status !== "connected"}
+          paintActive={paintActive}
           readOnly={readOnly}
           session={session}
         />

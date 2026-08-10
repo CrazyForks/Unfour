@@ -40,10 +40,12 @@ import {
 import { formatTerminalError } from "./model/errors";
 
 export function SshConnectionsPage({
+  active = true,
   onOpenTasks,
   onShellSidebarChange,
   workspaceId,
 }: {
+  active?: boolean;
   onOpenTasks?: () => void;
   onShellSidebarChange?: (sidebar: ReactNode | null) => void;
   workspaceId: string;
@@ -78,7 +80,16 @@ export function SshConnectionsPage({
   const setExportedLog = useTerminalStore((state) => state.setExportedLog);
   const setSearchOpen = useTerminalStore((state) => state.setSearchOpen);
   const startTerminalSession = useTerminalStore((state) => state.startTerminalSession);
-  const terminalEvents = useTerminalStore((state) => state.terminalEvents);
+  // While Tasks keeps this page mounted but hidden, freeze the events snapshot so
+  // live PTY traffic does not re-render the Connections tree / xterm panes.
+  const frozenTerminalEventsRef = useRef<SshSessionEvent[]>([]);
+  const terminalEvents = useTerminalStore((state) => {
+    if (!active) {
+      return frozenTerminalEventsRef.current;
+    }
+    frozenTerminalEventsRef.current = state.terminalEvents;
+    return state.terminalEvents;
+  });
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogMode, setDialogMode] = useState<"new" | "edit" | null>(null);
   const [closeConfirmSessionId, setCloseConfirmSessionId] = useState<string | null>(null);
@@ -106,7 +117,7 @@ export function SshConnectionsPage({
   );
 
   const connectionsQuery = useSshConnections(workspaceId);
-  const sessionsQuery = useTerminalSessions(workspaceId);
+  const sessionsQuery = useTerminalSessions(workspaceId, { active });
   const connections = useMemo(() => connectionsQuery.data ?? [], [connectionsQuery.data]);
   const backendSessions = useMemo(() => sessionsQuery.data ?? [], [sessionsQuery.data]);
   // Merge frontend-only failed sessions (created when connect fails before the
@@ -689,6 +700,7 @@ export function SshConnectionsPage({
 
   // Search has no toolbar button anymore; Ctrl/Cmd+F opens the in-terminal search.
   useEffect(() => {
+    if (!active) return;
     function onKeyDown(event: KeyboardEvent) {
       if ((event.metaKey || event.ctrlKey) && (event.key === "f" || event.key === "F")) {
         event.preventDefault();
@@ -697,7 +709,7 @@ export function SshConnectionsPage({
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [setSearchOpen]);
+  }, [active, setSearchOpen]);
 
   const blockingError = connectionsQuery.error ?? sessionsQuery.error;
   const actionError =
@@ -738,6 +750,7 @@ export function SshConnectionsPage({
           selectedConnection={selectedConnection}
           sessions={sessionTabs}
           splitMode={split.mode}
+          surfaceActive={active}
         />
       )}
       <SshConnectionDialog

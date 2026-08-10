@@ -61,6 +61,7 @@ export function TerminalWorkspace({
   selectedConnection,
   sessions,
   splitMode,
+  surfaceActive = true,
 }: {
   activeSession: SshSessionSummary | null;
   activeSessionId: string | null;
@@ -85,6 +86,8 @@ export function TerminalWorkspace({
   selectedConnection: SshConnection | null;
   sessions: TerminalSessionTabState[];
   splitMode: TerminalSplitMode;
+  /** False while Connections stays mounted but hidden under Tasks. */
+  surfaceActive?: boolean;
 }) {
   const { t } = useI18n();
   const { setMode } = useTerminalSplit();
@@ -209,6 +212,7 @@ export function TerminalWorkspace({
               primary={primaryModel}
               secondary={secondaryModel}
               splitMode={splitMode}
+              surfaceActive={surfaceActive}
             />
           ) : selectedConnection ? (
             <ReadyToConnectState

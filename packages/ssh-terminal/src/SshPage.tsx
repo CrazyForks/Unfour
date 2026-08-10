@@ -39,6 +39,7 @@ export function TerminalPage({
         }
       >
         <SshConnectionsPage
+          active={activeMode === "connections"}
           onOpenTasks={openTasks}
           onShellSidebarChange={setConnectionsSidebar}
           workspaceId={workspaceId}
