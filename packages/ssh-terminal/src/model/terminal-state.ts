@@ -160,7 +160,7 @@ export const useTerminalStore = create<TerminalStore>((set) => ({
     }),
   appendTerminalEvents: (events) =>
     set((state) => ({
-      terminalEvents: appendCoalescedTerminalEvents(state.terminalEvents, events),
+      terminalEvents: appendBoundedTerminalEvents(state.terminalEvents, events),
     })),
   clearTerminalSessionEvents: (sessionId) =>
     set((state) => ({
@@ -191,7 +191,7 @@ export const useTerminalStore = create<TerminalStore>((set) => ({
         return state;
       }
       return {
-        terminalEvents: [...state.terminalEvents, ...events],
+        terminalEvents: appendBoundedTerminalEvents(state.terminalEvents, events),
       };
     }),
   resetTerminalEvents: () =>
@@ -214,38 +214,72 @@ export const useTerminalStore = create<TerminalStore>((set) => ({
       activeSessionId: sessionId,
       dismissedSessionIds: state.dismissedSessionIds.filter((id) => id !== sessionId),
       exportedLog: null,
-      terminalEvents: [
-        ...state.terminalEvents.filter((event) => event.sessionId !== sessionId),
-        ...events,
-      ],
+      terminalEvents: appendBoundedTerminalEvents(
+        state.terminalEvents.filter((event) => event.sessionId !== sessionId),
+        events,
+      ),
     })),
-  setTerminalEvents: (terminalEvents) => set({ terminalEvents }),
+  setTerminalEvents: (terminalEvents) =>
+    set({ terminalEvents: appendBoundedTerminalEvents([], terminalEvents) }),
   setTerminalInput: (terminalInput) => set({ terminalInput }),
 }));
 
-function appendCoalescedTerminalEvents(
+const MAX_TERMINAL_EVENTS_PER_SESSION = 2_000;
+const MAX_TERMINAL_CHARS_PER_SESSION = 1_000_000;
+const MAX_TERMINAL_EVENTS_PER_WORKSPACE = 8_000;
+const MAX_TERMINAL_CHARS_PER_WORKSPACE = 4_000_000;
+const MAX_TERMINAL_EVENT_CHARS = 64_000;
+
+function appendBoundedTerminalEvents(
   currentEvents: SshSessionEvent[],
   nextEvents: SshSessionEvent[],
 ) {
-  const terminalEvents = [...currentEvents];
-  for (const event of nextEvents) {
-    const previous = terminalEvents[terminalEvents.length - 1];
+  const terminalEvents = [...currentEvents, ...splitOversizedTerminalEvents(nextEvents)];
+  const usageBySession = new Map<string, { chars: number; events: number }>();
+  const retained: SshSessionEvent[] = [];
+  let workspaceChars = 0;
+  let workspaceEvents = 0;
+
+  // Retain the newest bounded tail for every session. Events stay immutable so
+  // TerminalPane can use object identity as its incremental-render cursor even
+  // when older entries are discarded from a long-lived stream.
+  for (let index = terminalEvents.length - 1; index >= 0; index -= 1) {
+    const event = terminalEvents[index];
+    const usage = usageBySession.get(event.sessionId) ?? { chars: 0, events: 0 };
     if (
-      previous?.sessionId === event.sessionId &&
-      previous.kind === "output" &&
-      event.kind === "output"
+      workspaceEvents >= MAX_TERMINAL_EVENTS_PER_WORKSPACE ||
+      workspaceChars + event.data.length > MAX_TERMINAL_CHARS_PER_WORKSPACE ||
+      usage.events >= MAX_TERMINAL_EVENTS_PER_SESSION ||
+      usage.chars + event.data.length > MAX_TERMINAL_CHARS_PER_SESSION
     ) {
-      terminalEvents[terminalEvents.length - 1] = {
-        ...previous,
-        data: `${previous.data}${event.data}`,
-        createdAt: event.createdAt,
-      };
       continue;
     }
-
-    terminalEvents.push(event);
+    retained.push(event);
+    workspaceChars += event.data.length;
+    workspaceEvents += 1;
+    usageBySession.set(event.sessionId, {
+      chars: usage.chars + event.data.length,
+      events: usage.events + 1,
+    });
   }
-  return terminalEvents;
+
+  return retained.reverse();
+}
+
+function splitOversizedTerminalEvents(events: SshSessionEvent[]) {
+  return events.flatMap((event) => {
+    if (event.data.length <= MAX_TERMINAL_EVENT_CHARS) {
+      return event;
+    }
+    const chunks: SshSessionEvent[] = [];
+    for (let offset = 0; offset < event.data.length; offset += MAX_TERMINAL_EVENT_CHARS) {
+      chunks.push({
+        ...event,
+        data: event.data.slice(offset, offset + MAX_TERMINAL_EVENT_CHARS),
+      });
+    }
+    return chunks;
+  });
 }
 export function redactTerminalLog(value: string) {
   return value

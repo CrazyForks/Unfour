@@ -36,8 +36,8 @@ export function TerminalPane({
   const lastSizeRef = useRef<{ cols: number; rows: number } | null>(null);
   const inputQueueRef = useRef(Promise.resolve());
   const lastInputErrorToastAtRef = useRef(0);
-  const renderedEventsRef = useRef(0);
-  const renderedEventDataLengthsRef = useRef<number[]>([]);
+  const lastRenderedEventRef = useRef<SshSessionEvent | null>(null);
+  const renderedEmptyStateRef = useRef(false);
   const renderedSessionIdRef = useRef<string | null>(null);
 
   const appendTerminalEvents = useTerminalStore((s) => s.appendTerminalEvents);
@@ -212,8 +212,8 @@ export function TerminalPane({
       fitAddonRef.current = null;
       searchAddonRef.current = null;
       lastSizeRef.current = null;
-      renderedEventsRef.current = 0;
-      renderedEventDataLengthsRef.current = [];
+      lastRenderedEventRef.current = null;
+      renderedEmptyStateRef.current = false;
     };
   }, []);
 
@@ -262,17 +262,22 @@ export function TerminalPane({
     const sessionChanged = renderedSessionIdRef.current !== sessionId;
     if (sessionChanged) {
       terminal.reset();
-      renderedEventsRef.current = 0;
-      renderedEventDataLengthsRef.current = [];
+      lastRenderedEventRef.current = null;
+      renderedEmptyStateRef.current = false;
       renderedSessionIdRef.current = sessionId;
-    } else if (events.length < renderedEventsRef.current) {
-      // The session's events were cleared/truncated; redraw from scratch.
-      terminal.reset();
-      renderedEventsRef.current = 0;
-      renderedEventDataLengthsRef.current = [];
     }
 
-    if (events.length === 0 && renderedEventsRef.current === 0) {
+    if (events.length === 0) {
+      if (lastRenderedEventRef.current) {
+        // The session was explicitly cleared. Pruning a live stream never
+        // removes its newest rendered event, so an empty list is a real reset.
+        lastRenderedEventRef.current = null;
+        renderedEmptyStateRef.current = false;
+      }
+      if (renderedEmptyStateRef.current) {
+        return;
+      }
+      terminal.reset();
       terminal.write(
         session
           ? session.status === "connected"
@@ -280,7 +285,13 @@ export function TerminalPane({
             : `Session ${session.username}@${session.host} is disconnected.\r\n`
           : "Select a connection and start a session.\r\n",
       );
+      renderedEmptyStateRef.current = true;
       return;
+    }
+
+    if (renderedEmptyStateRef.current) {
+      terminal.reset();
+      renderedEmptyStateRef.current = false;
     }
 
     // Replay the full backlog when (re)entering a session, then paint each
@@ -320,22 +331,14 @@ export function TerminalPane({
       });
     };
 
-    events.slice(0, renderedEventsRef.current).forEach((event, index) => {
-      const renderedLength = renderedEventDataLengthsRef.current[index] ?? 0;
-      if (event.kind === "output" && event.data.length > renderedLength) {
-        writeToTerminal(event.data.slice(renderedLength));
-        renderedEventDataLengthsRef.current[index] = event.data.length;
-      }
-    });
-
-    events.slice(renderedEventsRef.current).forEach((event, index) => {
-      const eventIndex = renderedEventsRef.current + index;
+    const lastRenderedIndex = lastRenderedEventRef.current
+      ? events.indexOf(lastRenderedEventRef.current)
+      : -1;
+    events.slice(lastRenderedIndex + 1).forEach((event) => {
       const data = event.kind === "input" ? `$ ${event.data}` : event.data;
       writeToTerminal(event.kind === "output" ? data : ensureNewline(data));
-      renderedEventDataLengthsRef.current[eventIndex] = event.data.length;
     });
-    renderedEventsRef.current = events.length;
-    renderedEventDataLengthsRef.current.length = events.length;
+    lastRenderedEventRef.current = events[events.length - 1] ?? null;
   }, [events, session]);
 
   return (

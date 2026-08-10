@@ -53,7 +53,7 @@ describe("terminal-state store", () => {
     expect(useTerminalStore.getState().workspaceId).toBe("ws-1");
   });
 
-  it("coalesces adjacent streaming output chunks for the same session", () => {
+  it("keeps streaming output chunks immutable for incremental rendering", () => {
     resetStore();
     const store = useTerminalStore.getState();
 
@@ -75,9 +75,48 @@ describe("terminal-state store", () => {
     ]);
 
     const events = useTerminalStore.getState().terminalEvents;
-    expect(events).toHaveLength(1);
-    expect(events[0].data).toBe("line 1\r\nline 2\r\n");
-    expect(events[0].createdAt).toBe("2026-01-01T00:00:01Z");
+    expect(events).toHaveLength(2);
+    expect(events.map((event) => event.data)).toEqual(["line 1\r\n", "line 2\r\n"]);
+    expect(events[1].createdAt).toBe("2026-01-01T00:00:01Z");
+  });
+
+  it("bounds retained output for a long-lived session", () => {
+    resetStore();
+    const store = useTerminalStore.getState();
+    const events = Array.from({ length: 2_100 }, (_, index) => ({
+      sessionId: "s1",
+      kind: "output" as const,
+      data: `${index}\r\n`,
+      createdAt: `2026-01-01T00:00:${String(index % 60).padStart(2, "0")}Z`,
+    }));
+
+    store.appendTerminalEvents(events);
+
+    const retained = useTerminalStore.getState().terminalEvents;
+    expect(retained).toHaveLength(2_000);
+    expect(retained[0].data).toBe("100\r\n");
+    expect(retained.at(-1)?.data).toBe("2099\r\n");
+  });
+
+  it("splits oversized output and enforces the per-session character budget", () => {
+    resetStore();
+    const store = useTerminalStore.getState();
+
+    store.appendTerminalEvents([
+      {
+        sessionId: "s1",
+        kind: "output",
+        data: "x".repeat(1_100_000),
+        createdAt: "2026-01-01T00:00:00Z",
+      },
+    ]);
+
+    const retained = useTerminalStore.getState().terminalEvents;
+    expect(retained.length).toBeGreaterThan(1);
+    expect(retained.reduce((total, event) => total + event.data.length, 0)).toBeLessThanOrEqual(
+      1_000_000,
+    );
+    expect(retained.every((event) => event.data.length <= 64_000)).toBe(true);
   });
 
   it("keeps input and different sessions as separate terminal events", () => {

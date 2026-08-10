@@ -393,12 +393,22 @@ describe("TerminalPane clipboard interactions", () => {
 describe("TerminalPane output rendering", () => {
   beforeEach(resetTerminalMocks);
 
-  it("writes appended output when a coalesced event grows", async () => {
+  it("writes only immutable events appended after the render cursor", async () => {
     const firstEvent: SshSessionEvent = {
       sessionId: "session-1",
       kind: "output",
       data: "line 1\r\n",
       createdAt: "2026-06-23T00:00:01.000Z",
+    };
+    const secondEvent: SshSessionEvent = {
+      ...firstEvent,
+      data: "line 2\r\n",
+      createdAt: "2026-06-23T00:00:02.000Z",
+    };
+    const thirdEvent: SshSessionEvent = {
+      ...firstEvent,
+      data: "line 3\r\n",
+      createdAt: "2026-06-23T00:00:03.000Z",
     };
     const { rerender } = render(
       <TerminalPane
@@ -418,13 +428,7 @@ describe("TerminalPane output rendering", () => {
     rerender(
       <TerminalPane
         active
-        events={[
-          {
-            ...firstEvent,
-            data: "line 1\r\nline 2\r\n",
-            createdAt: "2026-06-23T00:00:02.000Z",
-          },
-        ]}
+        events={[firstEvent, secondEvent]}
         inputDisabled={false}
         readOnly={false}
         session={session}
@@ -432,8 +436,21 @@ describe("TerminalPane output rendering", () => {
     );
 
     await waitFor(() =>
-      expect(terminalState.writes.some((data) => data.includes("line 2"))).toBe(true),
+      expect(terminalState.writes).toEqual(["line 2\r\n"]),
     );
+
+    terminalState.writes = [];
+    rerender(
+      <TerminalPane
+        active
+        events={[secondEvent, thirdEvent]}
+        inputDisabled={false}
+        readOnly={false}
+        session={session}
+      />,
+    );
+
+    await waitFor(() => expect(terminalState.writes).toEqual(["line 3\r\n"]));
   });
   it("filters xterm request-mode sequences while preserving ordinary vi control output", () => {
     const sanitized = sanitizeTerminalWriteChunk(
