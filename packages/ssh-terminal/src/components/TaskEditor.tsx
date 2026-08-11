@@ -154,11 +154,12 @@ export function TaskEditor({
       <div className="flex h-[var(--u-size-section-toolbar)] shrink-0 items-center gap-2 border-b border-[var(--u-color-border)] px-2">
         <Input
           aria-label={t("ssh.tasks.editor.name")}
-          className="h-7 max-w-[220px] shrink-0"
+          className="h-7 min-w-0 max-w-[420px] flex-[1_1_320px]"
           id="ssh-task-name"
           maxLength={128}
           onChange={(event) => onChange({ ...draft, name: event.target.value })}
           placeholder={t("ssh.tasks.editor.untitled")}
+          title={draft.name || t("ssh.tasks.editor.untitled")}
           value={draft.name}
         />
         <Select
