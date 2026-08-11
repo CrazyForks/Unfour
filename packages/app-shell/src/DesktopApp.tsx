@@ -103,6 +103,7 @@ export function DesktopApp({ extensions }: DesktopAppProps) {
     enabled: Boolean(activeWorkspace?.id),
     queryKey: ["workspace-environments", activeWorkspace?.id],
     queryFn: () => listWorkspaceEnvironments(activeWorkspace?.id ?? ""),
+    refetchOnWindowFocus: true,
   });
   const sidebarDatabaseConnectionsQuery = useQuery({
     enabled: Boolean(activeWorkspace?.id),
@@ -181,6 +182,12 @@ export function DesktopApp({ extensions }: DesktopAppProps) {
       workspaceId: activeWorkspace.id,
     }));
   }, [activeEnvironment?.id, activeWorkspace]);
+  const refreshWorkspaceEnvironments = useCallback(() => {
+    if (!activeWorkspace?.id) return;
+    void queryClient.refetchQueries({
+      queryKey: ["workspace-environments", activeWorkspace.id],
+    });
+  }, [activeWorkspace, queryClient]);
   const closeVariableManager = useCallback(() => {
     setVariableManagerRequest(null);
     setVariableManagerDirty(false);
@@ -356,6 +363,7 @@ export function DesktopApp({ extensions }: DesktopAppProps) {
             extensionContext={extensionContext}
             onActivateWorkspace={handleActivateWorkspace}
             onManageVariables={handleManageVariables}
+            onOpenEnvironmentMenu={refreshWorkspaceEnvironments}
             onSelectEnvironment={(environmentId) =>
               activeWorkspace &&
               activateEnvironmentMutation.mutate({

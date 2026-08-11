@@ -27,6 +27,7 @@ export function AppTitleBar({
   extensionContext,
   onActivateWorkspace,
   onManageVariables = () => {},
+  onOpenEnvironmentMenu = () => {},
   onSelectEnvironment = () => {},
   settingsSections,
   workspaceActions,
@@ -42,6 +43,7 @@ export function AppTitleBar({
   extensionContext: DesktopAppExtensionContext;
   onActivateWorkspace: (workspaceId: string) => void;
   onManageVariables?: () => void;
+  onOpenEnvironmentMenu?: () => void;
   onSelectEnvironment?: (environmentId: string | null) => void;
   settingsSections?: readonly DesktopAppSettingsSection[];
   workspaceActions?: readonly DesktopAppWorkspaceAction[];
@@ -72,6 +74,7 @@ export function AppTitleBar({
               activeEnvironmentId={activeEnvironmentId}
               environments={environments}
               onManage={onManageVariables}
+              onOpenChange={(open) => open && onOpenEnvironmentMenu()}
               onSelect={onSelectEnvironment}
             />
           </div>

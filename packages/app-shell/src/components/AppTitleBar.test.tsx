@@ -215,6 +215,7 @@ describe("AppTitleBar settings entry", () => {
     const activeWorkspace = workspace();
     const onSelectEnvironment = vi.fn();
     const onManageVariables = vi.fn();
+    const onOpenEnvironmentMenu = vi.fn();
     render(
       <AppTitleBar
         activeEnvironmentId="env-dev"
@@ -226,6 +227,7 @@ describe("AppTitleBar settings entry", () => {
         extensionContext={extensionContext(activeWorkspace)}
         onActivateWorkspace={vi.fn()}
         onManageVariables={onManageVariables}
+        onOpenEnvironmentMenu={onOpenEnvironmentMenu}
         onSelectEnvironment={onSelectEnvironment}
         workspaces={[activeWorkspace]}
       />,
@@ -242,6 +244,7 @@ describe("AppTitleBar settings entry", () => {
       button: 0,
       ctrlKey: false,
     });
+    expect(onOpenEnvironmentMenu).toHaveBeenCalledTimes(1);
     fireEvent.click(await screen.findByRole("menuitem", { name: "Test" }));
     expect(onSelectEnvironment).toHaveBeenCalledWith("env-test");
 

@@ -13,11 +13,13 @@ export function ActiveEnvironmentSelect({
   activeEnvironmentId,
   environments,
   onManage,
+  onOpenChange,
   onSelect,
 }: {
   activeEnvironmentId: string | null;
   environments: EnvironmentSelectItem[];
   onManage: () => void;
+  onOpenChange?: (open: boolean) => void;
   onSelect: (environmentId: string | null) => void;
 }) {
   const { t } = useI18n();
@@ -26,7 +28,7 @@ export function ActiveEnvironmentSelect({
   );
 
   return (
-    <DropdownMenu.Root>
+    <DropdownMenu.Root onOpenChange={onOpenChange}>
       <DropdownMenu.Trigger asChild>
         <Button
           aria-label={t("variables.activeEnvironment")}

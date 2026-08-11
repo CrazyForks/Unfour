@@ -118,6 +118,7 @@ export function SshTasksPage({
   const [historyLogLoading, setHistoryLogLoading] = useState(false);
   const eventsByRunRef = useRef(eventsByRun);
   const historyLogByRunRef = useRef(historyLogByRun);
+  const runEnvironmentSyncKeyRef = useRef<string | null>(null);
   const tasksSurfaceActiveRef = useRef(active);
   const activeRunIdRef = useRef(activeRun?.id ?? null);
   const nextNewTabIdRef = useRef(0);
@@ -132,6 +133,12 @@ export function SshTasksPage({
   const tasksQuery = useQuery({
     queryKey: ["ssh-tasks", workspaceId],
     queryFn: () => listSshTasks(workspaceId),
+  });
+  const workspaceEnvironmentsQuery = useQuery({
+    enabled: Boolean(workspaceId),
+    queryKey: ["workspace-environments", workspaceId],
+    queryFn: () => listWorkspaceEnvironments(workspaceId),
+    staleTime: 0,
   });
   const tasks = useMemo(() => tasksQuery.data ?? [], [tasksQuery.data]);
   const activeTab =
@@ -150,6 +157,58 @@ export function SshTasksPage({
     queryFn: () => listSshTaskRuns(workspaceId, activeTaskId!),
     enabled: Boolean(activeTaskId),
   });
+
+  useEffect(() => {
+    if (!runDialogTask) {
+      runEnvironmentSyncKeyRef.current = null;
+      return;
+    }
+
+    const environments = workspaceEnvironmentsQuery.data ?? runEnvironments;
+    if (workspaceEnvironmentsQuery.data) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Keep the open run dialog's environment picker in sync with the shared query cache.
+      setRunEnvironments(environments);
+    }
+
+    const detectedInputs = detectTaskInputs(runDialogTask.steps, true);
+    const environmentId = activeWorkspaceEnvironmentId(environments);
+    const activeEnvironment = workspaceEnvironmentById(environments, environmentId);
+    const syncKey = [
+      runDialogTask.task.id,
+      detectedInputs.join("\u0000"),
+      environmentId,
+      activeEnvironment?.updatedAt ?? "",
+      activeEnvironment?.revision ?? "",
+    ].join("\u0001");
+    if (runEnvironmentSyncKeyRef.current === syncKey) return;
+    runEnvironmentSyncKeyRef.current = syncKey;
+
+    const defaults = defaultTaskRunInputs(
+      detectedInputs,
+      mergeWorkspaceVariables(
+        runWorkspaceVariables,
+        activeEnvironment,
+      ),
+    );
+    const filledInputNames = new Set(defaults.filledFromWorkspace);
+    setRunEnvironmentId(environmentId);
+    setRunInputs((current) =>
+      Object.fromEntries(
+        detectedInputs.map((name) => [
+          name,
+          filledInputNames.has(name) ? defaults.inputs[name] ?? "" : current[name] ?? "",
+        ]),
+      ),
+    );
+    setRunSecretInputs(defaults.secretNames);
+    setRunFilledFromWorkspace(defaults.filledFromWorkspace.length > 0);
+    setRunActiveEnvironmentName(activeWorkspaceEnvironmentName(environments));
+  }, [
+    runDialogTask,
+    runEnvironments,
+    runWorkspaceVariables,
+    workspaceEnvironmentsQuery.data,
+  ]);
 
   useEffect(() => {
     const detail = detailQuery.data;
@@ -366,10 +425,12 @@ export function SshTasksPage({
             queryClient.fetchQuery({
               queryKey: ["workspace-variables", workspaceId],
               queryFn: () => listWorkspaceVariables(workspaceId),
+              staleTime: 0,
             }),
             queryClient.fetchQuery({
               queryKey: ["workspace-environments", workspaceId],
               queryFn: () => listWorkspaceEnvironments(workspaceId),
+              staleTime: 0,
             }),
           ]);
           environmentId = activeWorkspaceEnvironmentId(environments);

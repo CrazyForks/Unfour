@@ -10,6 +10,8 @@ export type WorkspaceEnvironmentLike = {
   id?: string;
   name?: string;
   isActive: boolean;
+  updatedAt?: string;
+  revision?: number;
   deletedAt?: string | null;
   variables: WorkspaceVariableLike[];
 };
