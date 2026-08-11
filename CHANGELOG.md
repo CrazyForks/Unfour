@@ -6,12 +6,31 @@ This file is the user-facing change history for Unfour, following
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-11
+
+Feature release extending the local MCP workflow with workspace variables and
+SSH task automation.
+
 ### Added
 
 - **MCP workspace variables and SSH tasks** — Add policy-aware workspace-global
   variable CRUD and complete SSH task management, execution, run inspection,
   cancellation, and cleanup tools over the existing command bus, including
   confirmation handshakes and LLM-facing masking.
+
+### Changed
+
+- **SSH Task workflow** — Add manual ordering and drag-and-drop task reordering,
+  workspace/environment variable defaults, bounded live event handling, and
+  cached run transcripts for more stable task execution.
+- **Release and storage contracts** — Harden Stable/Test channel handling,
+  release identity checks, and CI packaging safeguards for the NSIS sidecar
+  lifecycle.
+
+### Security
+
+- **SSH task secret handling** — Mark task inputs as secret when requested and
+  redact them from task output, errors, persisted logs, and MCP responses.
 
 ## [0.3.0] - 2026-07-30
 
@@ -228,6 +247,7 @@ First public release.
 - macOS and Linux artifacts remain experimental/unverified until real-device
   smoke checks are complete.
 
+[0.4.0]: https://github.com/zyqzyq/Unfour/releases/tag/v0.4.0
 [0.3.0-rc.1]: https://github.com/zyqzyq/Unfour/releases/tag/v0.3.0-rc.1
 [0.2.0]: https://github.com/zyqzyq/Unfour/releases/tag/v0.2.0
 [0.1.2]: https://github.com/zyqzyq/Unfour/releases/tag/v0.1.2

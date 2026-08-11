@@ -1,7 +1,7 @@
 # Distribution
 
 This document describes the public distribution format and release-asset
-verification for Community Stable Unfour `v0.3.1`.
+verification for Community Stable Unfour `v0.4.0`.
 
 ## Release workflow
 
@@ -28,7 +28,7 @@ Windows, the configured release target produces an NSIS installer.
 
 | Platform | Official distribution status | Format |
 | --- | --- | --- |
-| Windows x64 | Release-candidate distribution | NSIS `.exe` |
+| Windows x64 | Community Stable distribution | NSIS `.exe` |
 | macOS arm64/x64 | Experimental / unverified until real-device smoke checks | Existing Tauri `.dmg` and archive outputs |
 | Linux x64 | Experimental / unverified until real-device smoke checks | Existing Tauri `.AppImage`, `.deb`, and available package outputs |
 
@@ -40,7 +40,7 @@ The NSIS installer checks for a running `unfour-mcp.exe` during install and
 uninstall. It prompts before stopping the sidecar and retries the process check
 so an MCP host that respawns the process does not leave file replacement
 stalled. This behavior still requires Windows installer smoke verification for
-the candidate.
+the release.
 
 ## Checksums
 

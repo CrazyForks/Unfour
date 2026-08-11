@@ -1,15 +1,15 @@
 # Release Checklist
 
-This checklist is for the Community Stable `v0.3.1` release.
+This checklist is for the Community Stable `v0.4.0` release.
 
 ## Release setup
 
 - Confirm the release commit and a clean working tree.
-- Confirm the unique version source is `0.3.1` in root
+- Confirm the unique version source is `0.4.0` in root
   `[workspace.package]`; run the version sync and confirm the root package,
   desktop package,
   Tauri configuration, and any packaged Rust crates.
-- Confirm the release tag is exactly `v0.3.1` and points to the verified
+- Confirm the release tag is exactly `v0.4.0` and points to the verified
   release commit. Community rejects every pre-release tag.
 - Confirm the release workflow resolves Stable with `prerelease = false`,
   exports `UNFOUR_RELEASE_CHANNEL=stable`, and embeds the exact checked-out

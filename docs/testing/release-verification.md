@@ -1,6 +1,6 @@
 # Release Verification
 
-This is the active verification matrix for the Community Stable `v0.3.1`
+This is the active verification matrix for the Community Stable `v0.4.0`
 release. Results must come from this release commit; evidence from earlier
 releases is historical context only. An artifact build is not proof of
 platform, live-service, credential-store, or feature-level verification.
@@ -19,7 +19,7 @@ platform, live-service, credential-store, or feature-level verification.
 Run from the repository root and replace each placeholder with current
 evidence.
 
-| Area | Command | Required for v0.3.1 | Result |
+| Area | Command | Required for v0.4.0 | Result |
 | --- | --- | --- | --- |
 | Working tree | `git status --short` | Yes | NOT RUN (release-preparation changes are present) |
 | Patch hygiene | `git diff --check` | Yes | PASS (documentation update) |
@@ -86,7 +86,7 @@ example client rather than the Unfour release. Historical references inside
 ## Release Evidence Template
 
 ```text
-Release: v0.3.1
+Release: v0.4.0
 Commit: <release commit>
 Platform: <runner or physical device>
 

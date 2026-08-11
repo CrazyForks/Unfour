@@ -47,7 +47,20 @@ Release-candidate focus:
 These items are release claims only to the extent recorded in
 `docs/testing/release-verification.md`.
 
-## Beyond v0.3
+## v0.4.0 (Current release line)
+
+Current focus:
+
+- policy-aware MCP workspace variable CRUD over the command bus;
+- MCP SSH task lifecycle tools for save, run, cancellation, inspection, and
+  cleanup;
+- SSH task ordering, workspace/environment defaults, bounded event handling,
+  and secret-safe task logs.
+
+These items are release claims only to the extent recorded in the current
+verification matrix.
+
+## Beyond v0.4
 
 Likely follow-up areas:
 
