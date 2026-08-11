@@ -517,12 +517,12 @@ export function SshConnectionsPage({
   );
 
   useEffect(() => {
-    if (!onShellSidebarChange) {
+    if (!active || !onShellSidebarChange) {
       return;
     }
     onShellSidebarChange(shellSidebar);
     return () => onShellSidebarChange(null);
-  }, [onShellSidebarChange, shellSidebar]);
+  }, [active, onShellSidebarChange, shellSidebar]);
 
   function submitConnection(event: FormEvent) {
     event.preventDefault();

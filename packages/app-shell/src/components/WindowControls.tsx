@@ -1,6 +1,6 @@
 import { Minus, Square, Copy, X } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { cn, usePlatform } from "@unfour/ui";
 import { isTauriRuntime } from "./module-helpers";
 
@@ -8,22 +8,37 @@ export function WindowControls() {
   const isMac = usePlatform() === "macos";
   const isTauri = isTauriRuntime();
   const [isMaximized, setIsMaximized] = useState(false);
-  const appWindow = isTauri ? getCurrentWindow() : null;
+  const appWindow = useMemo(() => (isTauri ? getCurrentWindow() : null), [isTauri]);
 
   useEffect(() => {
     if (!appWindow) {
       return;
     }
+    let disposed = false;
     let unlisten: (() => void) | undefined;
-    void appWindow.isMaximized().then(setIsMaximized);
+    const updateMaximized = () => {
+      void appWindow
+        .isMaximized()
+        .then((maximized) => {
+          if (!disposed) setIsMaximized(maximized);
+        })
+        .catch(() => undefined);
+    };
+    updateMaximized();
     void appWindow
       .onResized(() => {
-        void appWindow.isMaximized().then(setIsMaximized);
+        updateMaximized();
       })
       .then((fn) => {
-        unlisten = fn;
-      });
+        if (disposed) {
+          fn();
+        } else {
+          unlisten = fn;
+        }
+      })
+      .catch(() => undefined);
     return () => {
+      disposed = true;
       unlisten?.();
     };
   }, [appWindow]);

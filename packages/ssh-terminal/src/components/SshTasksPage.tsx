@@ -540,10 +540,10 @@ export function SshTasksPage({
   );
 
   useEffect(() => {
-    if (!onShellSidebarChange) return;
+    if (!active || !onShellSidebarChange) return;
     onShellSidebarChange(shellSidebar);
     return () => onShellSidebarChange(null);
-  }, [onShellSidebarChange, shellSidebar]);
+  }, [active, onShellSidebarChange, shellSidebar]);
 
   useEffect(() => {
     if (!active) return;

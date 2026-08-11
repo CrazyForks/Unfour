@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import type { ReactNode } from "react";
 import { SshConnectionsPage } from "./TerminalPage";
 import { SshTasksPage } from "./components/SshTasksPage";
@@ -12,22 +12,9 @@ export function TerminalPage({
   workspaceId: string;
 }) {
   const [activeMode, setActiveMode] = useState<"connections" | "tasks">("connections");
-  const [connectionsSidebar, setConnectionsSidebar] = useState<ReactNode | null>(null);
-  const [tasksSidebar, setTasksSidebar] = useState<ReactNode | null>(null);
   const connectionsQuery = useSshConnections(workspaceId);
   const openConnections = useCallback(() => setActiveMode("connections"), []);
   const openTasks = useCallback(() => setActiveMode("tasks"), []);
-
-  useEffect(() => {
-    if (!onShellSidebarChange) return;
-    onShellSidebarChange(
-      activeMode === "connections" ? connectionsSidebar : tasksSidebar,
-    );
-  }, [activeMode, connectionsSidebar, onShellSidebarChange, tasksSidebar]);
-
-  useEffect(() => {
-    return () => onShellSidebarChange?.(null);
-  }, [onShellSidebarChange]);
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col bg-[var(--u-color-surface)]">
@@ -41,7 +28,7 @@ export function TerminalPage({
         <SshConnectionsPage
           active={activeMode === "connections"}
           onOpenTasks={openTasks}
-          onShellSidebarChange={setConnectionsSidebar}
+          onShellSidebarChange={onShellSidebarChange}
           workspaceId={workspaceId}
         />
       </div>
@@ -55,7 +42,7 @@ export function TerminalPage({
           connections={connectionsQuery.data ?? []}
           key={workspaceId}
           onOpenConnections={openConnections}
-          onShellSidebarChange={setTasksSidebar}
+          onShellSidebarChange={onShellSidebarChange}
           workspaceId={workspaceId}
         />
       </div>

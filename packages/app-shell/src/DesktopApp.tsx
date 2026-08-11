@@ -27,6 +27,7 @@ import {
   openLogDir,
   setActiveWorkspace as setActiveWorkspaceCommand,
   setActiveWorkspaceEnvironment,
+  type WorkspaceState,
 } from "@unfour/command-client";
 import { useWorkspaceStore } from "@unfour/workspace-core";
 import { AppTitleBar } from "./components/AppTitleBar";
@@ -121,13 +122,38 @@ export function DesktopApp({ extensions }: DesktopAppProps) {
   );
   const activateWorkspaceMutation = useMutation({
     mutationFn: setActiveWorkspaceCommand,
+    onMutate: async (workspaceId) => {
+      await queryClient.cancelQueries({ queryKey: ["workspaces"] });
+      const previousState = queryClient.getQueryData<WorkspaceState>(["workspaces"]);
+      const previousWorkspaceId = activeWorkspaceId;
+      if (previousState) {
+        queryClient.setQueryData<WorkspaceState>(["workspaces"], {
+          ...previousState,
+          activeWorkspaceId: workspaceId,
+        });
+      }
+      setActiveWorkspace(workspaceId);
+      return { previousState, previousWorkspaceId };
+    },
     onSuccess: (state) => {
       setVariableManagerRequest(null);
       setVariableManagerDirty(false);
       setPendingVariableManagerLeave(null);
+      queryClient.setQueryData<WorkspaceState>(["workspaces"], state);
       setActiveWorkspace(state.activeWorkspaceId);
-      queryClient.invalidateQueries({ queryKey: ["workspaces"] });
     },
+    onError: (error, _workspaceId, context) => {
+      if (context?.previousState) {
+        queryClient.setQueryData(["workspaces"], context.previousState);
+      }
+      const rollbackWorkspaceId =
+        context?.previousWorkspaceId ?? context?.previousState?.activeWorkspaceId;
+      if (rollbackWorkspaceId) {
+        setActiveWorkspace(rollbackWorkspaceId);
+      }
+      handleError(error, { key: "feedback.workspace.activateFailed" });
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["workspaces"] }),
   });
   const activateEnvironmentMutation = useMutation({
     mutationFn: (input: { environmentId: string | null; workspaceId: string }) =>
@@ -227,9 +253,10 @@ export function DesktopApp({ extensions }: DesktopAppProps) {
   }, [requestLeaveVariableManager, toggleSidebar, variableManagerOpen]);
   const handleActivateWorkspace = useCallback(
     (workspaceId: string) => {
+      if (workspaceId === activeWorkspace?.id || activateWorkspaceMutation.isPending) return;
       requestLeaveVariableManager({ kind: "activate-workspace", workspaceId });
     },
-    [requestLeaveVariableManager],
+    [activateWorkspaceMutation.isPending, activeWorkspace?.id, requestLeaveVariableManager],
   );
   const refreshWorkspaces = useCallback(
     async () => {

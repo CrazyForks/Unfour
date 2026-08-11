@@ -101,10 +101,13 @@ export function DialogFooter({
   );
 }
 
-export function DialogXClose({ label = "Close dialog" }: { label?: string }) {
+export function DialogXClose({
+  label = "Close dialog",
+  ...props
+}: Omit<React.ComponentProps<typeof IconButton>, "label"> & { label?: string }) {
   return (
     <DialogPrimitive.Close asChild>
-      <IconButton label={label}>
+      <IconButton label={label} {...props}>
         <X size={14} />
       </IconButton>
     </DialogPrimitive.Close>

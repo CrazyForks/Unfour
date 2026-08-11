@@ -19,7 +19,7 @@ export function useWorkspaceInit(
   } = useWorkspaceStore();
 
   useEffect(() => {
-    if (activeWorkspaceIdFromQuery && !activeWorkspaceId) {
+    if (activeWorkspaceIdFromQuery && activeWorkspaceIdFromQuery !== activeWorkspaceId) {
       setActiveWorkspace(activeWorkspaceIdFromQuery);
     }
   }, [activeWorkspaceId, setActiveWorkspace, activeWorkspaceIdFromQuery]);

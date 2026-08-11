@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Button,
   Dialog,
@@ -34,6 +34,32 @@ export function SettingsDialog({
 }) {
   const { t } = useI18n();
   const [activeSection, setActiveSection] = useState<string>("general");
+  const [closeGuardOpen, setCloseGuardOpen] = useState(false);
+  const closeGuardTimerRef = useRef<number | null>(null);
+  const pointerCloseRef = useRef(false);
+
+  useEffect(
+    () => () => {
+      if (closeGuardTimerRef.current !== null) {
+        window.clearTimeout(closeGuardTimerRef.current);
+      }
+    },
+    [],
+  );
+
+  function handleOpenChange(nextOpen: boolean) {
+    onOpenChange(nextOpen);
+    if (nextOpen || !pointerCloseRef.current) return;
+    pointerCloseRef.current = false;
+    setCloseGuardOpen(true);
+    if (closeGuardTimerRef.current !== null) {
+      window.clearTimeout(closeGuardTimerRef.current);
+    }
+    closeGuardTimerRef.current = window.setTimeout(() => {
+      setCloseGuardOpen(false);
+      closeGuardTimerRef.current = null;
+    }, SETTINGS_CLOSE_GUARD_MS);
+  }
   const coreSections: { id: SettingsSection; label: string }[] = [
     { id: "general", label: t("app.settings.sections.general") },
     { id: "mcp", label: t("app.settings.sections.mcp") },
@@ -52,14 +78,23 @@ export function SettingsDialog({
   const ExtensionSection = activeExtensionSection?.component;
 
   return (
-    <Dialog onOpenChange={onOpenChange} open={open}>
-      <DialogContent className="w-[min(900px,calc(100vw-32px))]">
+    <>
+      <Dialog onOpenChange={handleOpenChange} open={open}>
+        <DialogContent className="w-[min(900px,calc(100vw-32px))]">
         <DialogHeader>
           <div className="min-w-0">
             <DialogTitle>{t("app.settings.title")}</DialogTitle>
             <DialogDescription>{t("app.settings.description")}</DialogDescription>
           </div>
-          <DialogXClose label={t("app.settings.close")} />
+          <DialogXClose
+            label={t("app.settings.close")}
+            onPointerCancel={() => {
+              pointerCloseRef.current = false;
+            }}
+            onPointerDown={() => {
+              pointerCloseRef.current = true;
+            }}
+          />
         </DialogHeader>
         <DialogBody className="grid h-[600px] grid-cols-[154px_minmax(0,1fr)] overflow-hidden p-0">
           <nav
@@ -94,7 +129,17 @@ export function SettingsDialog({
             {ExtensionSection && <ExtensionSection {...extensionContext} />}
           </section>
         </DialogBody>
-      </DialogContent>
-    </Dialog>
+        </DialogContent>
+      </Dialog>
+      {closeGuardOpen && (
+        <div
+          aria-hidden="true"
+          className="fixed inset-0 z-[60] cursor-default"
+          data-testid="settings-close-guard"
+        />
+      )}
+    </>
   );
 }
+
+const SETTINGS_CLOSE_GUARD_MS = 250;

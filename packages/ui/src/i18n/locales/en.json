@@ -434,6 +434,7 @@
       "saveFailed": "Failed to save layout"
     },
     "workspace": {
+      "activateFailed": "Failed to switch workspace",
       "createFailed": "Failed to create workspace",
       "deleteFailed": "Failed to delete workspace",
       "environmentFailed": "Failed to update environment",

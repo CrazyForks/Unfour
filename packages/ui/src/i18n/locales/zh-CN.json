@@ -433,6 +433,7 @@
       "saveFailed": "布局保存失败"
     },
     "workspace": {
+      "activateFailed": "切换工作区失败",
       "createFailed": "创建工作区失败",
       "deleteFailed": "删除工作区失败",
       "environmentFailed": "更新环境失败",

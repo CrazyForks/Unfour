@@ -2,7 +2,7 @@
 import type { ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { Workspace, WorkspaceEnvironment } from "@unfour/command-client";
 import { I18nProvider, ThemeProvider } from "@unfour/ui";
 import { AppTitleBar } from "./AppTitleBar";
@@ -20,10 +20,17 @@ const { mockWindow } = vi.hoisted(() => ({
 }));
 
 vi.mock("@tauri-apps/api/window", () => ({
-  getCurrentWindow: () => mockWindow,
+  getCurrentWindow: vi.fn(() => ({ ...mockWindow })),
 }));
 
-afterEach(cleanup);
+vi.mock("./module-helpers", () => ({
+  isTauriRuntime: () => true,
+}));
+
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 function workspace(): Workspace {
   return {
@@ -82,6 +89,32 @@ function environment(id: string, name: string, isActive = false): WorkspaceEnvir
 }
 
 describe("AppTitleBar settings entry", () => {
+  it("registers the window resize listener only once across title-bar rerenders", async () => {
+    mockWindow.onResized.mockClear();
+    const activeWorkspace = workspace();
+    const { rerender } = render(
+      <AppTitleBar
+        activeWorkspace={activeWorkspace}
+        extensionContext={extensionContext(activeWorkspace)}
+        onActivateWorkspace={vi.fn()}
+        workspaces={[activeWorkspace]}
+      />,
+      { wrapper: createWrapper() },
+    );
+    await waitFor(() => expect(mockWindow.onResized).toHaveBeenCalledTimes(1));
+
+    rerender(
+      <AppTitleBar
+        activeWorkspace={{ ...activeWorkspace, name: "Renamed Workspace" }}
+        extensionContext={extensionContext(activeWorkspace)}
+        onActivateWorkspace={vi.fn()}
+        workspaces={[activeWorkspace]}
+      />,
+    );
+
+    expect(mockWindow.onResized).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps language and theme controls inside Settings instead of the title bar", () => {
     const activeWorkspace = workspace();
     render(
@@ -124,6 +157,28 @@ describe("AppTitleBar settings entry", () => {
     });
     expect(await screen.findByRole("dialog", { name: "设置" })).toBeTruthy();
     expect(screen.getByRole("button", { hidden: true, name: "设置" })).toBeTruthy();
+  });
+
+  it("keeps a short pointer guard after closing Settings with the close button", async () => {
+    const activeWorkspace = workspace();
+    render(
+      <AppTitleBar
+        activeWorkspace={activeWorkspace}
+        extensionContext={extensionContext(activeWorkspace)}
+        onActivateWorkspace={vi.fn()}
+        workspaces={[activeWorkspace]}
+      />,
+      { wrapper: createWrapper() },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    const close = screen.getByRole("button", { name: "Close settings" });
+    vi.useFakeTimers();
+    fireEvent.pointerDown(close);
+    fireEvent.click(close);
+
+    expect(screen.getByTestId("settings-close-guard")).toBeTruthy();
+    act(() => vi.runAllTimers());
+    expect(screen.queryByTestId("settings-close-guard")).toBeNull();
   });
 
   it("places an end accessory before window controls and mounts extension settings", async () => {

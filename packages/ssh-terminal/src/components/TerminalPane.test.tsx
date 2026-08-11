@@ -13,6 +13,7 @@ const terminalState = vi.hoisted(() => ({
   inputElement: null as HTMLTextAreaElement | null,
   openElement: null as HTMLElement | null,
   pasteCalls: [] as string[],
+  refreshCalls: 0,
   resizeHandlers: [] as Array<(size: { cols: number; rows: number }) => void>,
   selectAllCalls: 0,
   selection: "",
@@ -57,6 +58,9 @@ vi.mock("@xterm/xterm", () => ({
       paste: vi.fn((data: string) => {
         terminalState.pasteCalls.push(data);
         terminalState.dataHandlers.forEach((handler) => handler(data));
+      }),
+      refresh: vi.fn(() => {
+        terminalState.refreshCalls += 1;
       }),
       reset: vi.fn(),
       selectAll: vi.fn(() => {
@@ -132,6 +136,7 @@ function resetTerminalMocks() {
   terminalState.inputElement = null;
   terminalState.openElement = null;
   terminalState.pasteCalls = [];
+  terminalState.refreshCalls = 0;
   terminalState.resizeHandlers = [];
   terminalState.selectAllCalls = 0;
   terminalState.selection = "";
@@ -451,6 +456,53 @@ describe("TerminalPane output rendering", () => {
     );
 
     await waitFor(() => expect(terminalState.writes).toEqual(["line 3\r\n"]));
+  });
+
+  it("combines a frame of output into one xterm write without refreshing per event", async () => {
+    const firstEvent: SshSessionEvent = {
+      sessionId: "session-1",
+      kind: "output",
+      data: "line 1\r\n",
+      createdAt: "2026-06-23T00:00:01.000Z",
+    };
+    const secondEvent: SshSessionEvent = {
+      ...firstEvent,
+      data: "line 2\r\n",
+      createdAt: "2026-06-23T00:00:02.000Z",
+    };
+    const thirdEvent: SshSessionEvent = {
+      ...firstEvent,
+      data: "line 3\r\n",
+      createdAt: "2026-06-23T00:00:03.000Z",
+    };
+    const { rerender } = render(
+      <TerminalPane
+        active
+        events={[firstEvent]}
+        inputDisabled={false}
+        readOnly={false}
+        session={session}
+      />,
+    );
+    await waitFor(() => expect(terminalState.writes).toEqual(["line 1\r\n"]));
+    await waitFor(() => expect(terminalState.refreshCalls).toBeGreaterThan(0));
+    terminalState.writes = [];
+    const refreshesBeforeAppend = terminalState.refreshCalls;
+
+    rerender(
+      <TerminalPane
+        active
+        events={[firstEvent, secondEvent, thirdEvent]}
+        inputDisabled={false}
+        readOnly={false}
+        session={session}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(terminalState.writes).toEqual(["line 2\r\nline 3\r\n"]),
+    );
+    expect(terminalState.refreshCalls).toBe(refreshesBeforeAppend);
   });
   it("filters xterm request-mode sequences while preserving ordinary vi control output", () => {
     const sanitized = sanitizeTerminalWriteChunk(

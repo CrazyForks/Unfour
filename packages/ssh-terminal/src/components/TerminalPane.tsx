@@ -159,9 +159,9 @@ export function TerminalPane({
     fitAddonRef.current = fitAddon;
     searchAddonRef.current = searchAddon;
 
-    // The render-pause observer is registered asynchronously after open(); clear
-    // it on the next frame so live output is never silently dropped (see
-    // resumeTerminalRendering). The per-write call covers any later re-pause.
+    // WebView2 can leave xterm paused after a pane was hidden. Disable that
+    // observer once for this terminal; `paintActive` already prevents hidden
+    // panes from consuming output/render work.
     window.requestAnimationFrame(() => resumeTerminalRendering(terminal));
 
     const syncFittedSize = () => {
@@ -236,20 +236,22 @@ export function TerminalPane({
   useEffect(() => {
     const fitAddon = fitAddonRef.current;
     const terminal = terminalRef.current;
-    if (fitAddon && terminal) {
+    if (fitAddon && terminal && paintActive) {
       window.requestAnimationFrame(() => {
+        resumeTerminalRendering(terminal);
         fitAndSyncTerminalSize(terminal, fitAddon, lastSizeRef, (cols, rows) => {
           const sid = sessionIdRef.current;
           if (sid) {
             onResizeRef.current?.(sid, cols, rows);
           }
         });
+        terminal.refresh(0, terminal.rows - 1);
         if (active) {
           terminal.focus();
         }
       });
     }
-  }, [active, readOnly, session?.cols, session?.rows, session?.sessionId]);
+  }, [active, paintActive, readOnly, session?.cols, session?.rows, session?.sessionId]);
 
   // ------------------------------------------------------------------
   // Paint terminal output from the store (single source of truth)
@@ -312,12 +314,7 @@ export function TerminalPane({
     // (TerminalLogPanel); applying line-based redaction to the live stream here
     // would mangle the cursor-addressing escape sequences that full-screen apps
     // emit, breaking their rendering.
-    // After the written bytes are parsed into the buffer, force a
-    // viewport repaint. The production WebView2 build does not repaint on
-    // incremental writes on its own (the initial render works, later writes do
-    // not). The callback fires post-parse, so this both confirms parsing and
-    // forces the frame.
-    const writeToTerminal = (chunk: string) => {
+    const sanitizeWrite = (chunk: string) => {
       const sanitized = sanitizeTerminalWriteChunk(chunk);
       if (sanitized.removedSequences.length) {
         console.warn("[ssh-terminal] filtered xterm request-mode sequence", {
@@ -326,12 +323,9 @@ export function TerminalPane({
         });
       }
       if (sanitized.value.length === 0) {
-        return;
+        return "";
       }
-      terminal.write(sanitized.value, () => {
-        resumeTerminalRendering(terminal);
-        terminal.refresh(0, terminal.rows - 1);
-      });
+      return sanitized.value;
     };
 
     const lastRenderedIndex = lastRenderedEventRef.current
@@ -344,10 +338,20 @@ export function TerminalPane({
       renderedEmptyStateRef.current = false;
     }
     const startIndex = lastRenderedIndex < 0 ? 0 : lastRenderedIndex + 1;
-    events.slice(startIndex).forEach((event) => {
-      const data = event.kind === "input" ? `$ ${event.data}` : event.data;
-      writeToTerminal(event.kind === "output" ? data : ensureNewline(data));
-    });
+    // React already coalesces the live stream to roughly one update per frame.
+    // Give xterm one combined write for that update instead of one write and
+    // full viewport refresh per event. xterm schedules its own incremental
+    // renderer, avoiding an unbounded WebView2 raster/resource queue.
+    const writeBatch = events
+      .slice(startIndex)
+      .map((event) => {
+        const data = event.kind === "input" ? `$ ${event.data}` : event.data;
+        return sanitizeWrite(event.kind === "output" ? data : ensureNewline(data));
+      })
+      .join("");
+    if (writeBatch) {
+      terminal.write(writeBatch);
+    }
     lastRenderedEventRef.current = events[events.length - 1] ?? null;
   }, [events, paintActive, session]);
 
@@ -375,10 +379,9 @@ export function TerminalPane({
 // reports the visible terminal as not intersecting and never corrects itself, so
 // `_isPaused` stays `true` and every write/refresh is silently dropped (the
 // terminal renders once, then freezes). xterm exposes no public override, so we
-// reach into the internal service to clear the stuck flag and disconnect the
-// misfiring observer (disabling the off-screen optimization for this terminal,
-// which is exactly the broken behaviour). Guarded so an xterm internals change
-// degrades gracefully instead of crashing the pane.
+// reach into the internal service once when the terminal opens or becomes
+// visible. Hidden output is already paused by the public `paintActive` gate.
+// Guarded so an xterm internals change degrades gracefully instead of crashing.
 function resumeTerminalRendering(terminal: XTerm) {
   try {
     const renderService = (
