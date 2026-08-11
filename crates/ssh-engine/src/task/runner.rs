@@ -1,6 +1,34 @@
 use super::*;
 
 #[cfg_attr(not(feature = "ssh-native"), allow(dead_code))]
+const TRANSFER_PROGRESS_INTERVAL: std::time::Duration = std::time::Duration::from_millis(100);
+
+#[cfg_attr(not(feature = "ssh-native"), allow(dead_code))]
+pub(super) struct TransferProgressThrottle {
+    last_emitted_at: Option<std::time::Instant>,
+}
+
+#[cfg_attr(not(feature = "ssh-native"), allow(dead_code))]
+impl TransferProgressThrottle {
+    pub(super) fn new() -> Self {
+        Self {
+            last_emitted_at: None,
+        }
+    }
+
+    pub(super) fn should_emit(&mut self, now: std::time::Instant) -> bool {
+        let due = self
+            .last_emitted_at
+            .map(|last| now.duration_since(last) >= TRANSFER_PROGRESS_INTERVAL)
+            .unwrap_or(true);
+        if due {
+            self.last_emitted_at = Some(now);
+        }
+        due
+    }
+}
+
+#[cfg_attr(not(feature = "ssh-native"), allow(dead_code))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct TaskTransferProgress {
     pub direction: String,
@@ -144,6 +172,16 @@ fn step_continue_on_error(step: &SshTaskStep) -> bool {
 mod tests {
     use super::*;
     use std::sync::{Arc, Mutex};
+
+    #[test]
+    fn throttles_intermediate_transfer_progress() {
+        let started = std::time::Instant::now();
+        let mut throttle = TransferProgressThrottle::new();
+
+        assert!(throttle.should_emit(started));
+        assert!(!throttle.should_emit(started + std::time::Duration::from_millis(99)));
+        assert!(throttle.should_emit(started + std::time::Duration::from_millis(100)));
+    }
 
     struct FakeDriver {
         calls: Arc<Mutex<Vec<String>>>,

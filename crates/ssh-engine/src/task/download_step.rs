@@ -56,6 +56,7 @@ impl NativeTaskDriver {
             .await
             .map_err(io_step_error("create local download file"))?;
         let started = std::time::Instant::now();
+        let mut progress_throttle = TransferProgressThrottle::new();
         let mut transferred = 0_u64;
         let mut buffer = vec![0_u8; 256 * 1024];
         let copy_result = async {
@@ -80,7 +81,9 @@ impl NativeTaskDriver {
                     }
                 }
                 transferred = transferred.saturating_add(read as u64);
-                emit(transfer_progress("download", transferred, total, started));
+                if progress_throttle.should_emit(std::time::Instant::now()) {
+                    emit(transfer_progress("download", transferred, total, started));
+                }
             }
             local.flush().await.map_err(io_step_error("flush local download file"))?;
             Ok::<(), TaskStepError>(())

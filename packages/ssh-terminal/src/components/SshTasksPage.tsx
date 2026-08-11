@@ -59,6 +59,7 @@ import {
   mergeWorkspaceVariables,
   workspaceEnvironmentById,
 } from "../model/task-run-inputs";
+import { appendTaskRunEvents } from "../model/task-run-events";
 import {
   closeTaskTab,
   createEmptyTaskEditorState,
@@ -171,8 +172,14 @@ export function SshTasksPage({
       pending = [];
       setEventsByRun((current) => {
         const next = { ...current };
+        const batchByRun = new Map<string, SshTaskRunEvent[]>();
         for (const event of batch) {
-          next[event.runId] = [...(next[event.runId] ?? []), event].slice(-5_000);
+          const runEvents = batchByRun.get(event.runId);
+          if (runEvents) runEvents.push(event);
+          else batchByRun.set(event.runId, [event]);
+        }
+        for (const [runId, runEvents] of batchByRun) {
+          next[runId] = appendTaskRunEvents(next[runId] ?? [], runEvents);
         }
         return next;
       });
