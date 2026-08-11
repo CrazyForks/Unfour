@@ -111,6 +111,8 @@ struct SshSessionState {
     summary: SshSessionSummary,
     events: Vec<SshSessionEvent>,
     pending_output: String,
+    #[cfg(feature = "ssh-native")]
+    history_flush_running: bool,
     intentional_close: bool,
     #[cfg(feature = "ssh-native")]
     native_handle: Option<NativeSshHandle>,
@@ -166,6 +168,10 @@ const PERSIST_FLUSH_INTERVAL: std::time::Duration = std::time::Duration::from_mi
 const EMIT_FLUSH_INTERVAL: std::time::Duration = std::time::Duration::from_millis(16);
 #[cfg(feature = "ssh-native")]
 const EMIT_FLUSH_BYTES: usize = 16 * 1024;
+/// Bound output waiting for SQLite. Persisted history retains only a recent
+/// tail, so allowing an unavailable database to grow this buffer indefinitely
+/// provides no user value and can exhaust the process.
+const MAX_PENDING_OUTPUT_BYTES: usize = 512 * 1024;
 
 /// Maximum number of in-memory session events retained per session. The event
 /// log is only consumed by `export_log`; older entries are dropped once this

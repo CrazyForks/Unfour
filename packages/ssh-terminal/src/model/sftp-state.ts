@@ -31,11 +31,13 @@ type SftpUiState = {
     paths: string[],
     primaryPath?: string | null,
   ) => void;
+  removeSession: (sessionId: string) => void;
   setTransfers: (sessionId: string, transfers: SftpTransferState[]) => void;
   upsertTransfer: (transfer: SftpTransferState) => void;
 };
 
 const TERMINAL_STATUSES: SftpTransferStatus[] = ["success", "failed", "cancelled"];
+const MAX_FINISHED_TRANSFERS_PER_SESSION = 32;
 
 export function isTerminalTransferStatus(status: SftpTransferStatus | string) {
   return TERMINAL_STATUSES.includes(status as SftpTransferStatus);
@@ -167,6 +169,15 @@ export const useSftpStore = create<SftpUiState>((set) => ({
         },
       };
     }),
+  removeSession: (sessionId) =>
+    set((state) => {
+      if (!state.tabs[sessionId] && !state.transfers[sessionId]) return state;
+      const tabs = { ...state.tabs };
+      const transfers = { ...state.transfers };
+      delete tabs[sessionId];
+      delete transfers[sessionId];
+      return { tabs, transfers };
+    }),
   setTransfers: (sessionId, transfers) =>
     set((state) => {
       const current = state.transfers[sessionId] ?? [];
@@ -175,13 +186,18 @@ export const useSftpStore = create<SftpUiState>((set) => ({
         preferFresherTransfer(byId.get(incoming.transferId), incoming),
       );
       for (const item of current) {
-        if (!merged.some((entry) => entry.transferId === item.transferId)) {
+        if (
+          !isTerminalTransferStatus(item.status) &&
+          !merged.some((entry) => entry.transferId === item.transferId)
+        ) {
           merged.push(item);
         }
       }
-      merged.sort((left, right) => right.startedAt.localeCompare(left.startedAt));
       return {
-        transfers: { ...state.transfers, [sessionId]: merged },
+        transfers: {
+          ...state.transfers,
+          [sessionId]: boundTransferHistory(merged),
+        },
       };
     }),
   upsertTransfer: (transfer) =>
@@ -192,11 +208,24 @@ export const useSftpStore = create<SftpUiState>((set) => ({
       return {
         transfers: {
           ...state.transfers,
-          [transfer.sessionId]: [
+          [transfer.sessionId]: boundTransferHistory([
             next,
             ...current.filter((item) => item.transferId !== transfer.transferId),
-          ],
+          ]),
         },
       };
-    }),
+  }),
 }));
+
+function boundTransferHistory(transfers: SftpTransferState[]) {
+  const sorted = [...transfers].sort((left, right) =>
+    right.startedAt.localeCompare(left.startedAt),
+  );
+  const active = sorted.filter((transfer) => !isTerminalTransferStatus(transfer.status));
+  const finished = sorted
+    .filter((transfer) => isTerminalTransferStatus(transfer.status))
+    .slice(0, MAX_FINISHED_TRANSFERS_PER_SESSION);
+  return [...active, ...finished].sort((left, right) =>
+    right.startedAt.localeCompare(left.startedAt),
+  );
+}

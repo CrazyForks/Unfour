@@ -27,6 +27,7 @@ import { HostKeyTrustDialog } from "./components/HostKeyTrustDialog";
 import { useSshConnections } from "./hooks/useSshConnections";
 import { useTerminalSessions } from "./hooks/useTerminalSessions";
 import { useTerminalSplit } from "./hooks/useTerminalSplit";
+import { useSftpStore } from "./model/sftp-state";
 import { useTerminalStore } from "./model/terminal-state";
 import {
   defaultSshConnectionInput,
@@ -69,6 +70,7 @@ export function SshConnectionsPage({
     (state) => state.clearTerminalSessionEvents,
   );
   const dismissSession = useTerminalStore((state) => state.dismissSession);
+  const removeSftpSession = useSftpStore((state) => state.removeSession);
   const dismissedSessionIds = useTerminalStore((state) => state.dismissedSessionIds);
   const frontendFailedSessions = useTerminalStore(
     (state) => state.frontendFailedSessions,
@@ -625,6 +627,7 @@ export function SshConnectionsPage({
       closeSessionInBackend(sessionId);
     }
     dismissSession(sessionId);
+    removeSftpSession(sessionId);
   }
 
   const closeConfirmSession = closeConfirmSessionId
@@ -639,6 +642,7 @@ export function SshConnectionsPage({
       closeSessionInBackend(sessionId);
     }
     dismissSession(sessionId);
+    removeSftpSession(sessionId);
   }
 
   function reconnectSession(sessionId: string) {
@@ -796,6 +800,7 @@ export function SshConnectionsPage({
           if (closeConfirmSessionId) {
             closeSessionInBackend(closeConfirmSessionId);
             dismissSession(closeConfirmSessionId);
+            removeSftpSession(closeConfirmSessionId);
           }
           setCloseConfirmSessionId(null);
         }}

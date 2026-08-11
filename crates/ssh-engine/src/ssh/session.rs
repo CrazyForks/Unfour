@@ -114,8 +114,8 @@ impl SshService {
         let Some(state) = sessions.get_mut(session_id) else {
             return false;
         };
-        state.pending_output.push_str(output);
-        state.pending_output.len() >= PERSIST_FLUSH_BYTES
+        append_pending_output(&mut state.pending_output, output);
+        state.pending_output.len() >= PERSIST_FLUSH_BYTES && !state.history_flush_running
     }
 
     /// Flush a session's buffered output to the database on a detached task.
@@ -123,16 +123,52 @@ impl SshService {
     /// Persistence must never run inline on the SSH read loop: awaiting the
     /// database write there stalls draining of russh's bounded channel buffer,
     /// which back-pressures the session task and blocks outgoing keystroke
-    /// writes. Concurrent flushes each take a disjoint slice of the pending
-    /// buffer under the lock, so the worst case is out-of-order history rows
-    /// (cosmetic) rather than lost or duplicated output.
+    /// writes. A per-session single-flight flag ensures high-rate output cannot
+    /// create an unbounded queue of detached database futures.
     #[cfg(feature = "ssh-native")]
     pub(super) fn spawn_flush_session_history(&self, session_id: &str) {
+        let should_spawn = {
+            let Ok(mut sessions) = self.sessions.lock() else {
+                return;
+            };
+            let Some(state) = sessions.get_mut(session_id) else {
+                return;
+            };
+            let has_pending = !state.pending_output.is_empty();
+            claim_history_flush_slot(&mut state.history_flush_running, has_pending)
+        };
+        if !should_spawn {
+            return;
+        }
         let service = self.clone();
         let session_id = session_id.to_string();
         tokio::spawn(async move {
-            let _ = service.flush_session_history(&session_id).await;
+            service.flush_session_history_worker(&session_id).await;
         });
+    }
+
+    #[cfg(feature = "ssh-native")]
+    async fn flush_session_history_worker(&self, session_id: &str) {
+        loop {
+            let flush_result = self.flush_session_history(session_id).await;
+            let continue_flushing = {
+                let Ok(mut sessions) = self.sessions.lock() else {
+                    return;
+                };
+                let Some(state) = sessions.get_mut(session_id) else {
+                    return;
+                };
+                if flush_result.is_err() || state.pending_output.is_empty() {
+                    state.history_flush_running = false;
+                    false
+                } else {
+                    true
+                }
+            };
+            if !continue_flushing {
+                return;
+            }
+        }
     }
 
     pub(super) async fn flush_session_history(&self, session_id: &str) -> AppResult<()> {
@@ -164,7 +200,10 @@ impl SshService {
             // an await makes the future non-`Send`).
             if let Ok(mut sessions) = self.sessions.lock() {
                 if let Some(state) = sessions.get_mut(session_id) {
-                    state.pending_output.insert_str(0, &pending.2);
+                    let mut restored = pending.2;
+                    restored.push_str(&state.pending_output);
+                    state.pending_output.clear();
+                    append_pending_output(&mut state.pending_output, &restored);
                 }
             }
             return Err(error);
@@ -246,9 +285,9 @@ impl SshService {
                 // Persist the redacted input together with the terminal output
                 // so it survives after the in-memory session entry is dropped on
                 // close (issue #4) and still appears in exported logs.
-                state.pending_output.push_str(&input_event.data);
+                append_pending_output(&mut state.pending_output, &input_event.data);
                 record_session_event(state, event.clone());
-                state.pending_output.push_str(&event.data);
+                append_pending_output(&mut state.pending_output, &event.data);
             }
             state.summary.updated_at = now;
             event
@@ -410,7 +449,7 @@ impl SshService {
                         state.summary.status = "disconnected".to_string();
                         state.summary.reconnect_attempt = 0;
                         state.summary.updated_at = now;
-                        state.pending_output.push_str("SSH session closed.\r\n");
+                        append_pending_output(&mut state.pending_output, "SSH session closed.\r\n");
                     }
                     Some(state.summary.clone())
                 }
@@ -513,9 +552,7 @@ impl SshService {
             state.summary.status = "disconnected".to_string();
             state.summary.reconnect_attempt = 0;
             state.summary.updated_at = now.clone();
-            state
-                .pending_output
-                .push_str("SSH reconnect cancelled.\r\n");
+            append_pending_output(&mut state.pending_output, "SSH reconnect cancelled.\r\n");
             state.summary.clone()
         };
         let flush_result = self.flush_session_history(&input.session_id).await;

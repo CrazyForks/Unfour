@@ -26,9 +26,9 @@ type TerminalSlice = {
 };
 
 type TerminalStore = {
-  // Per-workspace archive. `activateWorkspace` swaps the flat fields below to
-  // the slice for the newly active workspace instead of clearing them, so each
-  // workspace keeps its own terminal buffer/sessions/input across switches.
+  // Bounded per-workspace archive. `activateWorkspace` swaps the flat fields
+  // below to the slice for the newly active workspace and retains only the most
+  // recently used workspace buffers.
   byWorkspace: Record<string, TerminalSlice>;
   activeSessionId: string | null;
   dismissedSessionIds: string[];
@@ -41,6 +41,7 @@ type TerminalStore = {
   terminalInput: string;
   terminalSearchAddon: SearchAddonLike | null;
   workspaceId: string | null;
+  workspaceOrder: string[];
   activateWorkspace: (workspaceId: string) => void;
   addFrontendFailedSession: (session: SshSessionSummary) => void;
   appendTerminalEvents: (events: SshSessionEvent[]) => void;
@@ -118,24 +119,33 @@ export const useTerminalStore = create<TerminalStore>((set) => ({
   terminalInput: defaultTerminalInput(),
   terminalSearchAddon: null,
   workspaceId: null,
+  workspaceOrder: [],
   activateWorkspace: (workspaceId) =>
     set((state) => {
       if (state.workspaceId === workspaceId) {
         return state;
       }
       // Archive the current flat slice under the previously active workspace
-      // (if any), then load the target workspace's slice. This preserves each
-      // workspace's terminal buffer/sessions/input across switches instead of
-      // clearing them (the old behavior caused a flicker + selection reset and
-      // required an async backend refill).
-      const nextByWorkspace =
+      // (if any), then load the target workspace's recent slice. Bounded LRU
+      // retention avoids both switch flicker and process-lifetime growth.
+      const nextByWorkspace: Record<string, TerminalSlice> =
         state.workspaceId !== null
           ? { ...state.byWorkspace, [state.workspaceId]: sliceFromFlat(state) }
-          : state.byWorkspace;
-      const nextSlice =
-        workspaceId !== null
-          ? nextByWorkspace[workspaceId] ?? createDefaultSlice()
-          : createDefaultSlice();
+          : { ...state.byWorkspace };
+      const nextSlice = nextByWorkspace[workspaceId] ?? createDefaultSlice();
+      // The active workspace lives in the flat fields, so remove its archived
+      // snapshot instead of retaining a stale duplicate of the same buffer.
+      delete nextByWorkspace[workspaceId];
+      const workspaceOrder = [
+        ...state.workspaceOrder.filter((id) => id !== workspaceId),
+        workspaceId,
+      ].slice(-MAX_CACHED_TERMINAL_WORKSPACES);
+      const retainedWorkspaceIds = new Set(workspaceOrder);
+      for (const archivedWorkspaceId of Object.keys(nextByWorkspace)) {
+        if (!retainedWorkspaceIds.has(archivedWorkspaceId)) {
+          delete nextByWorkspace[archivedWorkspaceId];
+        }
+      }
       return {
         ...flatFromSlice(nextSlice),
         byWorkspace: nextByWorkspace,
@@ -143,6 +153,7 @@ export const useTerminalStore = create<TerminalStore>((set) => ({
         // workspace switches untouched.
         terminalSearchAddon: state.terminalSearchAddon,
         workspaceId,
+        workspaceOrder,
       };
     }),
   addFrontendFailedSession: (session) =>
@@ -178,9 +189,10 @@ export const useTerminalStore = create<TerminalStore>((set) => ({
       delete nextFailed[sessionId];
       return {
         activeSessionId: state.activeSessionId === sessionId ? null : state.activeSessionId,
-        dismissedSessionIds: state.dismissedSessionIds.includes(sessionId)
-          ? state.dismissedSessionIds
-          : [...state.dismissedSessionIds, sessionId],
+        dismissedSessionIds: [
+          ...state.dismissedSessionIds.filter((id) => id !== sessionId),
+          sessionId,
+        ].slice(-MAX_DISMISSED_SESSION_IDS),
         frontendFailedSessions: nextFailed,
         terminalEvents: state.terminalEvents.filter((event) => event.sessionId !== sessionId),
       };
@@ -229,6 +241,8 @@ const MAX_TERMINAL_CHARS_PER_SESSION = 1_000_000;
 const MAX_TERMINAL_EVENTS_PER_WORKSPACE = 8_000;
 const MAX_TERMINAL_CHARS_PER_WORKSPACE = 4_000_000;
 const MAX_TERMINAL_EVENT_CHARS = 64_000;
+export const MAX_CACHED_TERMINAL_WORKSPACES = 4;
+export const MAX_DISMISSED_SESSION_IDS = 100;
 
 function appendBoundedTerminalEvents(
   currentEvents: SshSessionEvent[],

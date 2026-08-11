@@ -1,11 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { useTerminalStore } from "./terminal-state";
+import {
+  MAX_CACHED_TERMINAL_WORKSPACES,
+  MAX_DISMISSED_SESSION_IDS,
+  useTerminalStore,
+} from "./terminal-state";
 
 function resetStore() {
   useTerminalStore.setState({
     byWorkspace: {},
     activeSessionId: null,
+    dismissedSessionIds: [],
     exportedLog: null,
+    frontendFailedSessions: {},
     searchOpen: false,
     searchQuery: "",
     splitMode: "single",
@@ -13,6 +19,7 @@ function resetStore() {
     terminalInput: "",
     terminalSearchAddon: null,
     workspaceId: null,
+    workspaceOrder: [],
   });
 }
 
@@ -213,5 +220,42 @@ describe("terminal-state store", () => {
     expect(useTerminalStore.getState().searchOpen).toBe(true);
     store.setSearchOpen(false);
     expect(useTerminalStore.getState().searchOpen).toBe(false);
+  });
+
+  it("keeps only the most recently used workspace terminal slices", () => {
+    resetStore();
+    const store = useTerminalStore.getState();
+
+    for (let index = 0; index <= MAX_CACHED_TERMINAL_WORKSPACES; index += 1) {
+      store.activateWorkspace(`ws-${index}`);
+      store.appendTerminalEvents([
+        {
+          sessionId: `session-${index}`,
+          kind: "output",
+          data: `workspace-${index}`,
+          createdAt: "2026-01-01T00:00:00Z",
+        },
+      ]);
+    }
+
+    const state = useTerminalStore.getState();
+    expect(state.workspaceOrder).toEqual(["ws-1", "ws-2", "ws-3", "ws-4"]);
+    expect(Object.keys(state.byWorkspace)).toEqual(["ws-1", "ws-2", "ws-3"]);
+
+    store.activateWorkspace("ws-0");
+    expect(useTerminalStore.getState().terminalEvents).toEqual([]);
+  });
+
+  it("bounds dismissed session ids per workspace", () => {
+    resetStore();
+    const store = useTerminalStore.getState();
+    for (let index = 0; index <= MAX_DISMISSED_SESSION_IDS; index += 1) {
+      store.dismissSession(`session-${index}`);
+    }
+
+    const dismissed = useTerminalStore.getState().dismissedSessionIds;
+    expect(dismissed).toHaveLength(MAX_DISMISSED_SESSION_IDS);
+    expect(dismissed[0]).toBe("session-1");
+    expect(dismissed.at(-1)).toBe(`session-${MAX_DISMISSED_SESSION_IDS}`);
   });
 });

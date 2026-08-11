@@ -46,6 +46,7 @@ impl SshService {
                 created_at: now,
             }],
             pending_output: String::new(),
+            history_flush_running: false,
             intentional_close: false,
             native_handle: Some(native_handle.clone()),
             cancel_tx: Some(cancel_tx),
@@ -540,7 +541,7 @@ impl SshService {
                     created_at: now,
                 },
             );
-            state.pending_output.push_str(message);
+            append_pending_output(&mut state.pending_output, message);
         }
         self.emit_terminal_payload(session_id, message, Some(status), attempt);
     }

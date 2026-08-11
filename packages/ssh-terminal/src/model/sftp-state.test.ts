@@ -109,4 +109,40 @@ describe("SFTP panel state", () => {
     expect(preferFresherTransfer(older, newer)).toEqual(newer);
     expect(preferFresherTransfer(newer, older)).toEqual(newer);
   });
+
+  it("drops finished transfers that the bounded backend no longer returns", () => {
+    const state = useSftpStore.getState();
+    for (let index = 0; index < 40; index += 1) {
+      state.upsertTransfer(
+        transfer({
+          transferId: `finished-${index}`,
+          status: "success",
+          startedAt: `2026-01-01T00:00:${String(index).padStart(2, "0")}.000Z`,
+        }),
+      );
+    }
+    state.upsertTransfer(
+      transfer({ transferId: "active", status: "running", startedAt: "2026-01-02" }),
+    );
+
+    const retained = useSftpStore.getState().transfers["session-a"];
+    expect(retained.filter((item) => item.status === "success")).toHaveLength(32);
+    expect(retained.some((item) => item.transferId === "active")).toBe(true);
+
+    state.setTransfers("session-a", []);
+    expect(useSftpStore.getState().transfers["session-a"]).toEqual([
+      expect.objectContaining({ transferId: "active" }),
+    ]);
+  });
+
+  it("removes tab and transfer state when a terminal session closes", () => {
+    const state = useSftpStore.getState();
+    state.setPanelOpen("session-a", "connection-a", true);
+    state.upsertTransfer(transfer({ transferId: "t-closed", status: "success" }));
+
+    state.removeSession("session-a");
+
+    expect(useSftpStore.getState().tabs["session-a"]).toBeUndefined();
+    expect(useSftpStore.getState().transfers["session-a"]).toBeUndefined();
+  });
 });

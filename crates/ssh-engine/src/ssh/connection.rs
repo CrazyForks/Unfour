@@ -528,9 +528,10 @@ impl SshService {
                 state.summary.status = "disconnected".to_string();
                 state.summary.reconnect_attempt = 0;
                 state.summary.updated_at = now.clone();
-                state
-                    .pending_output
-                    .push_str("SSH session closed because the connection was deleted.\r\n");
+                append_pending_output(
+                    &mut state.pending_output,
+                    "SSH session closed because the connection was deleted.\r\n",
+                );
                 ids.push(state.summary.session_id.clone());
             }
             ids

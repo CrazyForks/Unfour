@@ -43,6 +43,30 @@ pub(super) fn record_session_event(state: &mut SshSessionState, event: SshSessio
     }
 }
 
+pub(super) fn append_pending_output(pending: &mut String, output: &str) {
+    if output.is_empty() {
+        return;
+    }
+    pending.push_str(output);
+    if pending.len() <= MAX_PENDING_OUTPUT_BYTES {
+        return;
+    }
+    let mut start = pending.len() - MAX_PENDING_OUTPUT_BYTES;
+    while !pending.is_char_boundary(start) {
+        start += 1;
+    }
+    pending.drain(..start);
+}
+
+#[cfg(any(feature = "ssh-native", test))]
+pub(super) fn claim_history_flush_slot(running: &mut bool, has_pending: bool) -> bool {
+    if *running || !has_pending {
+        return false;
+    }
+    *running = true;
+    true
+}
+
 /// Build a redacted session-log export from an event slice. Used for both live
 /// sessions (events held in memory) and closed sessions (events hydrated from
 /// the terminal-history store after the in-memory entry was dropped to bound
@@ -93,4 +117,29 @@ pub(super) fn native_client_config() -> russh::client::Config {
 
 pub(super) fn redact_ssh_log(value: &str) -> (String, bool) {
     redact_sensitive_lines(value)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pending_output_keeps_only_a_bounded_utf8_tail() {
+        let mut pending = "x".repeat(MAX_PENDING_OUTPUT_BYTES);
+        append_pending_output(&mut pending, "recent-终端");
+
+        assert!(pending.len() <= MAX_PENDING_OUTPUT_BYTES);
+        assert!(pending.ends_with("recent-终端"));
+        assert!(std::str::from_utf8(pending.as_bytes()).is_ok());
+    }
+
+    #[test]
+    fn history_flush_slot_allows_only_one_worker() {
+        let mut running = false;
+
+        assert!(claim_history_flush_slot(&mut running, true));
+        assert!(!claim_history_flush_slot(&mut running, true));
+        running = false;
+        assert!(!claim_history_flush_slot(&mut running, false));
+    }
 }

@@ -59,7 +59,11 @@ import {
   mergeWorkspaceVariables,
   workspaceEnvironmentById,
 } from "../model/task-run-inputs";
-import { appendTaskRunEvents } from "../model/task-run-events";
+import {
+  appendTaskRunEventCache,
+  cacheTaskRunLog,
+  removeTaskRunEventsForTask,
+} from "../model/task-run-events";
 import {
   closeTaskTab,
   createEmptyTaskEditorState,
@@ -115,10 +119,15 @@ export function SshTasksPage({
   const eventsByRunRef = useRef(eventsByRun);
   const historyLogByRunRef = useRef(historyLogByRun);
   const tasksSurfaceActiveRef = useRef(active);
-  eventsByRunRef.current = eventsByRun;
-  historyLogByRunRef.current = historyLogByRun;
-  tasksSurfaceActiveRef.current = active;
+  const activeRunIdRef = useRef(activeRun?.id ?? null);
   const nextNewTabIdRef = useRef(0);
+
+  useEffect(() => {
+    eventsByRunRef.current = eventsByRun;
+    historyLogByRunRef.current = historyLogByRun;
+    tasksSurfaceActiveRef.current = active;
+    activeRunIdRef.current = activeRun?.id ?? null;
+  }, [active, activeRun?.id, eventsByRun, historyLogByRun]);
 
   const tasksQuery = useQuery({
     queryKey: ["ssh-tasks", workspaceId],
@@ -161,6 +170,10 @@ export function SshTasksPage({
     let flushTimer: ReturnType<typeof setTimeout> | null = null;
     const flushPending = () => {
       flushTimer = null;
+      if (disposed) {
+        pending = [];
+        return;
+      }
       if (!pending.length) return;
       // Keep buffering while Connections is shown so a hidden Tasks tree does
       // not re-render on every remote line; flush when Tasks becomes active.
@@ -170,19 +183,9 @@ export function SshTasksPage({
       }
       const batch = pending;
       pending = [];
-      setEventsByRun((current) => {
-        const next = { ...current };
-        const batchByRun = new Map<string, SshTaskRunEvent[]>();
-        for (const event of batch) {
-          const runEvents = batchByRun.get(event.runId);
-          if (runEvents) runEvents.push(event);
-          else batchByRun.set(event.runId, [event]);
-        }
-        for (const [runId, runEvents] of batchByRun) {
-          next[runId] = appendTaskRunEvents(next[runId] ?? [], runEvents);
-        }
-        return next;
-      });
+      setEventsByRun((current) =>
+        appendTaskRunEventCache(current, batch, activeRunIdRef.current),
+      );
       for (const event of batch) {
         if (event.kind === "run" && event.status && event.status !== "running") {
           queryClient.invalidateQueries({
@@ -192,6 +195,7 @@ export function SshTasksPage({
       }
     };
     registerSshTaskRunChannel((event) => {
+      if (disposed) return;
       pending.push(event);
       if (pending.length > 10_000) {
         pending = pending.slice(-10_000);
@@ -206,7 +210,8 @@ export function SshTasksPage({
     return () => {
       disposed = true;
       if (flushTimer !== null) clearTimeout(flushTimer);
-      flushPending();
+      flushTimer = null;
+      pending = [];
       dispose?.();
     };
   }, [queryClient, workspaceId]);
@@ -301,6 +306,7 @@ export function SshTasksPage({
     mutationFn: (taskId: string) => clearSshTaskRuns({ workspaceId, taskId }),
     onSuccess: (_, taskId) => {
       setClearTaskId(null);
+      setEventsByRun((current) => removeTaskRunEventsForTask(current, taskId));
       setHistoryLogByRun({});
       queryClient.invalidateQueries({
         queryKey: ["ssh-task-runs", workspaceId, taskId],
@@ -488,12 +494,16 @@ export function SshTasksPage({
         try {
           const logText = await readSshTaskRunLog(workspaceId, run.id);
           setHistoryLogByRun((current) =>
-            current[run.id] === undefined ? { ...current, [run.id]: logText } : current,
+            current[run.id] === undefined
+              ? cacheTaskRunLog(current, run.id, logText)
+              : current,
           );
         } catch (error) {
           handleError(error, { key: "feedback.ssh.taskLogLoadFailed" });
           setHistoryLogByRun((current) =>
-            current[run.id] === undefined ? { ...current, [run.id]: "" } : current,
+            current[run.id] === undefined
+              ? cacheTaskRunLog(current, run.id, "")
+              : current,
           );
         } finally {
           setHistoryLogLoading(false);

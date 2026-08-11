@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { SshTaskRunEvent } from "@unfour/command-client";
-import { appendTaskRunEvents } from "./task-run-events";
+import {
+  MAX_CACHED_TASK_LOGS,
+  MAX_CACHED_TASK_RUNS,
+  appendTaskRunEventCache,
+  appendTaskRunEvents,
+  cacheTaskRunLog,
+  removeTaskRunEventsForTask,
+} from "./task-run-events";
 
 function event(partial: Partial<SshTaskRunEvent>): SshTaskRunEvent {
   return {
@@ -70,5 +77,51 @@ describe("appendTaskRunEvents", () => {
     expect(retained).toHaveLength(5_000);
     expect(retained[0]?.data).toBe("100\n");
     expect(retained.at(-1)?.data).toBe("5099\n");
+  });
+
+  it("bounds cached run ids while preserving the active run", () => {
+    const current = Object.fromEntries(
+      Array.from({ length: MAX_CACHED_TASK_RUNS }, (_, index) => [
+        `run-${index}`,
+        [event({ runId: `run-${index}`, createdAt: `event-${index}` })],
+      ]),
+    );
+
+    const retained = appendTaskRunEventCache(
+      current,
+      [event({ runId: "run-new", createdAt: "event-new" })],
+      "run-0",
+    );
+
+    expect(Object.keys(retained)).toHaveLength(MAX_CACHED_TASK_RUNS);
+    expect(retained["run-0"]).toBeDefined();
+    expect(retained["run-1"]).toBeUndefined();
+    expect(retained["run-new"]).toBeDefined();
+  });
+
+  it("keeps only a small LRU of history log strings", () => {
+    let cache: Record<string, string> = {};
+    for (let index = 0; index <= MAX_CACHED_TASK_LOGS; index += 1) {
+      cache = cacheTaskRunLog(cache, `run-${index}`, `log-${index}`);
+    }
+
+    expect(Object.keys(cache)).toHaveLength(MAX_CACHED_TASK_LOGS);
+    expect(cache["run-0"]).toBeUndefined();
+    expect(cache[`run-${MAX_CACHED_TASK_LOGS}`]).toBe(
+      `log-${MAX_CACHED_TASK_LOGS}`,
+    );
+  });
+
+  it("clears only cached runs for the selected task", () => {
+    const retained = removeTaskRunEventsForTask(
+      {
+        "run-one": [event({ runId: "run-one", taskId: "task-one" })],
+        "run-two": [event({ runId: "run-two", taskId: "task-two" })],
+      },
+      "task-one",
+    );
+
+    expect(retained["run-one"]).toBeUndefined();
+    expect(retained["run-two"]).toBeDefined();
   });
 });
