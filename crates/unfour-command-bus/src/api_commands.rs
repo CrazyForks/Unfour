@@ -1,4 +1,6 @@
 use super::*;
+use crate::transaction::CommandActivity;
+use unfour_core::domain::CommandContext;
 
 impl CommandBus {
     pub async fn api_environments_list(
@@ -111,24 +113,40 @@ impl CommandBus {
         workspace_id: String,
         content: String,
     ) -> AppResult<ApiCollectionImportResult> {
-        let result = self
-            .api_client
-            .import_collection_openapi(workspace_id.clone(), content)
-            .await?;
-        if let Some(collection) = &result.collection {
-            self.activity_log
-                .record(
-                    Some(&workspace_id),
-                    "api.collection.import",
-                    Some(&collection.id),
-                    serde_json::json!({
-                        "folderCount": result.folder_count,
-                        "requestCount": result.request_count,
-                    }),
-                )
-                .await?;
-        }
-        Ok(result)
+        let context = CommandContext::local("api.collection.import");
+        let executor_context = context.clone();
+        let service = self.api_client.clone();
+        let activity_workspace_id = workspace_id.clone();
+        let content_bytes = content.len();
+        self.execute_domain_command_with_activity(
+            context,
+            move |result: &ApiCollectionImportResult| CommandActivity {
+                workspace_id: Some(activity_workspace_id),
+                action: "api.collection.import",
+                target: result
+                    .collection
+                    .as_ref()
+                    .map(|collection| collection.id.clone()),
+                details: serde_json::json!({
+                    "contentBytes": content_bytes,
+                    "folderCount": result.folder_count,
+                    "requestCount": result.request_count,
+                }),
+            },
+            move |connection| {
+                Box::pin(async move {
+                    service
+                        .import_collection_openapi_on(
+                            connection,
+                            &executor_context,
+                            workspace_id,
+                            content,
+                        )
+                        .await
+                })
+            },
+        )
+        .await
     }
 
     pub async fn api_collection_create(
@@ -136,19 +154,27 @@ impl CommandBus {
         workspace_id: String,
         name: String,
     ) -> AppResult<ApiCollection> {
-        let collection = self
-            .api_client
-            .create_collection(workspace_id.clone(), name)
-            .await?;
-        self.activity_log
-            .record(
-                Some(&workspace_id),
-                "api.collection.create",
-                Some(&collection.id),
-                serde_json::json!({ "name": collection.name }),
-            )
-            .await?;
-        Ok(collection)
+        let context = CommandContext::local("api.collection.create");
+        let executor_context = context.clone();
+        let service = self.api_client.clone();
+        let activity_workspace_id = workspace_id.clone();
+        self.execute_domain_command_with_activity(
+            context,
+            move |collection: &ApiCollection| CommandActivity {
+                workspace_id: Some(activity_workspace_id),
+                action: "api.collection.create",
+                target: Some(collection.id.clone()),
+                details: serde_json::json!({ "name": collection.name }),
+            },
+            move |connection| {
+                Box::pin(async move {
+                    service
+                        .create_collection_on(connection, &executor_context, workspace_id, name)
+                        .await
+                })
+            },
+        )
+        .await
     }
 
     pub async fn api_collection_rename(
@@ -157,19 +183,33 @@ impl CommandBus {
         collection_id: String,
         name: String,
     ) -> AppResult<ApiCollection> {
-        let collection = self
-            .api_client
-            .rename_collection(workspace_id.clone(), collection_id, name)
-            .await?;
-        self.activity_log
-            .record(
-                Some(&workspace_id),
-                "api.collection.rename",
-                Some(&collection.id),
-                serde_json::json!({ "name": collection.name }),
-            )
-            .await?;
-        Ok(collection)
+        let context = CommandContext::local("api.collection.rename");
+        let executor_context = context.clone();
+        let service = self.api_client.clone();
+        let activity_workspace_id = workspace_id.clone();
+        self.execute_domain_command_with_activity(
+            context,
+            move |collection: &ApiCollection| CommandActivity {
+                workspace_id: Some(activity_workspace_id),
+                action: "api.collection.rename",
+                target: Some(collection.id.clone()),
+                details: serde_json::json!({ "name": collection.name }),
+            },
+            move |connection| {
+                Box::pin(async move {
+                    service
+                        .rename_collection_on(
+                            connection,
+                            &executor_context,
+                            workspace_id,
+                            collection_id,
+                            name,
+                        )
+                        .await
+                })
+            },
+        )
+        .await
     }
 
     pub async fn api_collection_delete(
@@ -177,19 +217,33 @@ impl CommandBus {
         workspace_id: String,
         collection_id: String,
     ) -> AppResult<Vec<ApiCollection>> {
-        let collections = self
-            .api_client
-            .delete_collection(workspace_id.clone(), collection_id.clone())
-            .await?;
-        self.activity_log
-            .record(
-                Some(&workspace_id),
-                "api.collection.delete",
-                Some(&collection_id),
-                serde_json::json!({ "softDelete": true, "cascade": true }),
-            )
-            .await?;
-        Ok(collections)
+        let context = CommandContext::local("api.collection.delete");
+        let executor_context = context.clone();
+        let service = self.api_client.clone();
+        let activity_workspace_id = workspace_id.clone();
+        let activity_collection_id = collection_id.clone();
+        self.execute_domain_command(
+            context,
+            Some(CommandActivity {
+                workspace_id: Some(activity_workspace_id),
+                action: "api.collection.delete",
+                target: Some(activity_collection_id),
+                details: serde_json::json!({ "softDelete": true, "cascade": true }),
+            }),
+            move |connection| {
+                Box::pin(async move {
+                    service
+                        .delete_collection_on(
+                            connection,
+                            &executor_context,
+                            workspace_id,
+                            collection_id,
+                        )
+                        .await
+                })
+            },
+        )
+        .await
     }
 
     pub async fn api_collection_folders_list(
@@ -209,19 +263,37 @@ impl CommandBus {
         parent_folder_id: Option<String>,
         name: String,
     ) -> AppResult<ApiCollectionFolder> {
-        let folder = self
-            .api_client
-            .create_collection_folder(workspace_id.clone(), collection_id, parent_folder_id, name)
-            .await?;
-        self.activity_log
-            .record(
-                Some(&workspace_id),
-                "api.collection.folder.create",
-                Some(&folder.id),
-                serde_json::json!({ "collectionId": folder.collection_id, "parentFolderId": folder.parent_folder_id }),
-            )
-            .await?;
-        Ok(folder)
+        let context = CommandContext::local("api.collection.folder.create");
+        let executor_context = context.clone();
+        let service = self.api_client.clone();
+        let activity_workspace_id = workspace_id.clone();
+        self.execute_domain_command_with_activity(
+            context,
+            move |folder: &ApiCollectionFolder| CommandActivity {
+                workspace_id: Some(activity_workspace_id),
+                action: "api.collection.folder.create",
+                target: Some(folder.id.clone()),
+                details: serde_json::json!({
+                    "collectionId": folder.collection_id,
+                    "parentFolderId": folder.parent_folder_id,
+                }),
+            },
+            move |connection| {
+                Box::pin(async move {
+                    service
+                        .create_collection_folder_on(
+                            connection,
+                            &executor_context,
+                            workspace_id,
+                            collection_id,
+                            parent_folder_id,
+                            name,
+                        )
+                        .await
+                })
+            },
+        )
+        .await
     }
 
     pub async fn api_collection_folder_rename(
@@ -230,19 +302,33 @@ impl CommandBus {
         folder_id: String,
         name: String,
     ) -> AppResult<ApiCollectionFolder> {
-        let folder = self
-            .api_client
-            .rename_collection_folder(workspace_id.clone(), folder_id, name)
-            .await?;
-        self.activity_log
-            .record(
-                Some(&workspace_id),
-                "api.collection.folder.rename",
-                Some(&folder.id),
-                serde_json::json!({ "name": folder.name }),
-            )
-            .await?;
-        Ok(folder)
+        let context = CommandContext::local("api.collection.folder.rename");
+        let executor_context = context.clone();
+        let service = self.api_client.clone();
+        let activity_workspace_id = workspace_id.clone();
+        self.execute_domain_command_with_activity(
+            context,
+            move |folder: &ApiCollectionFolder| CommandActivity {
+                workspace_id: Some(activity_workspace_id),
+                action: "api.collection.folder.rename",
+                target: Some(folder.id.clone()),
+                details: serde_json::json!({ "name": folder.name }),
+            },
+            move |connection| {
+                Box::pin(async move {
+                    service
+                        .rename_collection_folder_on(
+                            connection,
+                            &executor_context,
+                            workspace_id,
+                            folder_id,
+                            name,
+                        )
+                        .await
+                })
+            },
+        )
+        .await
     }
 
     pub async fn api_collection_folder_delete(
@@ -250,19 +336,33 @@ impl CommandBus {
         workspace_id: String,
         folder_id: String,
     ) -> AppResult<Vec<ApiCollectionFolder>> {
-        let folders = self
-            .api_client
-            .delete_collection_folder(workspace_id.clone(), folder_id.clone())
-            .await?;
-        self.activity_log
-            .record(
-                Some(&workspace_id),
-                "api.collection.folder.delete",
-                Some(&folder_id),
-                serde_json::json!({ "softDelete": true, "recursive": true }),
-            )
-            .await?;
-        Ok(folders)
+        let context = CommandContext::local("api.collection.folder.delete");
+        let executor_context = context.clone();
+        let service = self.api_client.clone();
+        let activity_workspace_id = workspace_id.clone();
+        let activity_folder_id = folder_id.clone();
+        self.execute_domain_command(
+            context,
+            Some(CommandActivity {
+                workspace_id: Some(activity_workspace_id),
+                action: "api.collection.folder.delete",
+                target: Some(activity_folder_id),
+                details: serde_json::json!({ "softDelete": true, "recursive": true }),
+            }),
+            move |connection| {
+                Box::pin(async move {
+                    service
+                        .delete_collection_folder_on(
+                            connection,
+                            &executor_context,
+                            workspace_id,
+                            folder_id,
+                        )
+                        .await
+                })
+            },
+        )
+        .await
     }
 
     pub async fn api_collection_folder_move(
@@ -271,19 +371,33 @@ impl CommandBus {
         folder_id: String,
         target_parent_folder_id: Option<String>,
     ) -> AppResult<ApiCollectionFolder> {
-        let folder = self
-            .api_client
-            .move_collection_folder(workspace_id.clone(), folder_id, target_parent_folder_id)
-            .await?;
-        self.activity_log
-            .record(
-                Some(&workspace_id),
-                "api.collection.folder.move",
-                Some(&folder.id),
-                serde_json::json!({ "parentFolderId": folder.parent_folder_id }),
-            )
-            .await?;
-        Ok(folder)
+        let context = CommandContext::local("api.collection.folder.move");
+        let executor_context = context.clone();
+        let service = self.api_client.clone();
+        let activity_workspace_id = workspace_id.clone();
+        self.execute_domain_command_with_activity(
+            context,
+            move |folder: &ApiCollectionFolder| CommandActivity {
+                workspace_id: Some(activity_workspace_id),
+                action: "api.collection.folder.move",
+                target: Some(folder.id.clone()),
+                details: serde_json::json!({ "parentFolderId": folder.parent_folder_id }),
+            },
+            move |connection| {
+                Box::pin(async move {
+                    service
+                        .move_collection_folder_on(
+                            connection,
+                            &executor_context,
+                            workspace_id,
+                            folder_id,
+                            target_parent_folder_id,
+                        )
+                        .await
+                })
+            },
+        )
+        .await
     }
 
     pub async fn api_collection_folders_reorder(
@@ -293,24 +407,35 @@ impl CommandBus {
         parent_folder_id: Option<String>,
         folder_ids: Vec<String>,
     ) -> AppResult<Vec<ApiCollectionFolder>> {
-        let folders = self
-            .api_client
-            .reorder_collection_folders(
-                workspace_id.clone(),
-                collection_id.clone(),
-                parent_folder_id,
-                folder_ids,
-            )
-            .await?;
-        self.activity_log
-            .record(
-                Some(&workspace_id),
-                "api.collection.folder.reorder",
-                Some(&collection_id),
-                serde_json::json!({ "folderCount": folders.len() }),
-            )
-            .await?;
-        Ok(folders)
+        let context = CommandContext::local("api.collection.folder.reorder");
+        let executor_context = context.clone();
+        let service = self.api_client.clone();
+        let activity_workspace_id = workspace_id.clone();
+        let activity_collection_id = collection_id.clone();
+        self.execute_domain_command_with_activity(
+            context,
+            move |folders: &Vec<ApiCollectionFolder>| CommandActivity {
+                workspace_id: Some(activity_workspace_id),
+                action: "api.collection.folder.reorder",
+                target: Some(activity_collection_id),
+                details: serde_json::json!({ "folderCount": folders.len() }),
+            },
+            move |connection| {
+                Box::pin(async move {
+                    service
+                        .reorder_collection_folders_on(
+                            connection,
+                            &executor_context,
+                            workspace_id,
+                            collection_id,
+                            parent_folder_id,
+                            folder_ids,
+                        )
+                        .await
+                })
+            },
+        )
+        .await
     }
 
     pub async fn api_request_move(
@@ -320,24 +445,37 @@ impl CommandBus {
         collection_id: Option<String>,
         parent_folder_id: Option<String>,
     ) -> AppResult<ApiSavedRequest> {
-        let saved = self
-            .api_client
-            .move_request(
-                workspace_id.clone(),
-                request_id,
-                collection_id,
-                parent_folder_id,
-            )
-            .await?;
-        self.activity_log
-            .record(
-                Some(&workspace_id),
-                "api.request.move",
-                Some(&saved.id),
-                serde_json::json!({ "collectionId": saved.collection_id, "parentFolderId": saved.parent_folder_id }),
-            )
-            .await?;
-        Ok(saved)
+        let context = CommandContext::local("api.request.move");
+        let executor_context = context.clone();
+        let service = self.api_client.clone();
+        let activity_workspace_id = workspace_id.clone();
+        self.execute_domain_command_with_activity(
+            context,
+            move |request: &ApiSavedRequest| CommandActivity {
+                workspace_id: Some(activity_workspace_id),
+                action: "api.request.move",
+                target: Some(request.id.clone()),
+                details: serde_json::json!({
+                    "collectionId": request.collection_id,
+                    "parentFolderId": request.parent_folder_id,
+                }),
+            },
+            move |connection| {
+                Box::pin(async move {
+                    service
+                        .move_request_on(
+                            connection,
+                            &executor_context,
+                            workspace_id,
+                            request_id,
+                            collection_id,
+                            parent_folder_id,
+                        )
+                        .await
+                })
+            },
+        )
+        .await
     }
 
     pub async fn api_requests_reorder(
@@ -347,24 +485,35 @@ impl CommandBus {
         parent_folder_id: Option<String>,
         request_ids: Vec<String>,
     ) -> AppResult<Vec<ApiSavedRequest>> {
-        let requests = self
-            .api_client
-            .reorder_requests(
-                workspace_id.clone(),
-                collection_id.clone(),
-                parent_folder_id,
-                request_ids,
-            )
-            .await?;
-        self.activity_log
-            .record(
-                Some(&workspace_id),
-                "api.request.reorder",
-                Some(&collection_id),
-                serde_json::json!({ "requestCount": requests.len() }),
-            )
-            .await?;
-        Ok(requests)
+        let context = CommandContext::local("api.request.reorder");
+        let executor_context = context.clone();
+        let service = self.api_client.clone();
+        let activity_workspace_id = workspace_id.clone();
+        let activity_collection_id = collection_id.clone();
+        self.execute_domain_command_with_activity(
+            context,
+            move |requests: &Vec<ApiSavedRequest>| CommandActivity {
+                workspace_id: Some(activity_workspace_id),
+                action: "api.request.reorder",
+                target: Some(activity_collection_id),
+                details: serde_json::json!({ "requestCount": requests.len() }),
+            },
+            move |connection| {
+                Box::pin(async move {
+                    service
+                        .reorder_requests_on(
+                            connection,
+                            &executor_context,
+                            workspace_id,
+                            collection_id,
+                            parent_folder_id,
+                            request_ids,
+                        )
+                        .await
+                })
+            },
+        )
+        .await
     }
 
     pub async fn workspace_layout(&self, workspace_id: String) -> AppResult<WorkspaceLayout> {
@@ -416,16 +565,30 @@ impl CommandBus {
     }
 
     pub async fn save_api_request(&self, input: ApiRequestInput) -> AppResult<ApiSavedRequest> {
-        let saved = self.api_client.save_request(input).await?;
-        self.activity_log
-            .record(
-                Some(&saved.workspace_id),
-                "api.save_request",
-                Some(&saved.id),
-                serde_json::json!({ "name": saved.name, "method": saved.method }),
-            )
-            .await?;
-        Ok(saved)
+        let context = CommandContext::local("api.save_request");
+        let executor_context = context.clone();
+        let service = self.api_client.clone();
+        let activity_workspace_id = input.workspace_id.clone();
+        self.execute_domain_command_with_activity(
+            context,
+            move |request: &ApiSavedRequest| CommandActivity {
+                workspace_id: Some(activity_workspace_id),
+                action: "api.save_request",
+                target: Some(request.id.clone()),
+                details: serde_json::json!({
+                    "name": request.name,
+                    "method": request.method,
+                }),
+            },
+            move |connection| {
+                Box::pin(async move {
+                    service
+                        .save_request_on(connection, &executor_context, input)
+                        .await
+                })
+            },
+        )
+        .await
     }
 
     pub async fn update_api_request(
@@ -434,19 +597,36 @@ impl CommandBus {
         request_id: String,
         input: ApiRequestInput,
     ) -> AppResult<ApiSavedRequest> {
-        let saved = self
-            .api_client
-            .update_request(workspace_id.clone(), request_id, input)
-            .await?;
-        self.activity_log
-            .record(
-                Some(&workspace_id),
-                "api.update_request",
-                Some(&saved.id),
-                serde_json::json!({ "name": saved.name, "method": saved.method }),
-            )
-            .await?;
-        Ok(saved)
+        let context = CommandContext::local("api.update_request");
+        let executor_context = context.clone();
+        let service = self.api_client.clone();
+        let activity_workspace_id = workspace_id.clone();
+        self.execute_domain_command_with_activity(
+            context,
+            move |request: &ApiSavedRequest| CommandActivity {
+                workspace_id: Some(activity_workspace_id),
+                action: "api.update_request",
+                target: Some(request.id.clone()),
+                details: serde_json::json!({
+                    "name": request.name,
+                    "method": request.method,
+                }),
+            },
+            move |connection| {
+                Box::pin(async move {
+                    service
+                        .update_request_on(
+                            connection,
+                            &executor_context,
+                            workspace_id,
+                            request_id,
+                            input,
+                        )
+                        .await
+                })
+            },
+        )
+        .await
     }
 
     pub async fn list_saved_api_requests(
@@ -461,19 +641,36 @@ impl CommandBus {
         workspace_id: String,
         request_id: String,
     ) -> AppResult<ApiSavedRequest> {
-        let saved = self
-            .api_client
-            .duplicate_request(workspace_id.clone(), request_id.clone())
-            .await?;
-        self.activity_log
-            .record(
-                Some(&workspace_id),
-                "api.duplicate_request",
-                Some(&saved.id),
-                serde_json::json!({ "sourceId": request_id, "name": saved.name }),
-            )
-            .await?;
-        Ok(saved)
+        let context = CommandContext::local("api.duplicate_request");
+        let executor_context = context.clone();
+        let service = self.api_client.clone();
+        let activity_workspace_id = workspace_id.clone();
+        let source_id = request_id.clone();
+        self.execute_domain_command_with_activity(
+            context,
+            move |request: &ApiSavedRequest| CommandActivity {
+                workspace_id: Some(activity_workspace_id),
+                action: "api.duplicate_request",
+                target: Some(request.id.clone()),
+                details: serde_json::json!({
+                    "sourceId": source_id,
+                    "name": request.name,
+                }),
+            },
+            move |connection| {
+                Box::pin(async move {
+                    service
+                        .duplicate_request_on(
+                            connection,
+                            &executor_context,
+                            workspace_id,
+                            request_id,
+                        )
+                        .await
+                })
+            },
+        )
+        .await
     }
 
     pub async fn delete_api_request(
@@ -481,19 +678,28 @@ impl CommandBus {
         workspace_id: String,
         request_id: String,
     ) -> AppResult<Vec<ApiSavedRequest>> {
-        let requests = self
-            .api_client
-            .delete_request(workspace_id.clone(), request_id.clone())
-            .await?;
-        self.activity_log
-            .record(
-                Some(&workspace_id),
-                "api.delete_request",
-                Some(&request_id),
-                serde_json::json!({ "softDelete": true }),
-            )
-            .await?;
-        Ok(requests)
+        let context = CommandContext::local("api.delete_request");
+        let executor_context = context.clone();
+        let service = self.api_client.clone();
+        let activity_workspace_id = workspace_id.clone();
+        let activity_request_id = request_id.clone();
+        self.execute_domain_command(
+            context,
+            Some(CommandActivity {
+                workspace_id: Some(activity_workspace_id),
+                action: "api.delete_request",
+                target: Some(activity_request_id),
+                details: serde_json::json!({ "softDelete": true }),
+            }),
+            move |connection| {
+                Box::pin(async move {
+                    service
+                        .delete_request_on(connection, &executor_context, workspace_id, request_id)
+                        .await
+                })
+            },
+        )
+        .await
     }
 
     pub async fn execute_saved_api_request(

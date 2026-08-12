@@ -24,6 +24,9 @@ pub enum DomainEntityType {
     WorkspaceVariable,
     WorkspaceEnvironment,
     WorkspaceEnvironmentVariable,
+    ApiCollection,
+    ApiFolder,
+    ApiRequest,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -210,6 +213,56 @@ pub struct WorkspaceEnvironmentVariableSnapshot {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ApiCollectionSnapshot {
+    pub id: String,
+    pub workspace_id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+    pub revision: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiFolderSnapshot {
+    pub id: String,
+    pub workspace_id: String,
+    pub collection_id: String,
+    pub parent_folder_id: Option<String>,
+    pub name: String,
+    pub sort_order: i64,
+    pub created_at: String,
+    pub updated_at: String,
+    pub revision: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiRequestSnapshot {
+    pub id: String,
+    pub workspace_id: String,
+    pub collection_id: String,
+    pub parent_folder_id: Option<String>,
+    pub name: String,
+    pub sort_order: i64,
+    pub auth_json: String,
+    pub method: String,
+    pub url: String,
+    pub headers: Vec<crate::models::KeyValue>,
+    pub query: Vec<crate::models::KeyValue>,
+    pub body: Option<String>,
+    pub body_kind: String,
+    pub pre_request_script: Option<String>,
+    pub post_response_script: Option<String>,
+    pub script_schema_version: i64,
+    pub created_at: String,
+    pub updated_at: String,
+    pub revision: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TombstoneSnapshot {
     pub entity: DomainEntityKey,
     pub deleted_at: String,
@@ -223,6 +276,9 @@ pub enum DomainSnapshot {
     WorkspaceVariable(WorkspaceVariableSnapshot),
     WorkspaceEnvironment(WorkspaceEnvironmentSnapshot),
     WorkspaceEnvironmentVariable(WorkspaceEnvironmentVariableSnapshot),
+    ApiCollection(ApiCollectionSnapshot),
+    ApiFolder(ApiFolderSnapshot),
+    ApiRequest(ApiRequestSnapshot),
     Tombstone(TombstoneSnapshot),
 }
 
@@ -304,6 +360,53 @@ pub struct ExternalWorkspaceEnvironmentVariableUpsert {
     pub updated_at: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExternalApiCollectionUpsert {
+    pub id: String,
+    pub workspace_id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExternalApiFolderUpsert {
+    pub id: String,
+    pub workspace_id: String,
+    pub collection_id: String,
+    pub parent_folder_id: Option<String>,
+    pub name: String,
+    pub sort_order: i64,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExternalApiRequestUpsert {
+    pub id: String,
+    pub workspace_id: String,
+    pub collection_id: String,
+    pub parent_folder_id: Option<String>,
+    pub name: String,
+    pub sort_order: i64,
+    pub auth_json: String,
+    pub method: String,
+    pub url: String,
+    pub headers: Vec<crate::models::KeyValue>,
+    pub query: Vec<crate::models::KeyValue>,
+    pub body: Option<String>,
+    pub body_kind: String,
+    pub pre_request_script: Option<String>,
+    pub post_response_script: Option<String>,
+    pub script_schema_version: i64,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
 macro_rules! external_change {
     ($name:ident, $upsert:ty) => {
         #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -328,6 +431,15 @@ external_change!(
     ExternalWorkspaceEnvironmentVariableApply,
     ExternalWorkspaceEnvironmentVariableUpsert
 );
+external_change!(ExternalApiCollectionApply, ExternalApiCollectionUpsert);
+external_change!(ExternalApiFolderApply, ExternalApiFolderUpsert);
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "operation", content = "record", rename_all = "camelCase")]
+pub enum ExternalApiRequestApply {
+    Upsert(Box<ExternalApiRequestUpsert>),
+    Delete(ExternalDelete),
+}
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -336,6 +448,12 @@ pub struct ExternalApplyPage {
     pub workspace_variables: Vec<ExternalWorkspaceVariableApply>,
     pub workspace_environments: Vec<ExternalWorkspaceEnvironmentApply>,
     pub workspace_environment_variables: Vec<ExternalWorkspaceEnvironmentVariableApply>,
+    #[serde(default)]
+    pub api_collections: Vec<ExternalApiCollectionApply>,
+    #[serde(default)]
+    pub api_folders: Vec<ExternalApiFolderApply>,
+    #[serde(default)]
+    pub api_requests: Vec<ExternalApiRequestApply>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -370,5 +488,19 @@ mod tests {
         let debug = format!("{value:?}");
         assert!(!debug.contains("top-secret"));
         assert!(debug.contains("REDACTED"));
+    }
+
+    #[test]
+    fn legacy_external_apply_pages_default_new_api_collections() {
+        let page = serde_json::from_value::<ExternalApplyPage>(serde_json::json!({
+            "workspaces": [],
+            "workspaceVariables": [],
+            "workspaceEnvironments": [],
+            "workspaceEnvironmentVariables": [],
+        }))
+        .unwrap();
+        assert!(page.api_collections.is_empty());
+        assert!(page.api_folders.is_empty());
+        assert!(page.api_requests.is_empty());
     }
 }

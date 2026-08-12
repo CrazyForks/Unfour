@@ -143,6 +143,11 @@ pub(crate) async fn read_snapshot_on(
                 },
             ))
         }
+        DomainEntityType::ApiCollection
+        | DomainEntityType::ApiFolder
+        | DomainEntityType::ApiRequest => Err(AppError::Validation(
+            "API snapshots must be read through the API domain service".to_string(),
+        )),
     }
 }
 

@@ -1,14 +1,20 @@
 use super::*;
 use crate::transaction::CommandActivity;
 use unfour_core::domain::{
-    CommandContext, DomainEntityKey, DomainSnapshot, ExternalApplyPage, ExternalApplyReport,
-    ExternalWorkspaceApply, ExternalWorkspaceEnvironmentApply,
-    ExternalWorkspaceEnvironmentVariableApply, ExternalWorkspaceVariableApply,
+    CommandContext, DomainCommandResult, DomainEntityKey, DomainEntityType, DomainSnapshot,
+    ExternalApplyPage, ExternalApplyReport, ExternalWorkspaceApply,
+    ExternalWorkspaceEnvironmentApply, ExternalWorkspaceEnvironmentVariableApply,
+    ExternalWorkspaceVariableApply,
 };
 
 impl CommandBus {
     pub async fn read_domain_snapshot(&self, key: &DomainEntityKey) -> AppResult<DomainSnapshot> {
-        self.workspace.read_snapshot(key).await
+        match key.entity_type {
+            DomainEntityType::ApiCollection
+            | DomainEntityType::ApiFolder
+            | DomainEntityType::ApiRequest => self.api_client.read_domain_snapshot(key).await,
+            _ => self.workspace.read_snapshot(key).await,
+        }
     }
 
     pub async fn apply_external_page(
@@ -20,10 +26,14 @@ impl CommandBus {
             "workspaceVariableCount": page.workspace_variables.len(),
             "workspaceEnvironmentCount": page.workspace_environments.len(),
             "workspaceEnvironmentVariableCount": page.workspace_environment_variables.len(),
+            "apiCollectionCount": page.api_collections.len(),
+            "apiFolderCount": page.api_folders.len(),
+            "apiRequestCount": page.api_requests.len(),
         });
         let context = CommandContext::external("workspace.external.apply_page");
         let executor_context = context.clone();
-        let service = self.workspace.clone();
+        let workspace = self.workspace.clone();
+        let api_client = self.api_client.clone();
         self.execute_domain_command(
             context,
             Some(CommandActivity {
@@ -34,9 +44,24 @@ impl CommandBus {
             }),
             move |connection| {
                 Box::pin(async move {
-                    service
+                    let api_page = page.clone();
+                    let workspace_outcome = workspace
                         .apply_external_page_on(connection, &executor_context, page)
-                        .await
+                        .await?;
+                    let api_outcome = api_client
+                        .apply_external_page_on(connection, &executor_context, api_page)
+                        .await?;
+                    let mut mutations = workspace_outcome.mutations;
+                    mutations.extend(api_outcome.mutations);
+                    let mut secret_material_outcomes =
+                        workspace_outcome.value.secret_material_outcomes;
+                    secret_material_outcomes.extend(api_outcome.value.secret_material_outcomes);
+                    let report = ExternalApplyReport {
+                        applied_count: mutations.len(),
+                        mutations: mutations.clone(),
+                        secret_material_outcomes,
+                    };
+                    Ok(DomainCommandResult::new(report, mutations))
                 })
             },
         )

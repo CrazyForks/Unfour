@@ -1,7 +1,6 @@
 use chrono::Utc;
 use reqwest::header::{HeaderName, HeaderValue, CONTENT_TYPE};
 use reqwest::{Client, Method};
-use sqlx::{Sqlite, Transaction};
 use std::time::{Duration, Instant};
 use unfour_core::models::{
     ApiCollection, ApiCollectionFolder, ApiEnvironment, ApiHistoryDetail, ApiHistoryItem,
@@ -12,12 +11,10 @@ use unfour_local_storage::LocalDb;
 
 #[path = "helpers.rs"]
 mod helpers;
-use helpers::{
-    build_url, normalize_collection_id, normalize_entity_id, normalize_folder_name, parse_method,
-    validate_workspace_id, CollectionRow,
-};
+use helpers::{build_url, normalize_entity_id, parse_method, validate_workspace_id, CollectionRow};
 
 mod collections;
+mod domain;
 mod execution;
 mod history;
 mod openapi_export;

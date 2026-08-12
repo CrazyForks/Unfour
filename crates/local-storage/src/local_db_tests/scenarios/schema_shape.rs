@@ -111,6 +111,33 @@ async fn initial_schema_has_api_collection_folders_table() {
 }
 
 #[tokio::test]
+async fn api_sync_candidate_tables_have_revision_and_tombstone_columns() {
+    let db = test_db().await;
+    db.migrate().await.expect("run migrations");
+
+    for table in ["api_collections", "api_collection_folders", "api_requests"] {
+        let columns: Vec<(String, String, i64)> = sqlx::query_as(&format!(
+            "SELECT name, type, \"notnull\" FROM pragma_table_info('{table}')"
+        ))
+        .fetch_all(db.pool())
+        .await
+        .expect("list API domain columns");
+        for required in ["created_at", "updated_at", "deleted_at", "revision"] {
+            assert!(
+                columns.iter().any(|(name, _, _)| name == required),
+                "{table} must include {required}"
+            );
+        }
+        let revision = columns
+            .iter()
+            .find(|(name, _, _)| name == "revision")
+            .expect("revision column");
+        assert_eq!(revision.1, "INTEGER");
+        assert_eq!(revision.2, 1, "{table}.revision must be NOT NULL");
+    }
+}
+
+#[tokio::test]
 async fn initial_schema_workspace_policy_defaults_are_valid() {
     let db = test_db().await;
     db.migrate().await.expect("run migrations");

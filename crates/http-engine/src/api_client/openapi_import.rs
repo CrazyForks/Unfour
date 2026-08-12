@@ -1,6 +1,10 @@
 use super::*;
 use serde_json::{Map, Value};
+use sqlx::SqliteConnection;
 use std::collections::{HashMap, HashSet};
+use unfour_core::domain::{
+    CommandContext, DomainCommandResult, DomainEntityType, MutationOperation,
+};
 use unfour_core::models::{ApiCollectionImportResult, KeyValue};
 
 mod value_parser;
@@ -53,11 +57,28 @@ struct FolderTag {
 }
 
 impl ApiClientService {
-    pub async fn import_collection_openapi(
+    #[cfg(test)]
+    pub(crate) async fn import_collection_openapi(
         &self,
         workspace_id: String,
         content: String,
     ) -> AppResult<ApiCollectionImportResult> {
+        let context = CommandContext::local("api.collection.import");
+        let mut transaction = self.db.pool().begin().await?;
+        let outcome = self
+            .import_collection_openapi_on(&mut transaction, &context, workspace_id, content)
+            .await?;
+        transaction.commit().await?;
+        Ok(outcome.value)
+    }
+
+    pub async fn import_collection_openapi_on(
+        &self,
+        connection: &mut SqliteConnection,
+        context: &CommandContext,
+        workspace_id: String,
+        content: String,
+    ) -> AppResult<DomainCommandResult<ApiCollectionImportResult>> {
         validate_workspace_id(&workspace_id)?;
         if content.len() > MAX_IMPORT_BYTES {
             return Err(import_validation("collection import file is too large"));
@@ -65,12 +86,10 @@ impl ApiClientService {
         let parsed = parse_import(&content)?;
         let now = Utc::now().to_rfc3339();
         let collection_id = unfour_core::id::new_id();
-        let mut tx = self.db.pool().begin().await?;
-
         let workspace_exists: Option<(String,)> =
-            sqlx::query_as("SELECT id FROM workspaces WHERE id = ?1")
+            sqlx::query_as("SELECT id FROM workspaces WHERE id = ?1 AND deleted_at IS NULL")
                 .bind(&workspace_id)
-                .fetch_optional(&mut *tx)
+                .fetch_optional(&mut *connection)
                 .await?;
         if workspace_exists.is_none() {
             return Err(AppError::NotFound("workspace".to_string()));
@@ -90,8 +109,17 @@ impl ApiClientService {
         .bind(&parsed.name)
         .bind(&parsed.description)
         .bind(&now)
-        .execute(&mut *tx)
+        .execute(&mut *connection)
         .await?;
+        let mut mutations = vec![super::domain::mutation(
+            context,
+            DomainEntityType::ApiCollection,
+            MutationOperation::Upsert,
+            &workspace_id,
+            &collection_id,
+            None,
+            1,
+        )];
 
         let mut imported_folder_ids: HashMap<String, String> = HashMap::new();
         let mut pending_folders = parsed.folders.iter().collect::<Vec<_>>();
@@ -122,12 +150,23 @@ impl ApiClientService {
                 .bind(&id)
                 .bind(&workspace_id)
                 .bind(&collection_id)
-                .bind(parent_folder_id)
+                .bind(&parent_folder_id)
                 .bind(&folder.name)
                 .bind(folder.sort_order)
                 .bind(&now)
-                .execute(&mut *tx)
+                .execute(&mut *connection)
                 .await?;
+                let parent =
+                    super::domain::effective_parent(&collection_id, parent_folder_id.as_deref());
+                mutations.push(super::domain::mutation(
+                    context,
+                    DomainEntityType::ApiFolder,
+                    MutationOperation::Upsert,
+                    &workspace_id,
+                    &id,
+                    Some(parent),
+                    1,
+                ));
                 imported_folder_ids.insert(folder.source_id.clone(), id);
                 inserted += 1;
             }
@@ -164,11 +203,11 @@ impl ApiClientService {
                 )
                 "#,
             )
-            .bind(id)
+            .bind(&id)
             .bind(&workspace_id)
             .bind(&request.name)
             .bind(&collection_id)
-            .bind(parent_folder_id)
+            .bind(&parent_folder_id)
             .bind(request.sort_order)
             .bind(&request.auth_json)
             .bind(&request.method)
@@ -181,18 +220,38 @@ impl ApiClientService {
             .bind(&request.post_response_script)
             .bind(request.script_schema_version)
             .bind(&now)
-            .execute(&mut *tx)
+            .execute(&mut *connection)
             .await?;
+            let parent =
+                super::domain::effective_parent(&collection_id, parent_folder_id.as_deref());
+            mutations.push(super::domain::mutation(
+                context,
+                DomainEntityType::ApiRequest,
+                MutationOperation::Upsert,
+                &workspace_id,
+                &id,
+                Some(parent),
+                1,
+            ));
         }
 
-        tx.commit().await?;
-        let collection = self.get_collection(&workspace_id, &collection_id).await?;
-        Ok(ApiCollectionImportResult {
-            imported: true,
-            collection: Some(collection),
-            folder_count: parsed.folders.len() as u32,
-            request_count: parsed.requests.len() as u32,
-        })
+        let collection = ApiCollection {
+            id: collection_id,
+            workspace_id,
+            name: parsed.name.clone(),
+            description: parsed.description.clone(),
+            created_at: now.clone(),
+            updated_at: now,
+        };
+        Ok(DomainCommandResult::new(
+            ApiCollectionImportResult {
+                imported: true,
+                collection: Some(collection),
+                folder_count: parsed.folders.len() as u32,
+                request_count: parsed.requests.len() as u32,
+            },
+            mutations,
+        ))
     }
 }
 
